@@ -1,0 +1,8 @@
+{
+  "appId": "com.zombicraft.game",
+  "appName": "Zombi Craft",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#05070d"
+  }
+}

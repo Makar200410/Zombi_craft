@@ -1,0 +1,57 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - name: Generate Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+          # fullscreen immersive game: keep screen on, hide system bars theme
+          sed -i 's/android:name=".MainActivity"/android:name=".MainActivity"\n            android:screenOrientation="fullUser"/' android/app/src/main/AndroidManifest.xml
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ZombiCraft.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZombiCraft-apk
+          path: ZombiCraft.apk
+      - name: Publish to GitHub Release "apk-latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Zombi Craft — последняя сборка APK
+          body: |
+            Автоматическая сборка APK для Android из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
+            Скачайте ZombiCraft.apk на телефон и установите (разрешите установку из неизвестных источников).
+          prerelease: true
+          make_latest: true
+          files: ZombiCraft.apk
