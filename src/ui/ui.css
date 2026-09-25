@@ -873,3 +873,5 @@
 
 /* phones: no backdrop blur over the live 3D canvas (re-blurred every frame, very expensive on mobile GPUs) */
 .zc-root.zc-touch, .zc-root.zc-touch * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* a closing panel stops catching touches immediately, not after its fade-out finishes */
+.zc-root .zc-sheet:not(.open), .zc-root .zc-inspector:not(.open), .zc-root .zc-research:not(.open) { pointer-events: none !important; }
