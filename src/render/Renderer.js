@@ -36,7 +36,7 @@ export class Renderer {
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.08, 800);
-    this.scene.fog = new THREE.Fog(0xb4d6fb, 40, q === 'low' ? 85 : 130);
+    this.scene.fog = new THREE.Fog(0xb4d6fb, 40, q === 'low' ? 64 : q === 'medium' ? 100 : 130);
     this.fogFar = this.scene.fog.far;
 
     this.hemi = new THREE.HemisphereLight(0xcfe6ff, 0x5b4a3a, 0.8);
@@ -89,7 +89,9 @@ export class Renderer {
     r.shadowMap.type = THREE.PCFShadowMap;
     if (q === 'high' && !this.composer) this.enableBloom();
     if (q !== 'high' && this.composer) { this.composer.dispose?.(); this.composer = null; }
-    this.scene.fog.far = this.fogFar = q === 'low' ? 85 : 130;
+    this.scene.fog.far = this.fogFar = q === 'low' ? 64 : q === 'medium' ? 100 : 130;
+    // chunk meshes depend on quality (grass density / fancy leaves): rebuild them gradually
+    if (this.game.world && this.game.chunkRenderer) for (const k of this.game.chunkRenderer.meshes.keys()) this.game.world.dirty.add(k);
     this.game.chunkRenderer?.setShadows(q !== 'low');
     this.scene.traverse(o => { if (o.material) { const m = Array.isArray(o.material) ? o.material : [o.material]; m.forEach(mm => mm.needsUpdate = true); } });
     this.resize();
@@ -147,7 +149,7 @@ export class Renderer {
     this.hemi.groundColor.set(0x6b6656).multiplyScalar(0.45 + amb * 0.55);
     this.scene.fog.color.copy(c.fog);
     // fog closes in a bit at night — spookier waves
-    this.scene.fog.near = 30 - night * 12;
+    this.scene.fog.near = Math.min(30, this.fogFar * 0.45) - night * 10;
     this.scene.fog.far = this.fogFar * (1 - night * 0.25);
     worldUniforms.uSkyLight.value = 1 - night * 0.7;
     worldUniforms.uBlockLightStrength.value = 1.1 + night * 0.6;

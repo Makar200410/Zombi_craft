@@ -20,7 +20,7 @@ export class ChunkRenderer {
   }
   rebuild(key) {
     const [cx, cz] = key.split(',').map(Number);
-    const data = meshChunk(this.world, cx, cz, this.game.atlas, { fancyLeaves: this.game.quality !== 'low' });
+    const data = meshChunk(this.world, cx, cz, this.game.atlas, { fancyLeaves: this.game.quality !== 'low', lowDetail: this.game.quality === 'low' });
     let slot = this.meshes.get(key);
     if (!slot) { slot = {}; this.meshes.set(key, slot); }
     const shadows = this.game.quality !== 'low';
@@ -56,7 +56,7 @@ export class ChunkRenderer {
   cullDistant() {
     const cam = this.game.camera.position;
     const fog = this.game.scene.fog;
-    const far = (fog ? fog.far : 200) + 24;
+    const far = (fog ? fog.far : 200) + (this.game.quality === 'low' ? 10 : 20);
     const far2 = far * far;
     for (const [key, slot] of this.meshes) {
       const vis = dist(key, cam) < far2;

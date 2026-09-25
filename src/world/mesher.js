@@ -45,6 +45,7 @@ class Bucket {
 
 export function meshChunk(world, cx, cz, atlas, opts = {}) {
   const fancyLeaves = opts.fancyLeaves !== false;
+  const lowDetail = !!opts.lowDetail;
   const size = world.size, blocks = world.blocks, light = world.light;
   const solid = new Bucket(), plants = new Bucket(), water = new Bucket(), glass = new Bucket();
   const x0 = cx * CHUNK, z0 = cz * CHUNK;
@@ -72,7 +73,7 @@ export function meshChunk(world, cx, cz, atlas, opts = {}) {
     if (id === 0) continue;
     const shape = SHAPE[id], render = RENDER[id];
     const def = BLOCKS[id];
-    if (shape === 2) { crossQuads(x, y, z, id, def); continue; }
+    if (shape === 2) { if (!(lowDetail && id === B.TALL_GRASS)) crossQuads(x, y, z, id, def); continue; }
     const isLiquid = shape === 3;
     const emissive = def.light > 0 && !isLiquid && shape === 1;
     for (let f = 0; f < 6; f++) {

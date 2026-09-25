@@ -870,3 +870,6 @@
   .zc-rs-detail { width: 260px; padding: 8px 10px; }
 }
 .zc-rs-detail > * { flex-shrink: 0; }
+
+/* phones: no backdrop blur over the live 3D canvas (re-blurred every frame, very expensive on mobile GPUs) */
+.zc-root.zc-touch, .zc-root.zc-touch * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }

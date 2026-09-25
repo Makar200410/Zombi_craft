@@ -44,7 +44,18 @@ export class EntityManager {
     }
     return best ? { entity: best, dist: bd } : null;
   }
+  /** Hide entities beyond the fog — they are invisible anyway but cost ~8 draw calls each. */
+  cullDistant() {
+    const g = this.game, cam = g.camera.position, fog = g.scene.fog;
+    const far = (fog ? fog.far : 200) + 6, far2 = far * far;
+    for (const e of this.list) {
+      if (!e.object3d || e.kind === 'player' || e.hidden || e._exploded) continue;   // respect entities that hide themselves
+      const dx = e.position.x - cam.x, dz = e.position.z - cam.z;
+      e.object3d.visible = dx * dx + dz * dz < far2;
+    }
+  }
   update(dt) {
+    if ((this._cullN = (this._cullN || 0) + 1) % 10 === 0) this.cullDistant();
     const now = this.game.time;
     for (let i = 0; i < this.list.length; i++) {
       const e = this.list[i];

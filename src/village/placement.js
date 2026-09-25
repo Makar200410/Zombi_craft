@@ -20,7 +20,8 @@ export class Placement {
     this._dirty = false;
     this._key = '';
     this.good = null; this.bad = null; this.rect = null;
-    this._onMove = (e) => { if (!this.active) return; if (e.pointerType === 'touch' && !this.game.isTouch) return; this._pointer = { x: e.clientX, y: e.clientY }; this._dirty = true; if (e.pointerType !== 'touch') this._hover = true; };
+    this._onMove = (e) => { if (!this.active) return; if (e.pointerType === 'touch' || this.game.isTouch) return;   // on touch the ghost moves by tap only (drags pan the camera)
+      this._pointer = { x: e.clientX, y: e.clientY }; this._dirty = true; if (e.pointerType !== 'touch') this._hover = true; };
     this._onKey = (e) => {
       if (!this.active) return;
       if (e.code === 'KeyR') { this.rotate(); e.preventDefault?.(); }
@@ -29,6 +30,7 @@ export class Placement {
     this._onContext = (e) => { if (this.active) { e.preventDefault(); this.cancel(); } };
   }
   init() {
+    this.game.bus.on('resources:changed', () => { this._resDirty = true; });
     addEventListener('pointermove', this._onMove, { passive: true });
     addEventListener('keydown', this._onKey);
     addEventListener('contextmenu', this._onContext);
@@ -103,7 +105,7 @@ export class Placement {
     if (!this.active) return;
     this.good?.update(this.game.time); this.bad?.update(this.game.time);
     if (this._dirty) { this._dirty = false; this.refresh(); }
-    else if ((this._t = (this._t || 0) + dt) > 0.5) { this._t = 0; this.refresh(true); }   // resources may change
+    else if ((this._t = (this._t || 0) + dt) > 0.5 && this._resDirty) { this._t = 0; this._resDirty = false; this.refresh(true); }   // affordability may change
   }
 
   refresh(force = false) {
