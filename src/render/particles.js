@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BLOCKS } from '../core/blocks.js';
+import { getTilePx } from '../art/textures.js';
 
 const MAX = 3000;
 
@@ -105,15 +106,12 @@ export class Particles {
     let arr = this._tileColors.get(name);
     if (arr) return arr;
     arr = [];
-    const atlas = this.game.atlas;
     try {
-      const ctx = atlas.canvas.getContext('2d');
-      const [u0, v0, u1, v1] = atlas.uv(name);
-      const W = atlas.canvas.width, H = atlas.canvas.height;
-      const x = Math.floor(u0 * W), y = Math.floor(v0 * H), w = Math.max(1, Math.floor((u1 - u0) * W)), h = Math.max(1, Math.floor((v1 - v0) * H));
-      const d = ctx.getImageData(x, y, w, h).data;
-      for (let i = 0; i < 24; i++) {
-        const k = ((Math.random() * w * h) | 0) * 4;
+      // read from the generator's pixel buffer (no GPU canvas readback — that is very slow on some devices)
+      const px = getTilePx(name);
+      const d = px.d, n = px.w * px.h;
+      for (let i = 0; i < 32; i++) {
+        const k = ((Math.random() * n) | 0) * 4;
         if (d[k + 3] < 128) continue;
         arr.push(new THREE.Color(d[k] / 255, d[k + 1] / 255, d[k + 2] / 255).convertSRGBToLinear());
       }

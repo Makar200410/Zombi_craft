@@ -820,7 +820,6 @@ export class Zombie extends Entity {
     this.velocity.x *= Math.pow(0.05, dt); this.velocity.z *= Math.pow(0.05, dt);
     this.physics(dt);
     this.model.update(dt, 0);
-    if (this.eyeGlow) this.eyeGlow.material = this.eyeGlow.material; // keep
     // dissolve into particles
     if (this.deadT > 0.9) {
       const k = Math.min(1, (this.deadT - 0.9) / 1.4);

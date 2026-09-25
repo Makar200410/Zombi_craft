@@ -172,11 +172,11 @@ export class Hud {
     const portrait = H >= W;
     let slot, cols = 9;
     if (!touch) slot = W < 700 ? Math.floor((W - 24) / 9) : 54;
-    else if (portrait) slot = Math.min(48, Math.floor((W - 20) / 9));
+    else if (portrait) slot = Math.min(50, Math.floor((W - 20 - 8 - 16) / 9));
     else {
-      const gap = W - W * 0.4 - 210;
-      slot = Math.floor(gap / 9);
-      if (slot < 36) { cols = 5; slot = Math.min(44, Math.floor(gap / 5)); }
+      const gap = W - W * 0.42 - 214 - 8;
+      slot = Math.floor((gap - 16) / 9);
+      if (slot < 36) { cols = 5; slot = Math.min(44, Math.floor((gap - 8) / 5)); }
       slot = Math.min(slot, 50);
     }
     this.root.style.setProperty('--slot', slot + 'px');
