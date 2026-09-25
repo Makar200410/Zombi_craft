@@ -840,3 +840,7 @@
 }
 /* touch landscape: centre the hotbar in the gap between the joystick zone and the action buttons */
 .o-landscape.zc-touch .zc-bottom { left: calc(71% - 107px); }
+.o-short.zc-touch .zc-palette-wrap { max-width: max(260px, calc(58vw - 230px)); }
+.o-short .zc-rs-hint { margin-top: 4px; padding: 3px 10px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.o-short .zc-rs-head { padding: 4px 6px 4px 12px; }
+.o-short .zc-rs-title { font-size: 18px; }
