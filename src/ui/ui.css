@@ -844,3 +844,15 @@
 .o-short .zc-rs-hint { margin-top: 4px; padding: 3px 10px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .o-short .zc-rs-head { padding: 4px 6px 4px 12px; }
 .o-short .zc-rs-title { font-size: 18px; }
+
+/* Hidden (faded-out) panels must not swallow taps: `.ui-i { pointer-events: auto }` on children would otherwise
+   keep invisible buttons clickable on top of the game and the touch controls. */
+.zc-root .zc-research:not(.open) *,
+.zc-root .zc-sheet:not(.open) *,
+.zc-root .zc-inspector:not(.open) *,
+.zc-root .zc-command:not(.placing) .zc-placebar *,
+.zc-root .zc-command.placing .zc-tabbar *,
+.zc-root .zc-screen.out *,
+.zc-root .zc-toast.out * { pointer-events: none !important; }
+.zc-root .zc-research:not(.open), .zc-root .zc-sheet:not(.open), .zc-root .zc-inspector:not(.open) { visibility: hidden; transition-property: opacity, transform, visibility; transition-delay: 0s, 0s, .3s; }
+.zc-root .zc-research.open, .zc-root .zc-sheet.open, .zc-root .zc-inspector.open { visibility: visible; transition-delay: 0s; }
