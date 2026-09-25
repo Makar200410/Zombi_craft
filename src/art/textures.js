@@ -764,9 +764,9 @@ GEN.hay_side = (p, r) => {
 };
 GEN.hay_top = (p, r) => {
   const n = tileFbm(r, S, [8, 16], 0.5);
-  p.map((x, y) => rampDither(P.straw, 3.2 + (n(x, y) - 0.5) * 2, x, y, 0.8));
-  for (let i = 0; i < 170; i++) {
-    const x = r.int(0, 31), y = r.int(0, 31), L = r.int(3, 6);
+  p.map((x, y) => rampDither(P.straw, 3.0 + (n(x, y) - 0.5) * 2, x, y, 0.3));
+  for (let i = 0; i < 110; i++) {
+    const x = r.int(0, 31), y = r.int(0, 31), L = r.int(4, 8);
     const dir = r.pick([[1, 0], [1, 1], [1, -1], [2, 1], [2, -1]]);
     const v = r.range(2.5, 7.2);
     for (let k = 0; k < L; k++) {
@@ -909,8 +909,8 @@ GEN.water = (p, r) => {
     const w = Math.sin(((y / 8) + 0.3 * Math.sin((x / 16) * Math.PI * 2) + wob(x, y) * 1.2) * Math.PI * 2);
     let a = 188;
     const m = mask(x, y);
-    if (w > 0.9 && m > 0.45) { v += 2.6; a = 205; }
-    else if (w > 0.72 && m > 0.35) v += 1.0;
+    if (w > 0.92 && m > 0.5) { v += 2.0; a = 205; }
+    else if (w > 0.75 && m > 0.4) v += 0.8;
     else if (w < -0.8) v -= 0.8;
     return [...rampDither(P.water, v, x, y, 0.5), a];
   });
@@ -1340,18 +1340,18 @@ GEN.dead_bush = (p, r) => {
     let cx = x, cy = y;
     for (let k = 0; k < len; k++) {
       cx += Math.cos(ang); cy += Math.sin(ang);
-      ang += r.range(-0.25, 0.25);
+      ang += r.range(-0.18, 0.18);
       p.set(Math.round(cx), Math.round(cy), C[clamp(Math.round(1 + (k / len) * 3 - depth * 0.3), 0, 4)]);
       if (depth === 0 && k < len * 0.4) p.set(Math.round(cx) + 1, Math.round(cy), C[1]);
     }
     if (depth < 2) {
       const n = r.int(2, 3);
-      for (let i = 0; i < n; i++) branch(cx, cy, ang + r.range(-0.9, 0.9), len * r.range(0.45, 0.7), depth + 1);
+      for (let i = 0; i < n; i++) branch(cx, cy, ang + r.range(-0.65, 0.65), len * r.range(0.45, 0.65), depth + 1);
     }
   };
-  branch(15.5, 31, -Math.PI / 2 - 0.5, 9, 0);
-  branch(16.5, 31, -Math.PI / 2 + 0.45, 10, 0);
-  branch(16, 31, -Math.PI / 2, 7, 1);
+  branch(15.5, 31, -Math.PI / 2 - 0.55, 13, 0);
+  branch(16.5, 31, -Math.PI / 2 + 0.5, 14, 0);
+  branch(16, 31, -Math.PI / 2 - 0.05, 11, 1);
 };
 GEN.torch = (p, r) => {
   spriteCanvas(p);

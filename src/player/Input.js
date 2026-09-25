@@ -24,7 +24,7 @@ export class Input {
     this._look = { x: 0, y: 0 };
     this.actions = { primary: false, secondary: false, jump: false, sprint: false, crouch: false };
     this._mouse = { primary: false, secondary: false };
-    this.touchState = { primary: false, secondary: false, jump: false, sprint: false, move: new THREE.Vector2() };
+    this.touchState = { primary: false, secondary: false, jump: false, sprint: false, crouch: false, move: new THREE.Vector2() };
     this.wheel = 0; this._wheel = 0;
     this.pan = { x: 0, y: 0 }; this._pan = { x: 0, y: 0 };
     this.twist = 0; this._twist = 0;
@@ -157,7 +157,7 @@ export class Input {
     a.secondary = explore && (this._mouse.secondary || ts.secondary);
     a.jump = k.has('Space') || ts.jump;
     a.sprint = k.has('ShiftLeft') || k.has('ShiftRight') || ts.sprint;
-    a.crouch = k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC');
+    a.crouch = k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC') || !!ts.crouch;
   }
 
   // ---------------------------------------------------------------- keyboard

@@ -54,10 +54,16 @@ async function main() {
         return c;
       };
       const list = [];
-      for (const j of ['idle', 'builder', 'woodcutter', 'farmer', 'miner', 'blacksmith', 'researcher', 'guard', 'mage']) for (const sd of [1, 2]) list.push([j + ' ' + sd, skins.villagerSkin(j, sd)]);
+      for (const j of ['idle', 'builder', 'woodcutter', 'farmer', 'miner', 'blacksmith', 'researcher', 'guard', 'mage']) for (const sd of (j === 'idle' ? [1, 2, 3, 4, 5, 6, 7, 8] : [1, 2])) list.push([j + ' ' + sd, skins.villagerSkin(j, sd)]);
       for (const z of ['walker', 'runner', 'brute', 'spitter', 'exploder', 'necromancer']) list.push([z, skins.zombieSkin(z, 3)]);
       list.push(['player', skins.playerSkin()]);
       for (const [n, sk] of list) labeled(s, scaled(front(sk), 5, 'sky'), n);
+      const fs = section('faces', 'Heads x8 (right, front, left)');
+      for (const [n, sk] of list) {
+        const c = document.createElement('canvas'); c.width = 24; c.height = 8; const x = c.getContext('2d');
+        x.drawImage(sk, 0, 8, 24, 8, 0, 0, 24, 8);
+        labeled(fs, scaled(c, 8, 'sky'), n);
+      }
       const raw = section('skinsraw', 'Raw skins x3');
       for (const [n, sk] of list.slice(0, 6).concat(list.slice(-7))) labeled(raw, scaled(sk, 3, 'chk'), n);
     }
@@ -68,13 +74,13 @@ async function main() {
     const { BLOCKS } = await import('../src/core/blocks.js');
     if (!only || only === 'icons') {
       const s = section('items', 'Item sprites x3');
-      for (const id of Object.keys(ITEMS)) labeled(s, scaled(icons.getItemSprite(id), 3, 'chk'), id);
+      for (const id of Object.keys(ITEMS)) labeled(s, scaled(icons.getItemSprite(id), +(params.get('is') || 3), 'chk'), id);
       const r = section('res', 'Resource icons x2');
-      for (const id of [...RESOURCES, 'research', 'population', 'mana', 'health']) labeled(r, scaled(icons.getResourceIcon(id), 2, 'chk'), id);
+      for (const id of [...RESOURCES, 'research', 'population', 'mana', 'health']) labeled(r, scaled(icons.getResourceIcon(id), +(params.get('rs') || 2), 'chk'), id);
       const b = section('blocks', 'Block icons x2');
       for (const bl of BLOCKS) if (bl && bl.id) labeled(b, scaled(icons.getBlockIcon(bl.id), 2, 'chk'), bl.name);
       const bu = section('buildings', 'Building icons x2');
-      for (const id of ['town_hall', 'house', 'lumber_camp', 'farm', 'mine', 'storehouse', 'laboratory', 'forge', 'mage_tower', 'watchtower', 'barracks', 'wall', 'stone_wall', 'gate']) labeled(bu, scaled(icons.getBuildingIcon(id), 2, 'chk'), id);
+      for (const id of ['town_hall', 'house', 'lumber_camp', 'farm', 'mine', 'storehouse', 'laboratory', 'forge', 'mage_tower', 'watchtower', 'barracks', 'wall', 'stone_wall', 'gate']) labeled(bu, scaled(icons.getBuildingIcon(id), +(params.get('bs') || 2), 'chk'), id);
       const u = icons.iconURL(icons.getItemSprite('bow'));
       const img = new Image(); img.src = u; labeled(bu, img, 'iconURL test');
     }

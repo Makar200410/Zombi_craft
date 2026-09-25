@@ -141,7 +141,7 @@ export class Renderer {
     this.moon.intensity = moonI;
     this.hemi.intensity = amb;
     this.hemi.color.copy(c.horizon).lerp(new THREE.Color(0xffffff), 0.4);
-    this.hemi.groundColor.set(0x4a3c30).multiplyScalar(0.4 + amb * 0.6);
+    this.hemi.groundColor.set(0x6b6656).multiplyScalar(0.45 + amb * 0.55);
     this.scene.fog.color.copy(c.fog);
     // fog closes in a bit at night — spookier waves
     this.scene.fog.near = 30 - night * 12;

@@ -3,7 +3,7 @@
 // Faces are pre-shaded: front = base, sides darker, back darker still, top lighter, bottom darkest.
 // No DOM work at import time; canvases are created on demand and memoized.
 
-import { Px, makeRng, hex, hexes, shift, mix } from './pixel.js';
+import { Px, makeRng, hex, hexes, shift, mix, hash01 } from './pixel.js';
 
 function box(u, v, w, h, d) {
   return {
@@ -79,9 +79,15 @@ function paintHead(c, face, x, y) {
   const fd = frontDist(face, x);
   // extra (hood, skull, lamp...) takes priority
   if (c.headExtra) { const e = c.headExtra(face, x, y, fd); if (e) return e; }
+  const fi = { top: 0, bottom: 1, right: 2, front: 3, left: 4, back: 5 }[face];
   const hairCol = (xx, yy) => {
-    const k = (xx * 3 + yy * 5 + (c.hairSeed || 0)) % 7;
-    return k === 0 ? H[3] : k === 3 ? H[1] : k === 5 && yy > 0 ? H[1] : H[2];
+    // strand-like: mostly column-coherent, with occasional highlights
+    const col = hash01(xx + fi * 8, c.hairSeed || 0, 7);
+    const k = hash01(xx + fi * 8, yy, c.hairSeed || 0);
+    if (col < 0.28) return H[1];
+    if (k > 0.82) return H[3];
+    if (k < 0.1) return H[1];
+    return H[2];
   };
   if (face === 'top') {
     if (style === 'bald') return (x + y) % 5 === 0 ? S[3] : S[2];
@@ -222,8 +228,10 @@ function render(c) {
         let amt = FACE_SHADE[face];
         // subtle cloth/skin texture: deterministic micro-variation
         if (c.grain !== 0 && part !== 'head') amt += (r() - 0.5) * (c.grain ?? 0.07);
-        if (c.post) { const pc = c.post(part, face, x, y, ring, col); if (pc) col = hex(pc); }
-        if (amt) col = shift(col, amt, 0.14);
+        let pc = c.post ? c.post(part, face, x, y, ring, col) : null;
+        if (!pc && c.decay) pc = c.decay(part, face, x, y, ring, col);
+        if (pc) col = hex(pc);
+        if (amt) col = shift(col, amt, 0.07);
         px.set(u + x, v + y, col);
       }
     }
@@ -244,7 +252,12 @@ function plaid(base, dark, line) {
 }
 function chainmail(base) {
   const r = hexes(base);
-  return (ring, y) => ((ring + y) % 2 === 0 ? r[(y % 2) ? 1 : 2] : r[0]);
+  // rows of interlocking rings: bright ring tops, mid body, dark gaps on alternate rows
+  return (ring, y) => {
+    const o = (y >> 1) & 1;
+    if (y % 2 === 0) return (ring + o) % 2 === 0 ? r[2] : r[1];
+    return (ring + o) % 2 === 0 ? r[1] : r[0];
+  };
 }
 
 // village emblem (tiny tower) 4x5 used on the guard tabard
@@ -491,7 +504,17 @@ export function zombieSkin(type = 'walker', seed = 0) {
       hair: [shift(hairBase, -0.4), shift(hairBase, -0.2), hex(hairBase), shift(hairBase, 0.15)],
       hairStyle: r.pick(['short', 'bald', 'side', 'short']), hairSeed: r.int(0, 6),
       eye, eyeWhite: hex('#1a1210'), browCol: shift(t.skin, -0.45),
-      mouth: hex('#2a0e0c'), grain: 0.12,
+      mouth: hex('#2a0e0c'), grain: 0.08,
+    };
+    // rot patches, wounds and exposed bone on bare skin
+    const isSkin = (col) => skin.some((k) => Math.abs(k[0] - col[0]) + Math.abs(k[1] - col[1]) + Math.abs(k[2] - col[2]) < 4);
+    c.decay = (part, face, x, y, ring, col) => {
+      if (part === 'head' || !isSkin(col)) return null;
+      const h = hash01(ring + 3, y, part.length * 3 + (face === 'top' ? 1 : 0), seed + 101);
+      if (h < 0.06) return rot;
+      if (h < 0.08) return wound;
+      if (h < 0.09) return bone;
+      return null;
     };
     // face: sunken glowing eyes, gaping mouth with a tooth, rot spots
     c.face = (x, y) => {
@@ -500,25 +523,25 @@ export function zombieSkin(type = 'walker', seed = 0) {
       if (y === 3 && (x === 2 || x === 5)) return mix(skin[0], eye, 0.25);
       if (y === 6 && x >= 2 && x <= 5) return x === 3 ? hex('#d8cfa6') : hex('#2a0e0c');
       if (y === 7 && (x === 3 || x === 4)) return hex('#4a1a14');
-      if ((x * 5 + y * 3 + seed) % 13 === 0) return rot;
+      if (hash01(x, y, seed, 77) < 0.1) return rot;
       return null;
     };
-    const torn = (x, y, ring, part) => ((x * 7 + y * 13 + ring * 3 + part.length * 5 + seed) % 100) / 100 < t.tear;
+    const torn = (x, y, ring, part) => hash01((ring + 40) >> 1, y >> 1, part.length, seed) < t.tear * 0.7 && hash01(ring + 41, y, part.length, seed) < 0.85;
     const shirt = t.shirt ? hex(t.shirt) : null;
     c.outfit = {
       shirt: (ring, y, face, x) => {
         if (!shirt) return skin[(ring + y) % 5 === 0 ? 1 : 2];
         // ragged hem & holes
-        if (y >= 10 && (ring + y) % 3 === 0) return skin[1];
-        if (torn(x || 0, y, ring, 'body')) return (ring + y) % 4 === 0 ? wound : skin[2];
-        return (ring * 3 + y) % 7 === 0 ? shift(shirt, -0.2) : shirt;
+        if (y >= 10 && hash01(ring, y, seed, 3) < 0.45) return skin[1];
+        if (torn(x || 0, y, ring, 'body')) return hash01(ring, y, 11, seed) < 0.2 ? wound : skin[2];
+        return hash01(ring, y, 5, seed) < 0.15 ? shift(shirt, -0.2) : shirt;
       },
       sleeve: shirt ? r.int(3, 6) : 0,
       pants: hex(t.pants), boots: hex(t.pants), bootH: 0,
       pantsCol: (part, face, x, y, ring) => {
-        if (y >= 9 && (x + y + ring) % 3 === 0) return skin[1];            // shredded trouser legs
+        if (y >= 8 && hash01(ring, y, part.length, seed + 9) < (y - 7) * 0.2) return skin[1];            // shredded trouser legs
         if (torn(x, y, ring, part)) return skin[2];
-        return (x + y * 2) % 6 === 0 ? shift(t.pants, -0.2) : hex(t.pants);
+        return hash01(ring, y, 6, seed) < 0.15 ? shift(t.pants, -0.2) : hex(t.pants);
       },
       custom: null,
     };

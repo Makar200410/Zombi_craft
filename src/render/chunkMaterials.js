@@ -50,6 +50,8 @@ uniform float uTime;`)
   reflectedLight.indirectDiffuse += diffuseColor.rgb * uBlockLightColor * blk * uBlockLightStrength * ao * (1.0 - 0.55 * skyVis);
   reflectedLight.indirectDiffuse += diffuseColor.rgb * 0.018 * ao;   // cave minimum so it's never pitch black
   if (vLight.w > 1.5) totalEmissiveRadiance += diffuseColor.rgb * 0.9;
+  // foliage translucency: light scattering through leaves so canopies don't turn black in their own shadow
+  if (vLight.w > 0.2 && vLight.w < 0.3) reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.4, 0.46, 0.3) * sky * uSkyLight * ao;
 }`);
   };
   mat.customProgramCacheKey = () => 'chunk_' + (sway ? 's' : '') + (water ? 'w' : '');

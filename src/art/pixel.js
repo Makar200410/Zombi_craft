@@ -364,3 +364,11 @@ export function poly(px, pts, c, a = 255) {
       }
   }
 }
+
+/** Deterministic integer hash of up to 4 ints -> 0..1 (for per-pixel variation without RNG state). */
+export function hash01(a, b = 0, c = 0, d = 0) {
+  let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 2246822519) ^ Math.imul(d | 0, 3266489917);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
