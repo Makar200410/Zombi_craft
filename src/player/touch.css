@@ -1,0 +1,99 @@
+/* Touch controls overlay (explore mode joystick / look pad / action buttons). Sits above the canvas, below #ui panels. */
+#touch-controls {
+  position: fixed; inset: 0; z-index: 4; pointer-events: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  font-family: 'Trebuchet MS', system-ui, sans-serif;
+  --tc-safe-l: env(safe-area-inset-left, 0px);
+  --tc-safe-r: env(safe-area-inset-right, 0px);
+  --tc-safe-b: env(safe-area-inset-bottom, 0px);
+  --tc-safe-t: env(safe-area-inset-top, 0px);
+  --tc-u: clamp(52px, 15vmin, 76px);
+}
+#touch-controls.tc-hidden { display: none; }
+#touch-controls .tc-zone { position: absolute; pointer-events: auto; touch-action: none; }
+#touch-controls .tc-move { left: 0; top: 18%; bottom: 0; width: 42%; }
+#touch-controls .tc-look { right: 0; top: 0; bottom: 0; width: 58%; }
+#touch-controls.tc-command .tc-zone,
+#touch-controls.tc-command .tc-btn:not(.tc-mode),
+#touch-controls.tc-command .tc-joy { display: none; }
+
+/* ---- joystick ---- */
+#touch-controls .tc-joy {
+  position: absolute; width: calc(var(--tc-u) * 1.9); height: calc(var(--tc-u) * 1.9);
+  margin: calc(var(--tc-u) * -0.95) 0 0 calc(var(--tc-u) * -0.95);
+  border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(10, 16, 24, .10) 0%, rgba(10, 16, 24, .28) 62%, rgba(255, 255, 255, .10) 64%, rgba(10, 16, 24, .22) 70%);
+  border: 2px solid rgba(255, 255, 255, .22);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), inset 0 0 22px rgba(0, 0, 0, .25);
+  opacity: .42; transition: opacity .25s, transform .25s, border-color .2s;
+  transform: scale(.92);
+}
+#touch-controls .tc-joy.active { opacity: 1; transform: scale(1); }
+#touch-controls .tc-joy.sprint { border-color: rgba(255, 214, 110, .8); box-shadow: 0 0 18px rgba(255, 196, 80, .35), inset 0 0 22px rgba(0, 0, 0, .25); }
+#touch-controls .tc-knob {
+  position: absolute; left: 50%; top: 50%; width: calc(var(--tc-u) * .82); height: calc(var(--tc-u) * .82);
+  margin: calc(var(--tc-u) * -.41) 0 0 calc(var(--tc-u) * -.41); border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, rgba(255, 255, 255, .78), rgba(210, 222, 236, .5) 55%, rgba(150, 165, 185, .45));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .4), inset 0 -3px 6px rgba(0, 0, 0, .18);
+  border: 1px solid rgba(255, 255, 255, .6);
+}
+#touch-controls .tc-joy .tc-arrows { position: absolute; inset: 8%; border-radius: 50%; opacity: .5;
+  background:
+    linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,.55)) 50% 2% / 2px 9% no-repeat,
+    linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.35)) 50% 98% / 2px 9% no-repeat,
+    linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.35)) 2% 50% / 9% 2px no-repeat,
+    linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.35)) 98% 50% / 9% 2px no-repeat; }
+
+/* ---- buttons ---- */
+#touch-controls .tc-btn {
+  position: absolute; pointer-events: auto; touch-action: none;
+  width: var(--tc-u); height: var(--tc-u); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 35%, rgba(60, 70, 86, .55), rgba(14, 18, 26, .55));
+  border: 2px solid rgba(255, 255, 255, .28);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .18);
+  color: rgba(255, 255, 255, .92);
+  transition: transform .08s, background .12s, border-color .12s;
+}
+#touch-controls .tc-btn svg { width: 50%; height: 50%; filter: drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+#touch-controls .tc-btn.down { transform: scale(.9); border-color: rgba(255, 236, 170, .85); background: radial-gradient(circle at 50% 35%, rgba(120, 110, 70, .65), rgba(40, 32, 16, .6)); }
+#touch-controls .tc-attack {
+  width: calc(var(--tc-u) * 1.32); height: calc(var(--tc-u) * 1.32);
+  right: calc(var(--tc-safe-r) + 18px); bottom: calc(var(--tc-safe-b) + 22px);
+  border-color: rgba(255, 190, 150, .45);
+  background: radial-gradient(circle at 50% 35%, rgba(150, 60, 40, .55), rgba(50, 14, 10, .6));
+}
+#touch-controls .tc-attack img { width: 58%; height: 58%; image-rendering: pixelated; filter: drop-shadow(0 2px 2px rgba(0,0,0,.55)); pointer-events: none; }
+#touch-controls .tc-attack .tc-cd { position: absolute; inset: -5px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(rgba(255, 220, 140, .85) var(--p, 0%), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent calc(50% - 4px), #000 calc(50% - 3px));
+  mask: radial-gradient(circle, transparent calc(50% - 4px), #000 calc(50% - 3px)); opacity: .9; }
+#touch-controls .tc-use { right: calc(var(--tc-safe-r) + 18px + var(--tc-u) * 1.42); bottom: calc(var(--tc-safe-b) + 18px); }
+#touch-controls .tc-jump { right: calc(var(--tc-safe-r) + 24px + var(--tc-u) * .2); bottom: calc(var(--tc-safe-b) + 34px + var(--tc-u) * 1.32); }
+#touch-controls .tc-view { width: calc(var(--tc-u) * .66); height: calc(var(--tc-u) * .66);
+  right: calc(var(--tc-safe-r) + 30px + var(--tc-u) * 1.35); bottom: calc(var(--tc-safe-b) + 40px + var(--tc-u) * 1.2); }
+#touch-controls .tc-crouch { width: calc(var(--tc-u) * .66); height: calc(var(--tc-u) * .66);
+  right: calc(var(--tc-safe-r) + 36px + var(--tc-u) * 2.05); bottom: calc(var(--tc-safe-b) + 22px + var(--tc-u) * 1.05); }
+#touch-controls .tc-crouch.on { border-color: rgba(140, 220, 255, .85); background: radial-gradient(circle at 50% 35%, rgba(40, 90, 120, .6), rgba(10, 26, 40, .6)); }
+#touch-controls .tc-mode {
+  width: calc(var(--tc-u) * .82); height: calc(var(--tc-u) * .82);
+  right: calc(var(--tc-safe-r) + 14px); top: calc(var(--tc-safe-t) + 34%);
+  border-radius: 14px; border-color: rgba(190, 230, 120, .55);
+  background: linear-gradient(180deg, rgba(64, 92, 38, .7), rgba(26, 40, 14, .72));
+}
+#touch-controls .tc-mode .tc-lbl { position: absolute; bottom: -17px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font-size: 10px; letter-spacing: .5px; color: rgba(255, 255, 255, .8); text-shadow: 0 1px 2px #000; }
+#touch-controls.tc-command .tc-mode { border-color: rgba(255, 220, 140, .7); background: linear-gradient(180deg, rgba(110, 80, 30, .75), rgba(50, 34, 10, .75)); }
+
+/* portrait phones: tighten the cluster a little */
+@media (orientation: portrait) {
+  #touch-controls { --tc-u: clamp(50px, 15.5vmin, 70px); }
+  #touch-controls .tc-move { top: 38%; width: 48%; }
+  #touch-controls .tc-look { width: 52%; }
+  #touch-controls .tc-attack { bottom: calc(var(--tc-safe-b) + 96px); }
+  #touch-controls .tc-use { bottom: calc(var(--tc-safe-b) + 92px); }
+  #touch-controls .tc-jump { bottom: calc(var(--tc-safe-b) + 108px + var(--tc-u) * 1.32); }
+  #touch-controls .tc-view { bottom: calc(var(--tc-safe-b) + 114px + var(--tc-u) * 1.2); }
+  #touch-controls .tc-crouch { bottom: calc(var(--tc-safe-b) + 96px + var(--tc-u) * 1.05); }
+  #touch-controls .tc-mode { top: calc(var(--tc-safe-t) + 26%); }
+}
