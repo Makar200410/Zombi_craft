@@ -20,10 +20,10 @@ import { UI } from '../ui/UI.js';
 
 function detectQuality() {
   const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-  let q = touch ? 'medium' : 'high';
+  const mem = navigator.deviceMemory || 4, cores = navigator.hardwareConcurrency || 4;
+  // phones start conservative; adaptive quality (see _adaptQuality) steps down further if FPS is poor
+  let q = touch ? (mem >= 6 && cores >= 8 ? 'medium' : 'low') : 'high';
   try { const saved = localStorage.getItem('zc_quality'); if (saved) q = saved; } catch (e) { /* ignore */ }
-  const mem = navigator.deviceMemory || 8;
-  if (touch && mem <= 3) q = 'low';
   return { q, touch };
 }
 
@@ -130,12 +130,19 @@ export class Game {
   _loop(ts) {
     requestAnimationFrame(this._loop);
     this._timer.update(ts);
-    let dt = Math.min(0.05, this._timer.getDelta());
-    this.time += dt;
+    const raw = this._timer.getDelta();
+    // up to 0.1 s per frame, split into two sub-steps when slow, so a 15-20 FPS phone doesn't run the game in slow motion
+    const total = Math.min(0.1, raw);
+    const steps = total > 0.05 ? 2 : 1;
+    const dt = total / steps;
+    this.time += total;
     if (this.running && !this.paused) {
-      this.state.update(dt);
-      for (const s of this.systems) {
-        try { s.update?.(dt); } catch (e) { console.error('system update failed', s.constructor.name, e); }
+      this._adaptQuality(raw);
+      for (let k = 0; k < steps; k++) {
+        this.state.update(dt);
+        for (const s of this.systems) {
+          try { s.update?.(dt); } catch (e) { console.error('system update failed', s.constructor.name, e); }
+        }
       }
       this.world.updateDamageDecay(this.time);
     } else {
@@ -147,6 +154,33 @@ export class Game {
     this.audio?.update?.(dt);
     if (this.chunkRenderer) this.chunkRenderer.update();
     this.renderer.render(dt);
+  }
+
+  /** Measures FPS while playing and lowers graphics quality / render scale when the device can't keep up. */
+  _adaptQuality(raw) {
+    if (this._qLocked) return;
+    const a = this._fps || (this._fps = { t: 0, n: 0, warm: 3 });
+    if (a.warm > 0) { a.warm -= raw; return; }            // ignore start-up hitches
+    a.t += raw; a.n++;
+    if (a.t < 4) return;
+    const fps = a.n / a.t;
+    a.t = 0; a.n = 0;
+    if (fps >= 40) { if (++a.good >= 3) this._qLocked = true; return; }
+    a.good = 0;
+    if (fps < 30) {
+      const order = ['high', 'medium', 'low'];
+      const i = order.indexOf(this.quality);
+      if (i >= 0 && i < 2) {
+        this.renderer.setQuality(order[i + 1]);
+        try { localStorage.setItem('zc_quality', this.quality); } catch (e) { /* ignore */ }
+        this.bus.emit('toast', { text: 'Графика снижена для плавной игры', kind: 'info' });
+        a.warm = 2;
+      } else if (this.renderer.renderScale > 0.6) {
+        this.renderer.renderScale = Math.max(0.6, this.renderer.renderScale - 0.2);
+        this.renderer.resize();
+        a.warm = 2;
+      }
+    }
   }
 
   _menuCamera(dt) {

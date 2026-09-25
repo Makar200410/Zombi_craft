@@ -228,8 +228,10 @@ export class HumanoidModel {
       this.material.emissive.copy(this.flashColor).multiplyScalar(0.6);
       this.material.color.setRGB(1, 0.6, 0.6);
     } else {
-      this.material.color.setScalar(L.s);
-      this.material.emissive.setRGB(1.0, 0.72, 0.42).multiplyScalar(L.b * 0.55);
+      // warm block light tints the texture (multiplies it) instead of an additive emissive that washes skins out to white
+      const b = L.b * 0.45;
+      this.material.color.setRGB(Math.min(1.25, L.s + b), Math.min(1.25, L.s + b * 0.72), Math.min(1.25, L.s + b * 0.42));
+      this.material.emissive.setRGB(0, 0, 0);
     }
   }
   dispose() { this.material.dispose(); }

@@ -60,6 +60,7 @@ export class Renderer {
     for (const k of ['top', 'horizon', 'bottom', 'fog', 'sun', 'cloud']) this._c[k] = new THREE.Color();
 
     this.composer = null;
+    this.renderScale = 1;
     if (q === 'high') this.enableBloom();
     this.resize();
     addEventListener('resize', () => this.resize());
@@ -97,7 +98,9 @@ export class Renderer {
   resize() {
     const q = this.game.quality;
     const dpr = window.devicePixelRatio || 1;
-    const pr = q === 'low' ? Math.min(dpr, 1) : q === 'medium' ? Math.min(dpr, 1.5) : Math.min(dpr, 2);
+    const touch = this.game.isTouch;
+    let pr = q === 'low' ? Math.min(dpr, 1) : q === 'medium' ? Math.min(dpr, touch ? 1.25 : 1.5) : Math.min(dpr, 2);
+    pr *= this.renderScale || 1;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(innerWidth, innerHeight);
     this.camera.aspect = innerWidth / innerHeight;

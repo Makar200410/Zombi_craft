@@ -139,7 +139,7 @@ export class CameraRig {
     const g = this.game, input = g.input, p = g.player;
     if (p.dead) return;
     const touch = g.isTouch;
-    const sens = (touch ? 0.0052 : 0.0022) * this.sensitivity;
+    const sens = (touch ? 0.0085 : 0.0022) * this.sensitivity;
     let dx = input.lookDelta.x, dy = input.lookDelta.y;
     if (touch) { // gentle acceleration curve for thumbs: slow drags precise, flicks fast
       const m = Math.hypot(dx, dy); const acc = 1 + Math.min(1.2, m / 60); dx *= acc; dy *= acc;

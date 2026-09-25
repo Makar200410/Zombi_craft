@@ -144,9 +144,9 @@ export class TouchControls {
     if (d > r * 1.6) { const k = (d - r * 1.6) / d; j.cx += dx * k; j.cy += dy * k; dx = x - j.cx; dy = y - j.cy; this.el.joy.style.left = j.cx + 'px'; this.el.joy.style.top = j.cy + 'px'; }
     const dd = Math.hypot(dx, dy), m = Math.min(1, dd / r);
     const nx = dd > 0 ? dx / dd : 0, ny = dd > 0 ? dy / dd : 0;
-    const dead = 0.12, mag = m < dead ? 0 : (m - dead) / (1 - dead);
+    const dead = 0.08, mag = m < dead ? 0 : Math.min(1, (m - dead) / (0.85 - dead));   // full speed well before the rim
     this.ts.move.set(nx * mag, -ny * mag);
-    this.ts.sprint = dd > r * 1.08 && -ny > 0.55;          // push past the rim forward to sprint
+    this.ts.sprint = m > 0.92 && -ny > 0.5;                 // stick pushed fully forward = sprint
     this.el.joy.classList.toggle('sprint', this.ts.sprint);
     const kx = nx * Math.min(dd, r), ky = ny * Math.min(dd, r);
     this.el.knob.style.transform = `translate(${kx}px, ${ky}px)`;

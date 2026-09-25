@@ -52,7 +52,19 @@ export class ChunkRenderer {
       }
     }
   }
+  /** Hide chunks that are fully inside the fog (big win on phones, especially in the high command camera). */
+  cullDistant() {
+    const cam = this.game.camera.position;
+    const fog = this.game.scene.fog;
+    const far = (fog ? fog.far : 200) + 24;
+    const far2 = far * far;
+    for (const [key, slot] of this.meshes) {
+      const vis = dist(key, cam) < far2;
+      for (const kind of ['solid', 'plants', 'water', 'glass']) if (slot[kind]) slot[kind].visible = vis;
+    }
+  }
   update() {
+    if ((this._cullT = (this._cullT || 0) + 1) % 15 === 0) this.cullDistant();
     const dirty = this.world.dirty;
     if (!dirty.size) return;
     const cam = this.game.camera.position;

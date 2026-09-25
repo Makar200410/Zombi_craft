@@ -193,7 +193,11 @@ export class Viewmodel {
       const { s, b } = st.light;
       this.light.setScalar(s); this.emis.setRGB(1.0, 0.72, 0.42).multiplyScalar(b * 0.5);
       this.itemMat.color.setScalar(Math.min(1.15, 0.28 + s * 0.8 + b * 0.4)).lerp(_warm, Math.min(0.35, b * 0.4));
-      if (this.armMat) { this.armMat.color.copy(this.light); this.armMat.emissive.setRGB(0.22, 0.2, 0.19).multiplyScalar(0.3 + s * 0.7).add(this.emis); }
+      if (this.armMat) {
+        const w = b * 0.4, base = 0.35 + s * 0.65;
+        this.armMat.color.setRGB(Math.min(1.2, base + w), Math.min(1.2, base + w * 0.72), Math.min(1.2, base + w * 0.42));
+        this.armMat.emissive.setRGB(0, 0, 0);
+      }
     }
 
     // --- sway group: bob, idle breathing, look lag
