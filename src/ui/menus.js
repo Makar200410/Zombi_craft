@@ -65,6 +65,7 @@ export class Menus {
     const c = this.card; if (!c) return;
     clear(c);
     c.dataset.page = p;
+    this.root.firstChild?.classList.toggle('subpage', p !== 'home');
     c.classList.remove('page-in'); void c.offsetWidth; c.classList.add('page-in');
     if (p === 'home') this._home(c);
     else if (p === 'new') this._newGame(c);
@@ -168,8 +169,7 @@ export class Menus {
     const show = (id) => { clear(body).append(...pages[id]()); for (const b of tabs.children) b.classList.toggle('sel', b.dataset.id === id); };
     for (const [id, n] of names) tabs.append(h('button.ui-i', { 'data-id': id, onclick: () => { this.click(); show(id); } }, n));
     c.append(tabs, body, h('div.zc-row.end', this.btn('Назад', back, 'ghost')));
-    show(this.game.isTouch ? 'touch' : 'goal');
-    if (this.game.isTouch) show('goal');
+    show('goal');
     function keys(rows) { return h('div.zc-keys', rows.map(([k, v]) => h('div.zc-keyrow', h('kbd', k), h('span', v)))); }
   }
 

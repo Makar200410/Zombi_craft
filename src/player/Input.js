@@ -109,6 +109,7 @@ export class Input {
       if (p && p.catch) p.catch(() => { try { const p2 = cv.requestPointerLock(); p2?.catch?.(() => {}); } catch (e) { /* ignore */ } });
     } catch (e) { try { cv.requestPointerLock(); } catch (e2) { /* ignore */ } }
   }
+  lockPointer() { this.requestLock(); }
   /** Release pointer lock without triggering the pause request (UI panels, command mode). */
   releasePointer() {
     if (document.pointerLockElement) { this._intentionalUnlock = true; document.exitPointerLock?.(); }

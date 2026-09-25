@@ -24,7 +24,8 @@ export class DamageNumbers {
     let n = this.pool.pop();
     if (!n) { n = this.active.shift(); }   // recycle the oldest
     const amt = p.amount ?? 0;
-    const kind = p.kind || 'normal';
+    let kind = p.kind || 'normal';
+    if (p.target && p.target === this.game.player) kind = 'player';
     const heal = kind === 'heal' || amt < 0;
     const v = Math.abs(amt);
     n.x = p.pos.x; n.y = p.pos.y + 0.2; n.z = p.pos.z;
@@ -32,6 +33,20 @@ export class DamageNumbers {
     n.big = kind === 'crit' || v >= 30;
     n.el.className = 'zc-dmg k-' + (heal ? 'heal' : kind) + (n.big ? ' big' : '');
     n.el.textContent = (heal ? '+' : '') + (v >= 10 ? Math.round(v) : (Math.round(v * 10) / 10));
+    n.el.style.display = '';
+    this.active.push(n);
+  }
+  /** Floating label (e.g. '+2' with a resource icon) at a world position. */
+  text(pos, text, iconURL = null, kind = 'gain') {
+    if (!pos || !this.game.running) return;
+    let n = this.pool.pop();
+    if (!n) n = this.active.shift();
+    n.x = pos.x; n.y = (pos.y ?? 0) + 0.3; n.z = pos.z;
+    n.t = 0; n.dx = 0; n.big = false;
+    n.el.className = 'zc-dmg k-' + kind;
+    n.el.textContent = '';
+    if (iconURL) { const i = new Image(); i.src = iconURL; i.className = 'zc-dmg-ico'; n.el.appendChild(i); }
+    n.el.appendChild(document.createTextNode(text));
     n.el.style.display = '';
     this.active.push(n);
   }

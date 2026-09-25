@@ -47,6 +47,12 @@ export class Combat {
   onNewGame() { this.projectiles?.clear(); this.effects?.clear(); }
 
   update(dt) {
+    // keep user.cooldowns (remaining seconds) fresh for HUDs
+    const now = this.game.time;
+    for (const e of this.game.entities.list) {
+      const cu = e._cdUntil; if (!cu) continue;
+      for (const k in cu) { const left = cu[k] - now; e.cooldowns[k] = left > 0 ? left : 0; }
+    }
     this.projectiles.update(dt);
     this.effects.update(dt);
     this.lights.update(dt, this.game.time);
@@ -69,7 +75,8 @@ export class Combat {
     const f = user?.faction;
     return (e) => e !== user && !e.dead && e.kind !== 'projectile' && e.faction !== f && e.hp > 0;
   }
-  cooldownLeft(user, itemId) { const t = user?.cooldowns?.[itemId] || 0; return Math.max(0, t - this.game.time); }
+  /** Seconds until itemId is ready again for user. (user.cooldowns[id] mirrors this as remaining seconds for UIs.) */
+  cooldownLeft(user, itemId) { const t = user?._cdUntil?.[itemId] || 0; return Math.max(0, t - this.game.time); }
   cooldownFrac(user, itemId) {
     const it = ITEMS[itemId]; if (!it) return 0;
     const left = this.cooldownLeft(user, itemId);
@@ -85,8 +92,8 @@ export class Combat {
   }
   _setCooldown(user, itemId, dur) {
     if (!user) return;
-    user.cooldowns = user.cooldowns || {}; user._cdDur = user._cdDur || {};
-    user.cooldowns[itemId] = this.game.time + dur; user._cdDur[itemId] = dur;
+    user.cooldowns = user.cooldowns || {}; user._cdDur = user._cdDur || {}; user._cdUntil = user._cdUntil || {};
+    user._cdUntil[itemId] = this.game.time + dur; user._cdDur[itemId] = dur; user.cooldowns[itemId] = dur;
   }
   _toast(user, text, kind = 'bad') {
     if (user?.kind !== 'player') return;
@@ -240,8 +247,9 @@ export class Combat {
     if (user && target.faction === user.faction) return false;     // no friendly fire
     const dir = opts.dir ? _v.copy(opts.dir) : (user ? _v.subVectors(target.position, user.position).setY(0) : _v.set(0, 0, 0));
     if (dir.lengthSq() > 1e-6) dir.normalize();
-    const kbS = opts.knockback ?? 3;
-    const kb = new THREE.Vector3(dir.x * kbS, Math.min(3, kbS * 0.4), dir.z * kbS);
+    let kb;
+    if (opts.knockback && typeof opts.knockback === 'object') kb = new THREE.Vector3().copy(opts.knockback);
+    else { const kbS = opts.knockback ?? 3; kb = new THREE.Vector3(dir.x * kbS, Math.min(3, kbS * 0.4), dir.z * kbS); }
     const point = opts.point || target.center;
     if (!opts.noFx) this.hitFx(target, point, opts.kind);
     if (opts.slow) target.slowTimer = Math.max(target.slowTimer || 0, opts.slow);
@@ -410,8 +418,9 @@ export class Combat {
   explode(pos, radius, damage, source, opts = {}) {
     const g = this.game, P = g.particles;
     const center = new THREE.Vector3(pos.x, pos.y, pos.z);
-    const faction = source?.faction;
+    const faction = opts.faction ?? source?.faction;
     const big = !!opts.big || radius >= 5;
+    if (opts.breakBlocks === true) opts = { ...opts, breakBlocks: 'all' };
     // damage entities (never same faction)
     let hits = 0;
     for (const e of g.entities.query(center, radius + 1.5, (e) => e.kind !== 'projectile' && !e.dead && (faction === undefined || e.faction !== faction) && e !== opts.exclude)) {

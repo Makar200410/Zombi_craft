@@ -62,9 +62,22 @@ export class CameraRig {
 
   shake(amount = 0.3) { this.trauma = Math.min(1.2, this.trauma + amount); }
 
-  focusOn(pos, dist) {
-    this._focusTo = new THREE.Vector3(pos.x, pos.y ?? 0, pos.z);
+  /** focusOn(vec3, dist?) or focusOn(x, z, dist?) — glide the command camera to a ground point. */
+  focusOn(a, b, c) {
+    let x, z, dist;
+    if (typeof a === 'number') { x = a; z = b; dist = c; } else { x = a.x; z = a.z; dist = b; }
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+    this._focusTo = new THREE.Vector3(x, 0, z);
+    this.panVel.set(0, 0);
     if (dist) this.cmdDistTarget = THREE.MathUtils.clamp(dist, MIN_DIST, MAX_DIST);
+  }
+  panTo(x, z) { this.focusOn(x, z); }
+
+  serialize() { return { view: this.view, cmd: [this.target.x, this.target.z, this.cmdYaw, this.cmdPitch, this.cmdDistTarget] }; }
+  deserialize(o = {}) {
+    if (o.view) this.view = o.view === 'tp' ? 'tp' : 'fp';
+    if (Array.isArray(o.cmd)) { const [x, z, yw, pt, d] = o.cmd; this.target.set(x, this.target.y, z); this.cmdYaw = yw; this.cmdPitch = pt; this.cmdDist = this.cmdDistTarget = d; }
+    this.trans = null; this.eyeY = null;
   }
 
   toggleView() { this.view = this.view === 'fp' ? 'tp' : 'fp'; this.game.bus.emit('camera:view', { view: this.view }); }

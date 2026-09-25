@@ -35,6 +35,8 @@ export class WaveDirector {
   }
 
   get nextWaveIn() { return this.waveActive ? 0 : Math.max(0, this.game.state.secondsToDusk); }
+  /** Zombies of the current wave still to defeat (alive + not yet spawned). */
+  get remaining() { return this.activeCount + (this.waveActive ? this.queue.length : 0); }
   get maxAlive() { return this.game.quality === 'low' ? 25 : 45; }
   get diff() { return DIFF[this.game.state.difficulty] || DIFF.normal; }
   aliveCount() { let n = 0; for (const z of this.zombies) if (!z.dead) n++; return n; }
@@ -114,7 +116,8 @@ export class WaveDirector {
     this.spawnInterval = duration / Math.max(1, types.length / avgGroup);
     this.groupSize = avgGroup;
     this.spawnT = 1.5;
-    this.flow.recomputeNow();
+    // budgeted recompute (spread over frames) — the first group needs ~1.5 s to rise anyway
+    if (this.flow.version) this.flow._startJob(); else this.flow.recomputeNow();
     game.audio?.play('wave_horn', { volume: 1 });
     game.bus.emit('wave:start', { wave: n, count: types.length, directions: this.spawnDirections });
     game.bus.emit('toast', { text: `Волна ${n}! Нежить наступает`, kind: 'wave' });

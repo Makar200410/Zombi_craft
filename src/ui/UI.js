@@ -1,7 +1,7 @@
 // UI root: DOM overlay (#ui) orchestrating HUD, menus, command-mode panels, research tree, toasts.
 import './ui.css';
 import { GameState } from '../core/state.js';
-import { h, noiseURL, toggle, clamp, BUILDING_TYPES } from './dom.js';
+import { h, noiseURL, toggle, clamp, BUILDING_TYPES, resourceIcon } from './dom.js';
 import { Hud } from './hud.js';
 import { Minimap } from './minimap.js';
 import { Toasts, Banner } from './toasts.js';
@@ -38,12 +38,12 @@ export class UI {
     this.research = new ResearchPanel(this);
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
-    root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.toasts.root, this.banner.root,
+    root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
       this.research.root, this.menus.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {
-      root.addEventListener(ev, (e) => { if (e.target instanceof Element && e.target.closest('.ui-i')) e.stopPropagation(); }, { passive: ev !== 'contextmenu' && ev !== 'wheel' ? true : ev === 'wheel' });
+      root.addEventListener(ev, (e) => { if (e.target instanceof Element && e.target.closest('.ui-i')) e.stopPropagation(); }, { passive: true });
     }
     root.addEventListener('contextmenu', (e) => { if (e.target instanceof Element && e.target.closest('.ui-i')) e.preventDefault(); });
 
@@ -54,15 +54,24 @@ export class UI {
 
   init() {
     const g = this.game, bus = g.bus;
-    bus.on('toast', (p) => this.toast(p?.text, p?.kind, p?.icon));
+    bus.on('toast', (p) => {
+      // the wave banner already announces these
+      if (p?.kind === 'wave' && performance.now() - (this._waveBannerAt || 0) < 1500 && /^Волна/.test(p.text || '')) return;
+      this.toast(p?.text, p?.kind, p?.icon);
+    });
+    bus.on('village:gain', (p) => { if (p?.pos) this.dmg.text(p.pos, p.text || '', p.res ? resourceIcon(p.res) : null, 'gain'); });
     bus.on('mode:changed', ({ mode }) => this.onMode(mode));
     bus.on('ui:pause-request', () => this.requestPause());
     bus.on('game:begin', (p) => this.onBegin(p));
     bus.on('game:paused', ({ paused }) => toggle(this.root, 'st-paused', paused));
     bus.on('wave:start', ({ wave, count } = {}) => {
+      this._waveBannerAt = performance.now();
       this.banner.show('ВОЛНА ' + (wave ?? ''), count ? `Нежить наступает · ${count} врагов` : 'Нежить наступает!', 'wave', 3600);
     });
-    bus.on('wave:end', ({ wave } = {}) => this.banner.show('Волна отбита!', wave ? `Волна ${wave} уничтожена` : '', 'good', 2800));
+    bus.on('wave:end', ({ wave, reward } = {}) => {
+      const r = reward ? Object.entries(reward).filter(([, v]) => v > 0).map(([k, v]) => '+' + v + ' ' + ({ gold: 'золота', crystal: 'кристаллов' }[k] || k)).join(', ') : '';
+      this.banner.show('Волна отбита!', r || (wave ? `Волна ${wave} уничтожена` : ''), 'good', 2800);
+    });
     bus.on('time:dawn', ({ day } = {}) => { if (!g.waves?.activeCount) this.banner.show('День ' + (day ?? g.state.day), 'Солнце встаёт — нежить отступает', 'day', 2600); });
     bus.on('time:dusk', () => { if (g.running) this.toast('Сгущаются сумерки… Готовьтесь к обороне!', 'wave'); });
     bus.on('player:damaged', ({ amount } = {}) => this.onHurt(amount));
@@ -78,6 +87,7 @@ export class UI {
     document.addEventListener('pointerlockchange', () => this.onLockChange());
     addEventListener('resize', () => this.layout());
     addEventListener('orientationchange', () => setTimeout(() => this.layout(), 250));
+    toggle(this.root, 'has-tc', !!document.querySelector('#touch-controls .tc-mode'));
     this.layout();
     this.onMode(g.mode);
   }

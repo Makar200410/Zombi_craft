@@ -8,17 +8,31 @@ import { glowTexture } from '../combat/effects.js';
 
 const RO = 1000;   // render order for viewmodel parts (after everything else, incl. particles)
 
-// Per-grip placement in camera space. pos = grip point; rot = holder Euler (YXZ); s = item scale;
-// grip = sprite coords (0..1) of the hand; tip = sprite coords of the business end (muzzle / staff tip).
-const GRIPS = {
-  blade:  { pos: [0.3, -0.33, -0.56], rot: [0.12, 1.95, -0.2], s: 0.56, grip: [0.2, 0.2], tip: [0.9, 0.9], arm: [0.34, -0.72, 0.5] },
-  tool:   { pos: [0.3, -0.33, -0.56], rot: [0.12, 1.95, -0.2], s: 0.56, grip: [0.18, 0.18], tip: [0.85, 0.85], arm: [0.34, -0.72, 0.5] },
-  staff:  { pos: [0.29, -0.34, -0.58], rot: [0.05, 1.75, -0.08], s: 0.66, grip: [0.3, 0.3], tip: [0.9, 0.9], arm: [0.34, -0.72, 0.5] },
-  gun:    { pos: [0.2, -0.24, -0.46], rot: [0.0, 1.62, 0.0], s: 0.58, grip: [0.35, 0.35], tip: [0.97, 0.97], arm: [0.3, -0.7, 0.55], flat: true },
-  bow:    { pos: [0.2, -0.2, -0.52], rot: [0.0, 1.35, -0.55], s: 0.6, grip: [0.5, 0.5], tip: [0.5, 0.5], arm: [0.34, -0.7, 0.5] },
-  throw:  { pos: [0.3, -0.3, -0.52], rot: [0.1, 2.0, -0.25], s: 0.4, grip: [0.3, 0.3], tip: [0.6, 0.6], arm: [0.34, -0.72, 0.5] },
-  book:   { pos: [0.2, -0.3, -0.5], rot: [-0.95, 0.3, 0.1], s: 0.42, grip: [0.3, 0.5], tip: [0.5, 0.8], arm: [0.3, -0.62, 0.5] },
+// Per-grip placement in camera space (camera looks down -Z, +X right, +Y up).
+//   pos  = where the hand grips the item          tip  = direction the sprite's handle→tip axis points
+//   face = direction the sprite's front face looks s    = item size (sprite width in units)
+//   grip = sprite coords (0..1) of the hand        end  = sprite coords of the business end (muzzle / staff tip)
+//   arm  = direction from the hand back to the shoulder   axis = sprite axis mapped to `tip` (default diagonal)
+export const GRIPS = {
+  blade: { pos: [0.3, -0.3, -0.58], tip: [-0.42, 0.78, -0.62], face: [0.72, 0.12, 0.62], s: 0.6, grip: [0.2, 0.2], end: [0.9, 0.9], arm: [0.3, -0.92, 0.26] },
+  tool:  { pos: [0.3, -0.3, -0.58], tip: [-0.4, 0.8, -0.55], face: [0.72, 0.12, 0.62], s: 0.6, grip: [0.16, 0.16], end: [0.85, 0.85], arm: [0.3, -0.92, 0.26] },
+  staff: { pos: [0.29, -0.31, -0.6], tip: [-0.22, 0.9, -0.45], face: [0.75, 0.1, 0.6], s: 0.72, grip: [0.3, 0.3], end: [0.9, 0.9], arm: [0.3, -0.92, 0.26] },
+  gun:   { pos: [0.21, -0.25, -0.5], tip: [-0.04, 0.03, -1], face: [-1, 0.25, 0], s: 0.66, grip: [0.3, 0.3], end: [0.97, 0.97], arm: [0.25, -0.92, 0.3] },
+  bow:   { pos: [0.22, -0.2, -0.55], tip: [0.28, 1, -0.1], face: [-0.35, 0, 1], s: 0.62, grip: [0.45, 0.45], end: [0.5, 0.5], arm: [0.3, -0.92, 0.26] },
+  throw: { pos: [0.3, -0.29, -0.55], tip: [-0.3, 0.8, -0.5], face: [0.7, 0.1, 0.7], s: 0.42, grip: [0.3, 0.3], end: [0.6, 0.6], arm: [0.3, -0.92, 0.26] },
+  book:  { pos: [0.22, -0.28, -0.5], tip: [-0.1, 0.5, -0.86], face: [0.25, 0.85, 0.47], s: 0.42, grip: [0.3, 0.2], end: [0.5, 0.9], arm: [0.28, -0.9, 0.3], axis: [0, 1, 0] },
 };
+const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
+/** Quaternion that maps sprite axis → tip and sprite +Z → face (orthonormalized). */
+export function gripQuaternion(grip, out = new THREE.Quaternion()) {
+  const a = new THREE.Vector3(...(grip.axis || [1, 1, 0])).normalize();
+  const e3 = new THREE.Vector3(0, 0, 1), e2 = new THREE.Vector3().crossVectors(e3, a);
+  const t1 = new THREE.Vector3(...grip.tip).normalize();
+  const t3 = new THREE.Vector3(...grip.face); t3.addScaledVector(t1, -t3.dot(t1)).normalize();
+  const t2 = new THREE.Vector3().crossVectors(t3, t1);
+  _m1.makeBasis(a, e2, e3); _m2.makeBasis(t1, t2, t3);
+  return out.setFromRotationMatrix(_m2.multiply(_m1.transpose()));
+}
 function gripFor(it) {
   if (!it) return 'blade';
   if (it.id === 'tome_meteor') return 'book';
@@ -33,6 +47,7 @@ const ELEMENT_COLORS = { fire: 0xff8a30, frost: 0x8ad8ff, storm: 0xb0d0ff, life:
 
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const Y = new THREE.Vector3(0, 1, 0);
+const _warm = new THREE.Color(1.1, 0.85, 0.6);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
 export class Viewmodel {
@@ -56,7 +71,7 @@ export class Viewmodel {
     this.holder = new THREE.Group();   // grip point & orientation
     this.anim.add(this.holder);
 
-    this.itemMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true });
+    this.itemMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true });   // baked face shading, lit by world light below
     this.armMat = null;
     this.arm = null;
     this.armPivot = new THREE.Group();
@@ -82,6 +97,7 @@ export class Viewmodel {
     this.placeT = 1;
     this.flashT = 0;
     this.lag = new THREE.Vector2();
+    this.basePos = new THREE.Vector3(0.3, -0.3, -0.58);
     this.charge = 0;
     this.light = new THREE.Color(1, 1, 1);
     this.emis = new THREE.Color(0, 0, 0);
@@ -115,9 +131,9 @@ export class Viewmodel {
     if (this.mesh) { this.holder.remove(this.mesh); this.mesh = null; }
     const it = ITEMS[itemId];
     const grip = this.grip = GRIPS[gripFor(it)];
-    this.holder.position.set(grip.pos[0], grip.pos[1], grip.pos[2]);
-    _e.set(grip.rot[0], grip.rot[1], grip.rot[2], 'YXZ');
-    this.holder.quaternion.setFromEuler(_e);
+    this.basePos.set(grip.pos[0], grip.pos[1], grip.pos[2]);   // anim group pivots at the hand
+    this.holder.position.set(0, 0, 0);
+    gripQuaternion(grip, this.holder.quaternion);
     const m = itemId ? makeItemMesh(itemId) : null;
     if (m) {
       m.material = this.itemMat;
@@ -125,19 +141,10 @@ export class Viewmodel {
       m.renderOrder = RO;
       const S = grip.s;
       m.scale.setScalar(S);
-      if (grip.flat) {
-        // gun: rotate the diagonal sprite so the barrel lies along +X, then holder turns +X forward
-        const inner = new THREE.Group();
-        m.position.set(-grip.grip[0] * S, -grip.grip[1] * S, 0);
-        inner.add(m); inner.rotation.z = -Math.PI / 4;
-        inner.renderOrder = RO;
-        this.mesh = inner;
-      } else {
-        m.position.set(-grip.grip[0] * S, -grip.grip[1] * S, 0);
-        this.mesh = m;
-      }
+      m.position.set(-grip.grip[0] * S, -grip.grip[1] * S, 0);
+      this.mesh = m;
       m.add(this.tipMarker);
-      this.tipMarker.position.set(grip.tip[0], grip.tip[1], 0);
+      this.tipMarker.position.set(grip.end[0], grip.end[1], 0);
       this.holder.add(this.mesh);
     }
     // muzzle flash & tip glow live at the tip
@@ -150,7 +157,7 @@ export class Viewmodel {
     this.tipGlow.scale.setScalar(0.22 * inv);
     this.flash.scale.setScalar(0.5 * inv);
     // arm: from grip towards the shoulder (off-screen bottom right)
-    this.armPivot.position.copy(this.holder.position);
+    this.armPivot.position.set(0, 0, 0);
     _v.set(grip.arm[0], grip.arm[1], grip.arm[2]).normalize();
     this.armPivot.quaternion.setFromUnitVectors(Y, _v);
     this.armPivot.rotateY(0.4);
@@ -185,8 +192,8 @@ export class Viewmodel {
     if (st.light) {
       const { s, b } = st.light;
       this.light.setScalar(s); this.emis.setRGB(1.0, 0.72, 0.42).multiplyScalar(b * 0.5);
-      this.itemMat.color.copy(this.light); this.itemMat.emissive.copy(this.emis);
-      if (this.armMat) { this.armMat.color.copy(this.light); this.armMat.emissive.copy(this.emis); }
+      this.itemMat.color.setScalar(Math.min(1.15, 0.28 + s * 0.8 + b * 0.4)).lerp(_warm, Math.min(0.35, b * 0.4));
+      if (this.armMat) { this.armMat.color.copy(this.light); this.armMat.emissive.setRGB(0.22, 0.2, 0.19).multiplyScalar(0.3 + s * 0.7).add(this.emis); }
     }
 
     // --- sway group: bob, idle breathing, look lag
@@ -202,7 +209,7 @@ export class Viewmodel {
 
     // --- anim group: actions
     const a = this.anim;
-    a.position.set(0, 0, 0); a.rotation.set(0, 0, 0);
+    a.position.copy(this.basePos); a.rotation.set(0, 0, 0);
     // swing (melee / tool one-shot) and mining loop
     let sw = -1;
     if (this.swingT < 1) { this.swingT = Math.min(1, this.swingT + dt / this.swingDur); sw = this.swingT; }

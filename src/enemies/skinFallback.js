@@ -47,7 +47,7 @@ function drawFallback(type, v) {
   fill(32, 48, 16, 16, pal.skin); fill(32, 48, 16, 6, pal.shirt);   // left arm
   fill(0, 16, 16, 16, pal.pants); fill(16, 48, 16, 16, pal.pants);  // legs
   // face (front of head at 8,8 8×8): sunken dark eyes, mouth
-  ctx.fillStyle = '#1a0e0a'; ctx.fillRect(9, 12, 2, 1); ctx.fillRect(13, 12, 2, 1);
+  ctx.fillStyle = '#1a0e0a'; ctx.fillRect(10, 12, 1, 1); ctx.fillRect(13, 12, 1, 1);
   ctx.fillStyle = '#3a1a14'; ctx.fillRect(10, 14, 4, 1);
   // tears/blood on shirt
   for (let i = 0; i < 12; i++) { ctx.fillStyle = rnd() < 0.5 ? '#3b2418' : 'rgb(' + pal.skin.join(',') + ')'; ctx.fillRect(20 + ((rnd() * 8) | 0), 20 + ((rnd() * 12) | 0), 1, 1 + ((rnd() * 2) | 0)); }

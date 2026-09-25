@@ -308,7 +308,9 @@ export function buildingCells(b, S) {
   const out = new Set();
   const add = (x, z) => { x = Math.floor(x); z = Math.floor(z); if (x >= 0 && z >= 0 && x < S && z < S) out.add(z * S + x); };
   try {
-    if (b.bounds && b.bounds.x0 !== undefined) {
+    if (b.w > 0 && b.d > 0 && b.x !== undefined) {
+      for (let z = 0; z < b.d; z++) for (let x = 0; x < b.w; x++) add(b.x + x, b.z + z);
+    } else if (b.bounds && b.bounds.x0 !== undefined) {
       for (let z = b.bounds.z0; z <= b.bounds.z1; z++) for (let x = b.bounds.x0; x <= b.bounds.x1; x++) add(x, z);
     } else if (typeof b.footprint === 'function') {
       for (const c of b.footprint()) add(c.x, c.z);

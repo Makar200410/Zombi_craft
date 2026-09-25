@@ -1,13 +1,12 @@
 // Visual/sound helpers for the undead + a tiny projectile system for enemy spells
 // (necromancer shadow bolts, and acid when the combat module doesn't provide fireProjectile).
 import * as THREE from 'three';
-import { B, BLOCKS } from '../core/blocks.js';
+import { B } from '../core/blocks.js';
 
 export function groundBurst(game, x, y, z, { purple = false, big = false } = {}) {
   const p = game.particles; if (!p) return;
-  const w = game.world;
-  const under = w ? w.getBlock(Math.floor(x), Math.floor(y) - 1, Math.floor(z)) : B.DIRT;
-  const cols = BLOCKS[under] && under !== B.AIR ? p.tileColors(BLOCKS[under].tiles.top) : [0x5a4a3a];
+  // fixed earthy palette (avoids atlas readbacks): dirt, gravel, blight stone
+  const cols = [0x4a3826, 0x5e4630, 0x6b6660, 0x3a3634, 0x2e2a28];
   const n = big ? 2 : 1;
   p.emit({ pos: { x, y: y + 0.1, z }, box: 0.5 * n, count: 26 * n, colors: cols, speed: 3.5, spread: 0.8, dir: { x: 0, y: 5, z: 0 }, gravity: 16, life: 1.0, size: 0.16, drag: 0.7 });
   p.emit({ pos: { x, y: y + 0.2, z }, box: 0.6 * n, count: 14 * n, colors: [0x2a2622, 0x3b3530, 0x4a4238], speed: 1.2, dir: { x: 0, y: 1.2, z: 0 }, gravity: -0.6, life: 1.6, size: 0.45, alpha: 0.55, drag: 0.5 });

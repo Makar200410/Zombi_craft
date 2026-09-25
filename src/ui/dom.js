@@ -15,7 +15,7 @@ export function h(sel, attrs, ...kids) {
   const [tag, ...cls] = sel.split('.');
   const el = document.createElement(tag || 'div');
   if (cls.length) el.className = cls.join(' ');
-  if (attrs && (typeof attrs !== 'object' || attrs instanceof Node || Array.isArray(attrs))) { kids.unshift(attrs); attrs = null; }
+  if (attrs != null && attrs !== false && (typeof attrs !== 'object' || attrs instanceof Node || Array.isArray(attrs))) { kids.unshift(attrs); attrs = null; }
   if (attrs) for (const k in attrs) {
     const v = attrs[k];
     if (v == null || v === false) continue;

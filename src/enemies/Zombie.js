@@ -128,9 +128,10 @@ export class Zombie extends Entity {
     const px = this.model.px, head = this.model.head;
     const mat = eyeMat(this.T.eye);
     this.eyes = [];
-    for (const sx of [-2, 2]) {
+    // matches the 1-px eyes of src/art/skins.js zombie faces (row 4, columns 2 and 5)
+    for (const sx of [-1.5, 1.5]) {
       const e = new THREE.Mesh(eyeGeo, mat);
-      e.scale.set(2 * px, 1.05 * px, 0.4 * px);
+      e.scale.set(1.25 * px, 1.1 * px, 0.4 * px);
       e.position.set(sx * px, 3.5 * px, 4.05 * px);
       head.add(e);
       this.eyes.push(e);
@@ -255,7 +256,7 @@ export class Zombie extends Entity {
     // faint corpse-light so silhouettes stay readable in the dark
     if (night > 0 && this.model.flashT <= 0) {
       const em = this.model.material.emissive;
-      em.r += 0.1 * night; em.g += 0.16 * night; em.b += 0.12 * night;
+      em.r += 0.06 * night; em.g += 0.1 * night; em.b += 0.08 * night;
     }
     if (this.eyeGlow) {
       // keep eyes readable from the top-down command camera
@@ -326,7 +327,7 @@ export class Zombie extends Entity {
     const dist = t.length();
     if (dist < 0.1) return true;
     t.divideScalar(dist);
-    const hit = w.raycast(o, t, dist);
+    const hit = w.raycast(o, t, dist, { solidOnly: true });
     return !hit;
   }
 
@@ -343,6 +344,8 @@ export class Zombie extends Entity {
       const dx = tgt.position.x - pos.x, dz = tgt.position.z - pos.z, dy = tgt.position.y - pos.y;
       const d = Math.hypot(dx, dz);
       face = Math.atan2(dx, dz);
+      this.losT -= dt;
+      if (this.losT <= 0) { this.losT = 0.8; this.losOk = this._los(tgt); }
       if (this.type === 'spitter' && d < T.keep[1] + 2) {
         // keep distance: back off when too close, hold when in range
         if (d < T.keep[0]) { gx = pos.x - dx; gz = pos.z - dz; speed *= 0.8; }
@@ -352,8 +355,6 @@ export class Zombie extends Entity {
         speed = 0;       // casts from range
       } else {
         const direct = d < 2.5 || (this.losOk && Math.abs(dy) < 1.5 && d < 14);
-        this.losT -= dt;
-        if (this.losT <= 0) { this.losT = 0.8; this.losOk = this._los(tgt); }
         if (direct) { gx = tgt.position.x; gz = tgt.position.z; this.path = null; }
         else {
           this.pathT -= dt;
@@ -580,10 +581,18 @@ export class Zombie extends Entity {
       if (this.attackT <= 0) {
         this.attackT = T.cd;
         this.model.play('attack');
-        const kb = _v.set(tgt.position.x - pos.x, 0, tgt.position.z - pos.z).normalize().multiplyScalar(T.knock);
-        kb.y = T.knock > 5 ? 5 : 0;
-        tgt.damage(T.dmg * this.dmgMul, this, { kind: 'phys', knockback: kb.clone() });
-        game.audio?.play('hit_flesh', { pos: tgt.position, pitch: this.type === 'brute' ? 0.6 : 1 });
+        const dir = _v.set(tgt.position.x - pos.x, 0, tgt.position.z - pos.z).normalize();
+        const combat = game.combat;
+        let done = false;
+        if (combat && typeof combat.meleeHit === 'function') {
+          try { combat.meleeHit(this, tgt, T.dmg * this.dmgMul, { kind: 'phys', knockback: T.knock, dir: dir.clone(), point: tgt.center.clone() }); done = true; } catch (e) { done = false; }
+        }
+        if (!done) {
+          const kb = dir.clone().multiplyScalar(T.knock);
+          kb.y = T.knock > 5 ? 5 : 0;
+          tgt.damage(T.dmg * this.dmgMul, this, { kind: 'phys', knockback: kb });
+          game.audio?.play('hit_flesh', { pos: tgt.position, pitch: this.type === 'brute' ? 0.6 : 1 });
+        }
         if (this.type === 'brute') game.particles?.emit({ pos: tgt.position, box: 0.4, count: 10, colors: [0x6a5a4a, 0x8a7a6a], speed: 3, dir: { x: 0, y: 2, z: 0 }, life: 0.6, size: 0.18 });
       }
       return;
@@ -684,7 +693,7 @@ export class Zombie extends Entity {
     const combat = game.combat;
     let done = false;
     if (combat && typeof combat.fireProjectile === 'function') {
-      try { const r = combat.fireProjectile('acid', this, from, aim, { damage: dmg, faction: 'undead' }); done = r !== false; } catch (e) { done = false; }
+      try { done = !!combat.fireProjectile('acid', this, from, aim, { damage: dmg, faction: 'undead' }); } catch (e) { done = false; }
     }
     if (!done) game.waves?.projectiles?.fire('acid', this, from, aim, { damage: dmg });
     game.particles?.emit({ pos: from, count: 6, colors: [0x66ff33, 0xaaff55], additive: true, speed: 1.5, life: 0.4, size: 0.18 });
@@ -838,6 +847,7 @@ function breakable(w, x, y, z) {
 
 export function buildingCenter(b) {
   if (b.center) return b.center.isVector3 ? b.center : new THREE.Vector3(b.center.x, b.center.y, b.center.z);
+  if (b.w && b.d) return new THREE.Vector3(b.x + b.w / 2, (b.y ?? 20) + Math.min(3, (b.height || 3) / 2), b.z + b.d / 2);
   let w = 1, d = 1;
   const size = b.size || b.type?.size;
   if (Array.isArray(size)) { w = size[0]; d = size[1]; } else if (typeof size === 'number') w = d = size;

@@ -80,6 +80,8 @@ export class Player extends Entity {
   }
 
   // ------------------------------------------------------------------ API
+  /** Seconds until respawn while dead (for the death screen). */
+  get respawnIn() { return this.dead ? Math.max(0, RESPAWN_TIME - this.deadT) : 0; }
   get item() { return ITEMS[this.hotbar[this.selected]] || null; }
   get itemId() { return this.hotbar[this.selected] || null; }
 
@@ -172,7 +174,7 @@ export class Player extends Entity {
     this.hotbar = [...DEFAULT_HOTBAR];
     this.selected = 0;
     this.buildBlock = B.PLANKS;
-    this.cooldowns = {};
+    this.cooldowns = {}; this._cdUntil = {};
     this.revive();
     const sp = this.findSpawn();
     this.position.copy(sp);

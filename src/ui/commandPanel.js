@@ -9,7 +9,10 @@ const CATS = [['all', 'Все'], ['economy', 'Экономика'], ['military',
 const ZOMBIE_NAMES = { walker: 'Ходок', runner: 'Бегун', brute: 'Громила', spitter: 'Плевальщик', exploder: 'Взрывун', necromancer: 'Некромант' };
 const CONTINUOUS = new Set(['wall', 'stone_wall']);   // keep placing after each placement
 
-function jobSlotsOf(b) { return b?.jobSlots || BUILDING_TYPES[b?.type]?.jobs || {}; }
+function jobSlotsOf(b) {
+  if (b?.jobSlots && typeof b.jobSlots === 'object') return b.jobSlots;
+  return b?.def?.jobs || BUILDING_TYPES[b?.type]?.jobs || {};
+}
 function workersOf(b, job) {
   const w = (b?.workers || []).filter(v => v && !v.dead);
   return job ? w.filter(v => (v.job || 'idle') === job) : w;
@@ -62,11 +65,13 @@ export class CommandPanel {
     this.placeName = h('b');
     this.placeCost = h('div');
     this.placeHint = h('div.zc-place-hint');
+    this.placeWarn = h('div.zc-place-warn');
+    this.rotBtn = h('button.zc-iconbtn.big.ui-i', { title: 'Повернуть (R)', onclick: () => { this.game.village?.rotatePlacement?.(); } }, glyphImg('rotate'));
+    this.okBtn = h('button.zc-iconbtn.big.ok.ui-i', { title: 'Поставить здесь', onclick: () => { this.game.village?.confirmPlacement?.(); } }, glyphImg('check'));
     this.placebar = h('div.zc-placebar.zc-panel.ui-i',
       h('div.zc-place-info', this.placeIcon, h('div', this.placeName, this.placeCost)),
-      this.placeHint,
-      h('div.zc-place-btns',
-        h('button.zc-iconbtn.big.ui-i', { title: 'Повернуть (R)', onclick: () => { this.ui.click(); this.game.village?.rotatePlacement?.(); } }, glyphImg('rotate')),
+      h('div.zc-place-mid', this.placeHint, this.placeWarn),
+      h('div.zc-place-btns', this.okBtn, this.rotBtn,
         h('button.zc-iconbtn.big.danger.ui-i', { title: 'Отмена (Esc)', onclick: () => this.cancelPlacement() }, glyphImg('close'))));
 
     // inspector
@@ -79,9 +84,7 @@ export class CommandPanel {
     bus.on('select:building', ({ building }) => this.select('building', building));
     bus.on('select:entity', ({ entity }) => this.select('entity', entity));
     bus.on('select:clear', () => this.deselect());
-    bus.on('building:placed', ({ building }) => this.onPlaced(building));
-    bus.on('placement:end', () => this.endPlacement());
-    bus.on('placement:cancel', () => this.endPlacement());
+    bus.on('placement:changed', (p) => this.onPlacement(p || {}));
     bus.on('research:done', () => { if (this.tab === 'build') this.renderBuild(); });
     bus.on('building:completed', () => { if (this.tab === 'build') this.renderBuild(); });
     bus.on('mode:changed', ({ mode }) => { if (mode !== 'command') { this.closeTab(true); this.cancelPlacement(true); } });
@@ -129,23 +132,24 @@ export class CommandPanel {
     const t = BUILDING_TYPES[id]; const st = this.game.state, v = this.game.village;
     const count = (v?.buildings || []).filter(b => b.type === id && b.state !== 'destroyed').length;
     const lockedBy = t?.research && !st.researchDone.has(t.research) ? t.research : null;
-    const maxed = t?.maxCount != null && count >= t.maxCount;
+    const limited = t?.maxCount != null && isFinite(t.maxCount);
+    const maxed = limited && count >= t.maxCount;
     const afford = st.canAfford(t?.cost || {});
-    return { t, count, lockedBy, maxed, afford };
+    return { t, count, lockedBy, maxed, afford, limited };
   }
   renderBuild() {
     for (const b of this.catBar.children) toggle(b, 'sel', b.dataset.cat === this.cat);
     clear(this.cards);
-    const ids = BUILDING_ORDER.filter(id => BUILDING_TYPES[id] && id !== 'town_hall' && (this.cat === 'all' || BUILDING_TYPES[id].category === this.cat));
+    const ids = BUILDING_ORDER.filter(id => BUILDING_TYPES[id] && !BUILDING_TYPES[id].auto && id !== 'town_hall' && (this.cat === 'all' || BUILDING_TYPES[id].category === this.cat));
     if (!ids.length) { this.cards.append(h('div.zc-empty', Object.keys(BUILDING_TYPES).length ? 'Нет зданий в этой категории' : 'Список зданий загружается…')); return; }
     for (const id of ids) {
-      const { t, count, lockedBy, maxed, afford } = this.buildable(id);
+      const { t, count, lockedBy, maxed, afford, limited } = this.buildable(id);
       const card = h('button.zc-bcard.ui-i' + (lockedBy ? '.locked' : '') + (!afford ? '.poor' : '') + (maxed ? '.maxed' : ''), {
         'data-cat': t.category || 'economy', title: t.desc || '', onclick: () => this.chooseBuilding(id),
       },
       h('div.zc-bcard-img', img(buildingIcon(id))),
       h('div.zc-bcard-name', t.name || id),
-      count ? h('div.zc-bcard-count', t.maxCount != null ? `${count}/${t.maxCount}` : '×' + count) : null,
+      (count || limited) ? h('div.zc-bcard-count', limited ? `${count}/${t.maxCount}` : '×' + count) : null,
       lockedBy ? h('div.zc-bcard-lock', img(glyph('lock')), TECHS[lockedBy]?.name || lockedBy) : costRow(this.game.state, t.cost),
       t.popBonus ? h('div.zc-bcard-tag', '+' + t.popBonus + ' жит.') : null);
       this.cards.append(card);
@@ -153,6 +157,8 @@ export class CommandPanel {
   }
   chooseBuilding(id) {
     const { t, lockedBy, maxed, afford } = this.buildable(id);
+    const chk = this.game.village?.canPlace?.(id);
+    if (chk && !chk.ok && chk.hard) { this.ui.toast(chk.reason, 'bad'); this.game.audio?.play?.('mana_empty'); return; }
     if (lockedBy) { this.ui.toast('Нужно исследование: ' + (TECHS[lockedBy]?.name || lockedBy), 'bad'); this.game.audio?.play?.('mana_empty'); return; }
     if (maxed) { this.ui.toast('Достигнут лимит: ' + t.name, 'bad'); return; }
     if (!afford) { this.ui.toast('Не хватает ресурсов', 'bad'); this.game.audio?.play?.('mana_empty'); return; }
@@ -170,20 +176,22 @@ export class CommandPanel {
     this.placeIcon.src = buildingIcon(id);
     this.placeName.textContent = t?.name || id;
     clear(this.placeCost).append(costRow(this.game.state, t?.cost || {}));
-    this.placeHint.textContent = this.game.isTouch ? 'Коснитесь земли, чтобы поставить' : 'ЛКМ — поставить · R — повернуть · Esc — отмена';
+    toggle(this.rotBtn, 'hidden', !!t?.line);
     toggle(this.root, 'placing', true);
+    this.onPlacement({ active: true, typeId: id, valid: true, line: !!t?.line, lineStarted: false });
   }
-  onPlaced(b) {
-    if (!this.placing) return;
-    if (b && CONTINUOUS.has(b.type) && this.game.state.canAfford(BUILDING_TYPES[b.type]?.cost || {})) return;
-    // if the village keeps an explicit placement state, trust it (checked in update)
-    if (this._villagePlacementKey()) return;
-    this.endPlacement();
-  }
-  _villagePlacementKey() {
-    const v = this.game.village; if (!v) return null;
-    for (const k of ['placement', 'placing', '_placement']) if (k in v) return k;
-    return null;
+  /** Mirrors the village placement state ('placement:changed'). */
+  onPlacement(p) {
+    if (!p.active) { if (this.placing) this.endPlacement(); return; }
+    if (p.typeId && p.typeId !== this.placing) { this.startPlacement(p.typeId); return; }
+    const touch = this.game.isTouch;
+    let hint;
+    if (p.line) hint = p.lineStarted ? (touch ? 'Коснитесь конца линии' : 'Щёлкните конец линии · Esc — готово') : (touch ? 'Коснитесь начала линии' : 'Щёлкните начало линии');
+    else hint = touch ? 'Коснитесь места, затем ✓ или ещё раз — поставить' : 'ЛКМ — поставить · R — поворот · Esc — отмена';
+    setText(this.placeHint, hint);
+    setText(this.placeWarn, p.valid === false && p.reason ? p.reason : '');
+    toggle(this.placebar, 'invalid', p.valid === false);
+    toggle(this.okBtn, 'hidden', !!(p.line && !p.lineStarted && !touch));
   }
   cancelPlacement(silent) {
     if (!this.placing) return;
@@ -206,15 +214,18 @@ export class CommandPanel {
   capacity() {
     const cap = {};
     for (const b of this.game.village?.buildings || []) {
-      if (b.state !== 'complete') continue;
+      if (b.state === 'destroyed') continue;
       const s = jobSlotsOf(b);
       for (const j in s) cap[j] = (cap[j] || 0) + (s[j] || 0);
     }
+    const bc = this.game.village?.builderCap;
+    if (typeof bc === 'number') cap.builder = bc;
     return cap;
   }
   freeBuildingFor(job) {
-    for (const b of this.game.village?.buildings || []) {
-      if (b.state !== 'complete') continue;
+    const list = [...(this.game.village?.buildings || [])].sort((a, b) => (b.state === 'complete') - (a.state === 'complete'));
+    for (const b of list) {
+      if (b.state === 'destroyed') continue;
       const slots = jobSlotsOf(b)[job] || 0;
       if (slots > workersOf(b, job).length) return b;
     }
@@ -224,7 +235,7 @@ export class CommandPanel {
     const opts = [{ label: 'Без дела', b: null, job: 'idle' }];
     const seen = {};
     for (const b of this.game.village?.buildings || []) {
-      if (b.state !== 'complete') continue;
+      if (b.state === 'destroyed') continue;
       const s = jobSlotsOf(b), tname = BUILDING_TYPES[b.type]?.name || b.type;
       seen[b.type] = (seen[b.type] || 0) + 1;
       for (const job in s) {
@@ -265,6 +276,7 @@ export class CommandPanel {
     if (job === 'builder' && vil?.setBuilderCount) {
       const n = this.jobCounts().builder || 0;
       if (!(this.jobCounts().idle > 0)) { this.ui.toast('Нет свободных жителей', 'bad'); return; }
+      if (typeof vil.builderCap === 'number' && n >= vil.builderCap) { this.ui.toast('Предел строителей — улучшите ратушу', 'bad'); return; }
       vil.setBuilderCount(n + 1); this.ui.click(); this._peopleDirty = true; return;
     }
     const idle = this.villagers().find(v => (v.job || 'idle') === 'idle');
@@ -318,8 +330,8 @@ export class CommandPanel {
           h('div.zc-job-name', JOB_PLURAL[job], h('small', builder ? 'Строят и чинят здания' : `Мест: ${cp}`)),
           h('div.zc-job-ctl',
             h('button.zc-iconbtn.small.ui-i', { title: 'Убрать', disabled: c <= 0, onclick: () => this.jobMinus(job) }, glyphImg('minus')),
-            h('div.zc-job-n', h('b', c), builder ? '' : ' / ' + cp),
-            h('button.zc-iconbtn.small.ui-i', { title: 'Добавить', disabled: !(counts.idle > 0) || (!builder && c >= cp), onclick: () => this.jobPlus(job) }, glyphImg('plus')))));
+            h('div.zc-job-n', h('b', c), cp ? ' / ' + cp : ''),
+            h('button.zc-iconbtn.small.ui-i', { title: 'Добавить', disabled: !(counts.idle > 0) || (cp > 0 && c >= cp), onclick: () => this.jobPlus(job) }, glyphImg('plus')))));
       }
       this.peopleBody.append(top, list);
     } else {
@@ -349,10 +361,9 @@ export class CommandPanel {
       this.jobSelect(v));
   }
   hungerFrac(v) {
-    const x = v.hunger ?? 0;
-    // hunger may be 0..1 or 0..100; UI shows satiety (full bar = well fed)
-    const f = x > 1.001 ? x / 100 : x;
-    return v.satiety != null ? v.satiety : 1 - clamp(f, 0, 1);
+    // Villager.hunger: 100 = well fed (0..100). UI shows satiety (full bar = well fed).
+    const x = v.satiety ?? v.hunger ?? 100;
+    return clamp(x > 1.001 ? x / 100 : x, 0, 1);
   }
   focusEntity(e) {
     this.ui.click();
@@ -365,6 +376,7 @@ export class CommandPanel {
   select(kind, ref) {
     if (!ref) return this.deselect();
     if (this.game.mode !== 'command' && kind === 'building') return;
+    if (this.game.mode !== 'command' && !this.game.isTouch) return;   // desktop explore: pointer is locked
     this.selected = { kind, ref };
     this.renderInspector();
     toggle(this.inspector, 'open', true);
@@ -404,8 +416,20 @@ export class CommandPanel {
     const jobsBox = this._ins.jobs = h('div.zc-ins-jobs');
     el.append(jobsBox);
     this._renderBuildingJobs(b);
-    const btns = h('div.zc-row');
+    const btns = h('div.zc-row.zc-ins-actions');
+    const vil = this.game.village;
     if (b.type === 'laboratory') btns.append(h('button.zc-btn.primary.small.ui-i', { onclick: () => { this.ui.click(); this.ui.openResearch(); } }, img(glyph('flask'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Исследования')));
+    if (b.type === 'town_hall' && vil?.upgradeTownHall) {
+      const cost = vil.upgradeCost?.(b);
+      this._ins.lvl = h('div.zc-ins-lvl');
+      el.insertBefore(this._ins.lvl, prog.el);
+      if (cost && (b.level || 1) < 5) btns.append(h('button.zc-btn.primary.small.ui-i', { onclick: () => { this.ui.click(); if (vil.upgradeTownHall()) this.renderInspector(); } },
+        img(glyph('star'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Улучшить', costRow(this.game.state, cost))));
+    }
+    if (b.type !== 'town_hall' && vil?.demolish) {
+      btns.append(h('button.zc-btn.danger.small.ui-i', { onclick: () => this.ui.confirm('Снести «' + (t.name || b.type) + '»?', b.state === 'complete' ? 'Вернётся половина ресурсов.' : 'Ресурсы вернутся полностью.', 'Снести', () => { if (vil.demolish(b)) this.deselect(true); }) },
+        img(glyph('close'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Снести')));
+    }
     if (btns.children.length) el.append(btns);
     this._updateBuilding(b);
   }
@@ -423,18 +447,19 @@ export class CommandPanel {
       h('div.zc-job-ctl',
         h('button.zc-iconbtn.small.ui-i', { title: 'Снять', disabled: !ws.length, onclick: () => { const w = ws[ws.length - 1]; if (w) this.assign(w, null, 'idle'); } }, glyphImg('minus')),
         h('div.zc-job-n', h('b', ws.length), ' / ' + slots[job]),
-        h('button.zc-iconbtn.small.ui-i', { title: 'Назначить', disabled: ws.length >= slots[job] || b.state !== 'complete', onclick: () => {
+        h('button.zc-iconbtn.small.ui-i', { title: 'Назначить', disabled: ws.length >= slots[job] || b.state === 'destroyed', onclick: () => {
           const idle = this.villagers().find(v => (v.job || 'idle') === 'idle');
           if (!idle) { this.ui.toast('Нет свободных жителей', 'bad'); return; }
           this.assign(idle, b, job);
         } }, glyphImg('plus'))));
       box.append(row);
     }
-    if (b.state !== 'complete') box.append(h('div.zc-note', 'Рабочие появятся, когда стройка завершится.'));
+    if (b.state !== 'complete') box.append(h('div.zc-note', 'Рабочие начнут трудиться, когда стройка завершится.'));
   }
   _jobsSig(b) { return b.state + '|' + workersOf(b).map(w => w.id + ':' + w.job).join(','); }
   _updateBuilding(b) {
     const I = this._ins;
+    if (I.lvl) setText(I.lvl, 'Уровень ' + (b.level || 1) + ' · Население +' + (b.popBonus ?? 0) + ' · Строителей до ' + (this.game.village?.builderCap ?? '—'));
     setText(I.badge, STATE_LABELS[b.state] || b.state);
     I.badge.className = 'zc-badge s-' + b.state;
     const building = b.state === 'planned' || b.state === 'constructing';
@@ -457,6 +482,8 @@ export class CommandPanel {
   _updateVillager(v) {
     const I = this._ins;
     if (v.dead) { this.deselect(); return; }
+    const p = this.game.player;
+    if (this.game.mode !== 'command' && p && v.position.distanceTo(p.position) > 12) { this.deselect(); return; }
     setText(I.task, v.task || '…');
     I.hp.set(v.hp, v.maxHp);
     const f = this.hungerFrac(v); I.hunger.set(f, 1, Math.round(f * 100) + '%');
@@ -477,11 +504,7 @@ export class CommandPanel {
   // ------------------------------------------------------------------ per-frame
   update(dt) {
     const g = this.game;
-    // placement state polling
-    if (this.placing) {
-      const key = this._villagePlacementKey();
-      if (key && !g.village[key]) this.endPlacement();
-    }
+    if (this.placing && g.village && 'placing' in g.village && !g.village.placing) this.endPlacement();
     // wave tab availability
     this._t += dt;
     if (this._t > 0.3) {

@@ -151,19 +151,14 @@ export class Hud {
   onSlot(i) {
     const p = this.game.player; if (!p) return;
     const id = p.hotbar?.[i];
-    this.game.audio?.play?.('ui_click');
-    if (id && !this.isItemUnlocked(id)) {
-      const r = ITEMS[id]?.research;
-      this.ui.toast('Нужно исследование: ' + (TECHS[r]?.name || r), 'bad');
-    }
     if (p.selectSlot) p.selectSlot(i);
-    else { p.selected = i; this.game.bus.emit('hotbar:select', { index: i, itemId: id }); }
+    else { p.selected = i; this.game.bus.emit('hotbar:select', { index: i, itemId: id }); this.game.audio?.play?.('ui_click'); }
   }
   pickBlock(id) {
     const p = this.game.player; if (!p) return;
-    p.buildBlock = id;
-    this.game.audio?.play?.('ui_click');
-    this.game.bus.emit('build:block', { id });
+    if (p.setBuildBlock) p.setBuildBlock(id);
+    else { p.buildBlock = id; this.game.bus.emit('build:block', { id }); }
+    this.game.audio?.play?.('ui_click', { volume: 0.5 });
     this._lastBuild = -1;
   }
   flashUnlocked(id) {
@@ -291,10 +286,9 @@ export class Hud {
       toggle(s.el, 'sel', p.selected === i);
       const it = ITEMS[id];
       toggle(s.el, 'nomana', !!(it && it.manaCost && (p.mana ?? 0) < it.manaCost));
-      // optional cooldown readout
-      const cd = p.cooldowns?.[id] ?? (p.selected === i ? p.cooldown : 0);
-      const maxCd = it?.cooldown || 1;
-      const frac = cd > 0 && maxCd >= 0.8 ? clamp(cd / maxCd, 0, 1) : 0;
+      // cooldown sweep (selected slot; only for slow weapons so fast swings don't flicker)
+      let frac = 0;
+      if (p.selected === i && it && it.cooldown >= 0.8) { try { frac = clamp(p.cooldownFrac?.() || 0, 0, 1); } catch (e) { frac = 0; } }
       setStyle(s.cd, 'transform', `scaleY(${frac.toFixed(2)})`);
     }
     // selected item name fade

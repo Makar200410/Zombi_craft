@@ -301,6 +301,15 @@ export class Villager extends Entity {
   }
   puff() { this.game.particles?.emit({ pos: this.center, box: 0.4, count: 10, colors: [0xdddddd, 0xbbbbbb], speed: 1.2, gravity: -1, life: 0.6, size: 0.25, alpha: 0.7 }); }
 
+  descend() {
+    if (!this.onPost) return;
+    this.onPost = false;
+    const b = this._postBuilding;
+    this._postBuilding = null;
+    this._climbing = false;
+    if (b) { this.puff(); const d = b.door; this.position.set(d.x, d.y, d.z); this.velocity.set(0, 0, 0); }
+  }
+
   // ---------------------------------------------------------------- hiding
   hide(home) {
     this.hidden = true;
