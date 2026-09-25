@@ -87,7 +87,7 @@ export class CommandPanel {
     bus.on('placement:changed', (p) => this.onPlacement(p || {}));
     bus.on('research:done', () => { if (this.tab === 'build') this.renderBuild(); });
     bus.on('building:completed', () => { if (this.tab === 'build') this.renderBuild(); });
-    bus.on('mode:changed', ({ mode }) => { if (mode !== 'command') { this.closeTab(true); this.cancelPlacement(true); } });
+    bus.on('mode:changed', ({ mode }) => { if (mode !== 'command') { this.closeTab(true); this.cancelPlacement(true); this.deselect(true); } });
   }
 
   closeBtn(fn) { return h('button.zc-iconbtn.zc-close.ui-i', { title: 'Закрыть', onclick: (e) => { e.stopPropagation(); this.ui.game.audio?.play?.('ui_close'); fn(); } }, glyphImg('close')); }

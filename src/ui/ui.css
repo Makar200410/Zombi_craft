@@ -354,7 +354,7 @@
 .zc-dmg.k-poison, .zc-dmg.k-acid { color: #b8ff4a; }
 .zc-dmg.k-gain { display: flex; align-items: center; gap: 3px; font-size: 16px; color: #fff4c8; }
 .zc-dmg-ico { width: 18px; height: 18px; image-rendering: pixelated; }
-.zc-root.has-tc .zc-mode-btn { display: none; }
+
 
 /* =====================================================================  toasts & banner */
 .zc-toasts { position: absolute; top: calc(var(--st) + 52px); left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 2 * var(--gut)));
@@ -856,3 +856,17 @@
 .zc-root .zc-toast.out * { pointer-events: none !important; }
 .zc-root .zc-research:not(.open), .zc-root .zc-sheet:not(.open), .zc-root .zc-inspector:not(.open) { visibility: hidden; transition-property: opacity, transform, visibility; transition-delay: 0s, 0s, .3s; }
 .zc-root .zc-research.open, .zc-root .zc-sheet.open, .zc-root .zc-inspector.open { visibility: visible; transition-delay: 0s; }
+
+.zc-root .zc-command:not(.placing) .zc-placebar,
+.zc-root .zc-command.placing .zc-tabbar { visibility: hidden; pointer-events: none !important; }
+.zc-root .zc-command.placing .zc-placebar { visibility: visible; }
+
+/* research: keep the action button reachable on short (landscape phone) screens */
+.zc-rs-detail .zc-rs-actions { position: sticky; bottom: -8px; margin-top: auto; z-index: 2; padding-bottom: 4px; background: linear-gradient(180deg, transparent, rgba(30, 22, 12, .96) 30%); }
+@media (max-height: 500px) {
+  .zc-rs-current { min-height: 34px; padding: 3px 10px; margin-top: 4px; }
+  .zc-rs-hint.show { margin-top: 4px; padding: 4px 10px; font-size: 12px; }
+  .zc-rs-body { padding: 6px 8px 8px; gap: 8px; }
+  .zc-rs-detail { width: 260px; padding: 8px 10px; }
+}
+.zc-rs-detail > * { flex-shrink: 0; }

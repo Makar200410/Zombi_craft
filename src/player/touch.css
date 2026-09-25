@@ -97,3 +97,6 @@
   #touch-controls .tc-crouch { bottom: calc(var(--tc-safe-b) + 96px + var(--tc-u) * 1.05); }
   #touch-controls .tc-mode { top: calc(var(--tc-safe-t) + 26%); }
 }
+
+/* the mode switch lives in the HUD (top-left, above all panels) — the duplicate here got covered by side panels */
+#touch-controls .tc-mode { display: none !important; }
