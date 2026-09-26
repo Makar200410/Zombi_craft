@@ -597,26 +597,34 @@ export class Village {
   }
 
   // ================================================================ construction management
+  /**
+   * Spread builders over all open work (new construction, rebuilding raided buildings, repairs).
+   * Each project accepts builders in proportion to the work left; a builder takes the closest project with room
+   * (new construction first), sticks with it until it's done, and extra builders are shared out evenly.
+   */
   pickBuildTarget(v) {
-    const cur = v.buildTarget;
+    const now = this.game.time, night = this.game.state.isNight;
     const active = (b) => b.state === 'planned' || b.state === 'constructing';
-    if (cur && this.byId.has(cur.id) && active(cur)) return cur;
-    const count = (b) => this.villagers.reduce((n, o) => n + (o !== v && o.buildTarget === b ? 1 : 0), 0);
-    const pending = this.buildings.filter(active).sort((a, b) => a.createdAt - b.createdAt);
-    for (const b of pending) if (count(b) < (b.def.line ? 1 : 3)) return b;
-    if (pending.length) return pending[0];
-    if (this.game.state.isNight) return null;
-    // rebuild destroyed buildings (after raids), then repair damaged ones
-    const now = this.game.time;
-    const destroyed = this.buildings.filter(b => b.state === 'destroyed' && now - b.lastDamagedAt > 8).sort((a, b) => (a.def.line - b.def.line) || a.createdAt - b.createdAt);
-    for (const b of destroyed) if (count(b) < 3) return b;
-    let best = null, bd = Infinity;
-    for (const b of this.buildings) {
-      if (b.state !== 'complete' || !(b.needsRepair || b.hp < b.maxHp) || now - b.lastDamagedAt < 5) continue;
-      if (count(b) >= 2) continue;
-      const d = b.distanceTo(v.position);
-      if (d < bd) { bd = d; best = b; }
-    }
+    const destroyedReady = (b) => b.state === 'destroyed' && now - b.lastDamagedAt > 8;
+    const damaged = (b) => b.state === 'complete' && (b.needsRepair || b.hp < b.maxHp) && now - b.lastDamagedAt >= 5;
+    const hasWork = (b) => b && this.byId.has(b.id) && (active(b) || (!night && (destroyedReady(b) || damaged(b))));
+    const work = (b) => active(b) || b.state === 'destroyed' ? Math.max(1, b.remainingOps ?? b.blocks.length) : (b.needsRepair ? 12 : 4);
+    const cap = (b) => b.def.line ? 1 : Math.max(1, Math.min(b.state === 'complete' && !b.needsRepair ? 2 : 6, Math.ceil(work(b) / 14)));
+    const counts = new Map();
+    for (const o of this.villagers) if (o !== v && !o.dead && o.job === 'builder' && o.buildTarget) counts.set(o.buildTarget, (counts.get(o.buildTarget) || 0) + 1);
+    const count = (b) => counts.get(b) || 0;
+    // stay on the current project while it still needs work and isn't overcrowded
+    const cur = v.buildTarget;
+    if (hasWork(cur) && count(cur) < cap(cur) + 1) return cur;
+    const cand = this.buildings.filter(hasWork);
+    if (!cand.length) return null;
+    const prio = (b) => active(b) ? 0 : b.state === 'destroyed' ? 25 : 45;
+    const score = (b) => b.distanceTo(v.position) + prio(b) + count(b) * 6 + (active(b) ? (now - b.createdAt) * -0.02 : 0);
+    let best = null, bs = Infinity;
+    for (const b of cand) { if (count(b) >= cap(b)) continue; const sc = score(b); if (sc < bs) { bs = sc; best = b; } }
+    if (best) return best;
+    // every project is at capacity: join the least crowded one (relative to its size), nearest first
+    for (const b of cand) { const sc = (count(b) + 1) / cap(b) * 100 + b.distanceTo(v.position); if (sc < bs) { bs = sc; best = b; } }
     return best;
   }
   /** Is a (solid) block placement at this cell blocked by an entity standing there? */
