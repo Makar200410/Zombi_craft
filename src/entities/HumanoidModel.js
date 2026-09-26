@@ -111,6 +111,8 @@ export class HumanoidModel {
     this.lleg = new THREE.Group(); this.lleg.position.set(2 * px, 12 * px, 0); this.root.add(this.lleg);
     const ll = mk('lleg'); ll.position.y = -6 * px; this.lleg.add(ll);
     this.hand = new THREE.Group(); this.hand.position.set(0, -10 * px, 1 * px); this.rarm.add(this.hand);
+    this.offhand = new THREE.Group(); this.offhand.position.set(1.2 * px, -7 * px, 2.8 * px); this.larm.add(this.offhand);
+    this.blocking = false;
     if (hat) this.addHat(hat, hatColor);
 
     this.phase = Math.random() * 10;
@@ -155,6 +157,12 @@ export class HumanoidModel {
     hold.add(m);
     this.held = hold;
     this.hand.add(hold);
+  }
+
+  /** Object held in the left hand (shield). Pass null to clear. */
+  setOffhand(obj) {
+    while (this.offhand.children.length) this.offhand.remove(this.offhand.children[0]);
+    if (obj) this.offhand.add(obj);
   }
 
   play(name) {
@@ -212,6 +220,13 @@ export class HumanoidModel {
       }
       if (this.actionT >= this.actionDur) this.action = null;
     }
+    // shield up: left forearm raised in front of the chest
+    this._block = (this._block || 0) + ((this.blocking ? 1 : 0) - (this._block || 0)) * Math.min(1, dt * 14);
+    if (this._block > 0.01) {
+      const b = this._block;
+      lArmX = lArmX * (1 - b) + (-0.95) * b; lArmZ = lArmZ * (1 - b) + (-0.1) * b;
+      this.larm.rotation.y = 0.6 * b;
+    } else this.larm.rotation.y = 0;
     this.rarm.rotation.x = rArmX; this.larm.rotation.x = lArmX; this.rarm.rotation.z = rArmZ; this.larm.rotation.z = lArmZ;
     this.body.rotation.x = bodyX; this.head.rotation.x = headX - bodyX;
     // death: fall backwards

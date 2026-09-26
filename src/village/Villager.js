@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
+import { makeShieldMesh } from '../entities/shield.js';
 import { villagerSkin } from '../art/skins.js';
 import { B } from '../core/blocks.js';
 import { JOBS } from './names.js';
@@ -53,7 +54,7 @@ export class Villager extends Entity {
     const J = JOBS[this.job] || JOBS.idle;
     this.model = new HumanoidModel({ skin, height: this.female ? 1.74 : 1.8, hat: J.hat, hatColor: J.hatColor });
     this.object3d.add(this.model.group);
-    this._carryMesh = null; this._carryRes = null;
+    this._carryMesh = null; this._carryRes = null; this._shieldKind = undefined;
     this.updateTool();
     this.refreshCarryMesh();
   }
@@ -67,7 +68,16 @@ export class Villager extends Entity {
     if (this.job === 'miner' && st.researchDone.has('smithing')) return 'pickaxe_iron';
     return (JOBS[this.job] || JOBS.idle).tool;
   }
-  updateTool() { try { this.model.setHeld(this.carryTotal > 0 ? null : this.toolId()); } catch (e) { /* sprite missing */ } }
+  updateTool() {
+    try { this.model.setHeld(this.carryTotal > 0 ? null : (this.heldOverride || this.toolId())); } catch (e) { /* sprite missing */ }
+    // melee guards carry a shield in the left hand (iron after smithing)
+    const shield = this.job === 'guard' && this.workplace?.type !== 'watchtower' && !this.heldOverride;
+    const kind = shield ? (this.game.state.researchDone.has('smithing') ? 'iron' : 'wood') : null;
+    if (kind !== this._shieldKind) {
+      this._shieldKind = kind;
+      try { this.model.setOffhand(kind ? makeShieldMesh(kind, this.model.px) : null); } catch (e) { /* ignore */ }
+    }
+  }
 
   setJob(job) {
     if (job === this.job) return;
@@ -333,8 +343,26 @@ export class Villager extends Entity {
   damage(amount, source, opts = {}) {
     if (this.hidden || this._climbing) return false;
     if (this.job === 'guard') amount *= 1 - Math.min(0.5, (this.village.armory.level || 0) * 0.08);
+    // shield block: hits from the front while the shield is raised lose most of their force
+    if (this.blocking && source && source.position && this._shieldKind) {
+      const dx = source.position.x - this.position.x, dz = source.position.z - this.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const facing = (Math.sin(this.yaw) * dx + Math.cos(this.yaw) * dz) / len;
+      if (facing > 0.25) {
+        const absorb = this._shieldKind === 'iron' ? 0.82 : 0.72;
+        amount *= 1 - absorb;
+        if (opts.knockback && opts.knockback.multiplyScalar) opts = { ...opts, knockback: opts.knockback.clone().multiplyScalar(0.3) };
+        else if (typeof opts.knockback === 'number') opts = { ...opts, knockback: opts.knockback * 0.3 };
+        this.blockedHits = (this.blockedHits || 0) + 1;
+        const g = this.game, p = this.eye;
+        g.audio?.play(this._shieldKind === 'iron' ? 'pick_hit' : 'chop', { pos: p, volume: 0.7, pitch: 1.2 + Math.random() * 0.2 });
+        g.particles?.emit({ pos: { x: p.x + Math.sin(this.yaw) * 0.45, y: p.y - 0.4, z: p.z + Math.cos(this.yaw) * 0.45 }, count: 8, colors: [0xfff0b0, 0xffc860, 0xffffff], additive: true, speed: 3, gravity: 8, life: 0.35, size: 0.07 });
+        if (amount < 0.5) return false;
+      }
+    }
     return super.damage(amount, source, opts);
   }
+  get blocking() { return !!(this.model && this.model.blocking); }
   onHurt(amount, source) {
     this.game.audio?.play('villager_hurt', { pos: this.position, volume: 0.7, pitch: this.female ? 1.25 : 1 });
     if (this.job !== 'guard' && this.job !== 'mage') this.fleeUntil = this.game.time + 6;

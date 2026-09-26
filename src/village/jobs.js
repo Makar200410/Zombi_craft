@@ -473,6 +473,8 @@ function* guardBrain(v) {
     const wp = v.workplace;
     if (!wp || !wp.isComplete) { yield* waitForWorkplace(v, 'Ждёт казарму'); continue; }
     if (wp.type === 'watchtower') { yield* towerPost(v, 'archer'); continue; }
+    v.model.blocking = false;
+    if (v.heldOverride) { v.heldOverride = null; v.updateTool(); }
     // badly hurt: fall back to the town hall (archers cover it) and patch up before fighting again
     if (v.hp < v.maxHp * 0.35 && vil.townHall) {
       v.task = 'Отступает к ратуше лечиться';
@@ -500,46 +502,137 @@ function* guardBrain(v) {
   }
 }
 
+/**
+ * Guard combat: fight smarter than the dead.
+ *  - shield raised between sword swings (frontal hits mostly absorbed), occasional shield bash that stuns
+ *  - re-evaluates targets (protect villagers, kill spitters/necromancers first, spread over zombies, finish wounded)
+ *  - backs off while shielding when surrounded, keeps away from exploders, uses a bow at range after Archery
+ */
 function* meleeFight(v, z) {
   const game = v.game, vil = v.village;
-  v.task = 'Сражается с зомби';
-  let repath = 0, cd = 0, req = null, path = null, pi = 0;
+  let repath = 0, cd = 0.2, req = null, path = null, pi = 0, retarget = 0.8, shootCd = 0, bashCd = 2 + rnd() * 2;
   const leash = vil.radius + 22;
+  const hasBow = () => game.state.researchDone.has('archery');
+  const setBow = (on) => { const want = on ? 'bow' : null; if (v.heldOverride !== want) { v.heldOverride = want; v.updateTool(); } };
+  v.fightTarget = z;
   while (!z.dead) {
     const dt = yield;
-    if (z.dead) break;
+    if (z.dead || v.dead) break;
     if (v.hp < v.maxHp * 0.3) break;   // retreat (guardBrain handles healing)
-    cd -= dt; repath -= dt;
-    const d = Math.hypot(z.position.x - v.position.x, z.position.z - v.position.z);
+    cd -= dt; repath -= dt; retarget -= dt; shootCd -= dt; bashCd -= dt;
+    // switch to a more urgent target now and then
+    if (retarget <= 0) {
+      retarget = 0.8;
+      const better = vil.guardTarget(v, z);
+      if (better && better !== z) { z = better; v.fightTarget = z; path = null; req = null; }
+    }
+    const px = v.position.x, pz = v.position.z;
+    const d = Math.hypot(z.position.x - px, z.position.z - pz);
     if (vil.townHall && vil.townHall.distanceTo(v.position) > leash) break;
-    if (d > 26) break;
-    if (d < 1.9 && Math.abs(z.position.y - v.position.y) < 2) {
-      v.stopMove();
-      v.face(z.position);
-      if (cd <= 0) {
-        cd = 0.85;
-        v.model.play('attack');
-        game.audio?.play('swing', { pos: v.position, volume: 0.5 });
-        const smith = game.state.researchDone.has('smithing');
-        const dmg = (smith ? 13 : 8) + vil.armory.level * 2;
-        const dir = new THREE.Vector3(z.position.x - v.position.x, 0, z.position.z - v.position.z).normalize();
-        let done = false;
-        try { if (game.combat?.meleeHit) { game.combat.meleeHit(v, z, dmg, { knockback: dir.multiplyScalar(4), item: smith ? 'sword_iron' : 'sword_wood' }); done = true; } } catch (e) { done = false; }
-        if (!done) z.damage(dmg, v, { kind: 'phys', knockback: dir.multiplyScalar(4) });
+    if (d > 28) break;
+    // situational awareness
+    let close = 0, cx = 0, cz = 0, exploder = null;
+    for (const o of vil.zombies) {
+      if (o.dead) continue;
+      const od = Math.hypot(o.position.x - px, o.position.z - pz);
+      if (od < 3.2) { close++; cx += o.position.x; cz += o.position.z; }
+      if (o.type === 'exploder' && od < 5.5 && (!exploder || od < exploder.d)) exploder = { z: o, d: od };
+    }
+    // 1) exploder nearby: never stand next to it — back off (and shoot it if we can)
+    if (exploder) {
+      v.model.blocking = true;
+      if (hasBow() && game.world.lineOfSight(v.eye, exploder.z.center)) {
+        v.stopMove(); v.face(exploder.z.position); setBow(true);
+        v.task = 'Отстреливает подрывника';
+        if (shootCd <= 0) { shootCd = 1.1; v.model.blocking = false; v.model.play('shoot'); vil.shoot(v, exploder.z, 'arrow', 9 + vil.armory.level * 1.5); }
+      } else {
+        setBow(false);
+        v.task = 'Отходит от подрывника';
+        const ax = px - exploder.z.position.x, az = pz - exploder.z.position.z, al = Math.hypot(ax, az) || 1;
+        v.steerTo(px + ax / al * 3, pz + az / al * 3, 3.6, true);
       }
       continue;
     }
-    // chase: direct if close, else path
-    if (d < 5 && game.world.lineOfSight(v.eye, z.center)) { v.steerTo(z.position.x, z.position.z, 4, true); continue; }
+    // 2) surrounded: shield up and step back towards the town hall, swinging at whoever is in front
+    if (close >= 3) {
+      setBow(false);
+      v.task = 'Отступает, прикрываясь щитом';
+      cx /= close; cz /= close;
+      const th = vil.townHall;
+      let bx = px - cx, bz = pz - cz;
+      if (th) { const tx = th.center.x - px, tz = th.center.z - pz, tl = Math.hypot(tx, tz) || 1; bx += tx / tl * 0.8; bz += tz / tl * 0.8; }
+      const bl = Math.hypot(bx, bz) || 1;
+      v.face(z.position);
+      v.steerTo(px + bx / bl * 2.5, pz + bz / bl * 2.5, 2.2, true);
+      if (d < 1.9 && cd <= 0) { cd = 0.9; yield* swing(v, z, false); }
+      v.model.blocking = cd > 0.05 && cd < 0.6;
+      continue;
+    }
+    // 3) ranged: a bow for targets that are still far away
+    if (hasBow() && d > 7 && d < 22 && game.world.lineOfSight(v.eye, z.center)) {
+      v.stopMove(); v.face(z.position); setBow(true);
+      v.model.blocking = false;
+      v.task = 'Стреляет из лука';
+      if (shootCd <= 0) { shootCd = 1.25; v.model.play('shoot'); vil.shoot(v, z, 'arrow', 8 + vil.armory.level * 1.5); }
+      continue;
+    }
+    setBow(false);
+    // 4) melee with sword & shield
+    if (d < 1.9 && Math.abs(z.position.y - v.position.y) < 2) {
+      v.task = 'Сражается мечом и щитом';
+      v.stopMove();
+      v.face(z.position);
+      if (cd <= 0) {
+        cd = 0.8;
+        const bash = bashCd <= 0 && z.type !== 'brute' && z.type !== 'necromancer';
+        if (bash) bashCd = 4 + rnd() * 2.5;
+        yield* swing(v, z, bash);
+      }
+      // shield up between swings, lowered just before the next one
+      v.model.blocking = cd > 0.08 && cd < 0.55;
+      continue;
+    }
+    // chase: raise the shield when getting close
+    v.task = 'Бежит на врага';
+    v.model.blocking = d < 3.2;
+    const spd = v.model.blocking ? 3.0 : 3.9;
+    if (d < 5 && game.world.lineOfSight(v.eye, z.center)) { v.steerTo(z.position.x, z.position.z, spd, true); continue; }
     if (repath <= 0 && !req) { req = vil.requestPath(v, z.position, 1); repath = 1.0; }
     if (req && req.done) { path = req.path; pi = 1; req = null; }
     if (path && pi < path.length) {
       const wpt = path[pi];
       if (Math.hypot(wpt.x + 0.5 - v.position.x, wpt.z + 0.5 - v.position.z) < 0.5) pi++;
-      else v.steerTo(wpt.x + 0.5, wpt.z + 0.5, 3.8, wpt.y > v.position.y + 0.4);
-    } else v.steerTo(z.position.x, z.position.z, 3.8, true);
+      else v.steerTo(wpt.x + 0.5, wpt.z + 0.5, spd, wpt.y > v.position.y + 0.4);
+    } else v.steerTo(z.position.x, z.position.z, spd, true);
   }
+  v.model.blocking = false;
+  v.fightTarget = null;
+  setBow(false);
   v.stopMove();
+}
+
+/** One sword swing (or a stunning shield bash). */
+function* swing(v, z, bash) {
+  const game = v.game, vil = v.village;
+  v.model.blocking = false;
+  const dir = new THREE.Vector3(z.position.x - v.position.x, 0, z.position.z - v.position.z).normalize();
+  if (bash) {
+    v.model.play('hurt');   // quick shove
+    game.audio?.play('hit_zombie', { pos: z.position, volume: 0.7, pitch: 0.7 });
+    z.stunTimer = Math.max(z.stunTimer || 0, 1.1);
+    z.velocity.addScaledVector(dir, 6); z.velocity.y = Math.max(z.velocity.y, 3);
+    z.damage(4, v, { kind: 'phys' });
+    game.particles?.emit({ pos: z.eye, count: 8, colors: [0xffffff, 0xfff0a0], additive: true, speed: 2.5, life: 0.4, size: 0.08 });
+    return;
+  }
+  v.model.play('attack');
+  game.audio?.play('swing', { pos: v.position, volume: 0.5 });
+  const smith = game.state.researchDone.has('smithing');
+  let dmg = (smith ? 13 : 8) + vil.armory.level * 2;
+  if (z.stunTimer > 0) dmg *= 1.5;    // hitting a stunned zombie
+  let done = false;
+  try { if (game.combat?.meleeHit) { game.combat.meleeHit(v, z, dmg, { knockback: dir.clone().multiplyScalar(4), item: smith ? 'sword_iron' : 'sword_wood' }); done = true; } } catch (e) { done = false; }
+  if (!done) z.damage(dmg, v, { kind: 'phys', knockback: dir.multiplyScalar(4) });
 }
 
 /** Watchtower archer / mage tower mage: climb up and shoot from the post. */

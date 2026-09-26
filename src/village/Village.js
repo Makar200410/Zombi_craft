@@ -679,18 +679,33 @@ export class Village {
     }
     return best;
   }
-  guardTarget(v) {
-    const near = this.nearestZombie(v.position, 18);
-    if (near) return near;
+  /**
+   * Pick the most urgent zombie for a guard: protect villagers under attack, take out spitters and
+   * necromancers, finish wounded ones, avoid exploders, and spread guards over different targets.
+   */
+  guardTarget(v, current = null) {
     const th = this.townHall;
-    if (!th) return null;
-    let best = null, bd = Infinity;
+    const claims = new Map();
+    for (const o of this.villagers) if (o !== v && o.fightTarget && !o.dead) claims.set(o.fightTarget, (claims.get(o.fightTarget) || 0) + 1);
+    let best = null, bs = Infinity;
     for (const z of this.zombies) {
       if (z.dead) continue;
-      const dv = th.center.distanceTo(z.position);
-      if (dv > this.radius + 8) continue;
       const d = v.position.distanceTo(z.position);
-      if (d < bd) { bd = d; best = z; }
+      if (d > 30) continue;
+      const nearVillage = th ? th.center.distanceTo(z.position) < this.radius + 10 : true;
+      if (d > 18 && !nearVillage) continue;
+      let s = d;
+      const t = z.target;
+      if (t && t !== v && t.faction === 'village') s -= t.kind === 'player' ? 3 : 8;   // someone needs help
+      if (z.breakCell) s -= 4;                                                          // breaking our walls
+      if (z.type === 'spitter') s -= 5;
+      if (z.type === 'necromancer') s -= 7;
+      if (z.type === 'exploder') s += 9;                                               // let archers handle those
+      if (z.type === 'brute') s += 2;
+      s -= (1 - z.hp / z.maxHp) * 5;                                                   // finish the wounded
+      s += (claims.get(z) || 0) * 7;                                                   // don't all chase the same one
+      if (z === current) s -= 3;                                                       // don't flip-flop
+      if (s < bs) { bs = s; best = z; }
     }
     return best;
   }
