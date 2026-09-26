@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Package (portable exe + installer)
-        run: npx electron-builder --win portable nsis --x64 --publish never
+        run: npx electron-builder --win --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - uses: actions/upload-artifact@v4
@@ -33,6 +33,7 @@ jobs:
           path: |
             release/ZombiCraft-portable.exe
             release/ZombiCraft-Setup.exe
+            release/ZombiCraft-*-x64.zip
       - name: Publish to GitHub Release "win-latest"
         uses: softprops/action-gh-release@v2
         with:
@@ -40,10 +41,13 @@ jobs:
           name: Zombi Craft — последняя сборка для Windows
           body: |
             Сборка для Windows из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
-            • ZombiCraft-portable.exe — просто запустите, установка не нужна.
-            • ZombiCraft-Setup.exe — установщик с ярлыком на рабочем столе.
+            • ZombiCraft-Setup.exe — РЕКОМЕНДУЕТСЯ: установщик, ставит игру и сам её запускает, ярлык на рабочем столе. Дальше игра открывается мгновенно.
+            • ZombiCraft-…-x64.zip — без установки: распакуйте архив в любую папку и запустите «Zombi Craft.exe».
+            • ZombiCraft-portable.exe — один файл без установки, но при КАЖДОМ запуске распаковывает себя (20–60 с, показывается заставка).
             Если Windows покажет «Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае» (приложение не подписано сертификатом).
+            Журнал ошибок: %APPDATA%\zombi-craft\zombi-craft.log
           prerelease: true
           files: |
             release/ZombiCraft-portable.exe
             release/ZombiCraft-Setup.exe
+            release/ZombiCraft-*-x64.zip

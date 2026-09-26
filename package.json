@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "desktop": "npm run build && electron .",
-    "dist:win": "npm run build && electron-builder --win portable nsis --publish never"
+    "dist:win": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.2",
@@ -32,25 +32,35 @@
     },
     "files": [
       "dist/**",
-      "electron/**",
+      "electron/main.cjs",
+      "electron/icon.png",
       "package.json"
     ],
     "win": {
       "target": [
+        "nsis",
         "portable",
-        "nsis"
+        "zip"
       ],
       "icon": "electron/icon.png",
-      "artifactName": "ZombiCraft-${version}-${arch}-${target}.${ext}"
+      "artifactName": "ZombiCraft-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "ZombiCraft-portable.exe"
+      "artifactName": "ZombiCraft-portable.exe",
+      "splashImage": "electron/splash.bmp"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
       "artifactName": "ZombiCraft-Setup.exe",
-      "shortcutName": "Zombi Craft"
-    }
+      "shortcutName": "Zombi Craft",
+      "runAfterFinish": true,
+      "createDesktopShortcut": true
+    },
+    "electronLanguages": [
+      "ru",
+      "en-US"
+    ],
+    "compression": "normal"
   }
 }
