@@ -122,14 +122,40 @@ export class Village {
     this.placeBuilding('house', px + 3, pz0 + 4, 1, { free: true, instant: true });
     this.placeBuilding('house', px - 9, pz0 + 4, 3, { free: true, instant: true, variant: 1 });
     this.spawnPoint.set(door.x, door.y, door.z + 2);
-    // starting villagers
-    const jobs = ['builder', 'builder', 'woodcutter', 'farmer'];
-    jobs.forEach((job, i) => {
-      const v = this.spawnVillager({ job, female: i % 2 === 1, silent: true });
-      if (v) v.position.set(door.x - 1.5 + i, door.y, door.z + 1.5 + (i % 2));
+    // a working economy from the first minute: a farm and a lumber camp next to the village
+    const farm = this.placeNear('farm', th, 12, 26);
+    const camp = this.placeNear('lumber_camp', th, 12, 30);
+    this.recalcPop();
+    // starting villagers: 2 builders, woodcutter, farmer and 2 guards posted at the town hall
+    const jobs = [['builder'], ['builder'], ['woodcutter', camp], ['farmer', farm], ['guard', th], ['guard', th]];
+    jobs.forEach(([job, wp], i) => {
+      const v = this.spawnVillager({ job: wp ? 'idle' : job, female: i % 2 === 1, silent: true });
+      if (!v) return;
+      v.position.set(door.x - 2.5 + i, door.y, door.z + 1.5 + (i % 2));
+      if (wp) this.assign(v, wp, job);
     });
     this.recalcPop();
     this.bus.emit('village:ready', { village: this });
+  }
+
+  /** Finds a valid site for a building in a ring around another building and stamps it instantly (free). */
+  placeNear(typeId, around, rMin, rMax) {
+    const c = around.center || { x: around.x + around.w / 2, z: around.z + around.d / 2 };
+    const def = BUILDING_TYPES[typeId]; if (!def) return null;
+    for (let r = rMin; r <= rMax; r += 2) {
+      const n = Math.max(8, Math.round(r * 1.2));
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2 + r * 0.37;
+        for (let rot = 0; rot < 4; rot++) {
+          const L = def.layout(rot);
+          const x = Math.round(c.x + Math.cos(a) * r - L.w / 2), z = Math.round(c.z + Math.sin(a) * r - L.d / 2);
+          if (!this.checkSite(typeId, x, z, rot).ok) continue;
+          const b = this.placeBuilding(typeId, x, z, rot, { free: true, instant: true });
+          if (b) return b;
+        }
+      }
+    }
+    return null;
   }
 
   // ================================================================ world edits
@@ -889,6 +915,29 @@ export class Village {
     return { x: c.x + 0.5, y, z: c.z + 0.5 };
   }
 
+  /** Clash-of-Clans style: archers on the town hall tower shoot the nearest undead in range. */
+  townHallDefense(dt) {
+    const th = this.townHall;
+    if (!th || th.state !== 'complete') return;
+    this._thCd = (this._thCd || 0) - dt;
+    if (this._thCd > 0) return;
+    this._thCd = 0.4;
+    if (this._thFor !== th) { this._thFor = th; this._thTop = new THREE.Vector3(th.x + th.w / 2, th.y + Math.min(12, th.def.height || 10) + 1, th.z + th.d / 2); this._thShooter = null; }
+    const top = this._thTop;
+    const range = this.game.state.researchDone.has('ballistics') ? 32 : 24;
+    let best = null, bd = range * range;
+    for (const z of this.zombies) {
+      if (z.dead) continue;
+      const dx = z.position.x - top.x, dz = z.position.z - top.z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = z; }
+    }
+    if (!best) return;
+    this._thCd = 1.0;
+    const shooter = this._thShooter || (this._thShooter = { kind: 'tower', faction: 'village', id: -7, name: 'Ратуша', eye: top, position: top, velocity: new THREE.Vector3(), dead: false, cooldowns: {} });
+    const gun = this.game.state.researchDone.has('gunpowder');
+    this.shoot(shooter, best, gun ? 'bullet' : 'arrow', (gun ? 18 : 10) * (1 + this.armory.level * 0.15));
+  }
+
   // ---- ranged attacks of guards / mages
   shoot(v, z, type, dmg, extra = {}) {
     const game = this.game;
@@ -1019,12 +1068,17 @@ export class Village {
       for (let i = b.opCursor; i < b.ops.length; i++) { const op = b.ops[i]; if (op.kind === 2 && !b.opDone(op)) { lo = op.y; break; } }
       s.setHeight(lo === null ? 0 : lo - b.y);
     }
+    this.townHallDefense(dt);
     // immigration
     if (this.townHall && this.townHall.state === 'complete') {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
         this.spawnTimer = SPAWN_INTERVAL;
-        if (this.villagers.length < Math.min(this.popCap, MAX_VILLAGERS) && (st.resources.food || 0) >= 10 && !st.isNight && !(this.game.waves?.activeCount > 0)) {
+        const pop = this.villagers.length;
+        const idle = this.villagers.filter(v => !v.dead && v.job === 'idle').length;
+        const freeJobs = this.buildings.reduce((n, b) => n + (b.state === 'complete' && b.jobSlots ? b.freeSlots : 0), 0);
+        const foodOk = (st.resources.food || 0) >= 15 + pop * 3;       // keep a reserve so the village doesn't starve
+        if (pop < Math.min(this.popCap, MAX_VILLAGERS) && foodOk && (freeJobs > 0 || idle === 0) && !st.isNight && !(this.game.waves?.activeCount > 0)) {
           st.add('food', -10);
           const v = this.spawnVillager({});
           if (v) this.autoAssign();

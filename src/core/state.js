@@ -5,7 +5,7 @@ export class GameState {
     this.bus = bus;
     this.resources = {};
     for (const r of RESOURCES) this.resources[r] = 0;
-    Object.assign(this.resources, { wood: 60, stone: 40, food: 40, iron: 0, coal: 0, gold: 10, crystal: 0 });
+    Object.assign(this.resources, { wood: 80, stone: 60, food: 60, iron: 0, coal: 0, gold: 10, crystal: 0 });
     this.day = 1;
     this.dayLength = 300;          // seconds per full day
     this.timeOfDay = 0.3;          // start in the morning

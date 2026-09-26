@@ -3,11 +3,11 @@
 //   bldDmg: damage to a building per swing ; aggro: range (blocks) to notice villagers / the player
 export const ZOMBIE_TYPES = {
   walker: {
-    name: 'Ходячий мертвец', hp: 30, speed: 1.55, dmg: 6, cd: 1.0, reach: 0.9, blockDps: 1.1, bldDmg: 3,
+    name: 'Ходячий мертвец', hp: 30, speed: 1.55, dmg: 6, cd: 1.0, reach: 0.9, blockDps: 1.1, bldDmg: 2,
     height: 1.85, width: 1, radius: 0.3, aggro: 14, knock: 3, eye: 0xff2a10, groanPitch: 1, loot: 0.45,
   },
   runner: {
-    name: 'Бегун', hp: 18, speed: 3.7, dmg: 4, cd: 0.6, reach: 0.9, blockDps: 0.6, bldDmg: 2,
+    name: 'Бегун', hp: 18, speed: 3.7, dmg: 4, cd: 0.6, reach: 0.9, blockDps: 0.6, bldDmg: 1.2,
     height: 1.72, width: 0.9, radius: 0.28, aggro: 22, knock: 2, eye: 0xff9a18, groanPitch: 1.35, loot: 0.4,
   },
   brute: {

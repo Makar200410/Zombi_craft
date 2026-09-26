@@ -459,12 +459,12 @@ function def(id, o) {
 }
 
 def('town_hall', {
-  name: 'Ратуша', desc: 'Сердце деревни. Даёт жильё 4 жителям и строителей. Если её разрушат — игра окончена.',
-  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal'], auto: true,
+  name: 'Ратуша', desc: 'Сердце деревни: жильё для 4 жителей, 2 поста стражи, лучники на башне сами стреляют по нежити. Если её разрушат — игра окончена.',
+  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, jobs: { guard: 2 }, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal'], auto: true,
 });
 def('house', {
   name: 'Дом', desc: 'Уютный фахверковый дом. +4 к населению. Ночью жители прячутся внутри.',
-  cost: { wood: 20, stone: 10 }, hp: 300, popBonus: 4, category: 'economy', design: house, variants: 4,
+  cost: { wood: 20, stone: 10 }, hp: 450, popBonus: 4, category: 'economy', design: house, variants: 4,
 });
 def('builder_hut', {
   name: 'Дом строителя', desc: 'Мастерская бригады строителей: +2 места для строителей. Строители из хижины работают на 15% быстрее.',

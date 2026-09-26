@@ -16,7 +16,7 @@ export const RES_GEN = { wood: 'дерева', stone: 'камня', food: 'ед�
  */
 export class Villager extends Entity {
   constructor(game, village, o = {}) {
-    super(game, { kind: 'villager', faction: 'village', maxHp: o.job === 'guard' ? 60 : 40, radius: 0.3, height: 1.8 });
+    super(game, { kind: 'villager', faction: 'village', maxHp: o.job === 'guard' ? 110 : 40, radius: 0.3, height: 1.8 });
     this.village = village;
     this.name = o.name || 'Житель';
     this.female = !!o.female;
@@ -73,7 +73,7 @@ export class Villager extends Entity {
     if (job === this.job) return;
     this.job = job;
     const wasGuard = this.maxHp;
-    this.maxHp = job === 'guard' ? 60 : 40;
+    this.maxHp = job === 'guard' ? 110 : 40;
     this.hp = Math.min(this.maxHp, this.hp + Math.max(0, this.maxHp - wasGuard));
     this.interrupt();
     this.buildModel();
@@ -175,7 +175,8 @@ export class Villager extends Entity {
     // regeneration (faster with alchemy)
     this._regen += dt;
     const every = st.researchDone.has('alchemy') ? 2.5 : 8;
-    if (this._regen > every) { this._regen = 0; if (this.hp < this.maxHp && this.hunger > 20) this.heal(1); }
+    const resting = this.task === 'Отступает к ратуше лечиться';
+    if (this._regen > (resting ? 0.5 : every)) { this._regen = 0; if (this.hp < this.maxHp && this.hunger > 20) this.heal(resting ? 2 : 1); }
   }
   get workSpeed() { return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1) * (this.job === 'builder' ? (this.village?.builderSpeedBonus || 1) : 1); }
 

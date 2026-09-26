@@ -473,6 +473,16 @@ function* guardBrain(v) {
     const wp = v.workplace;
     if (!wp || !wp.isComplete) { yield* waitForWorkplace(v, 'Ждёт казарму'); continue; }
     if (wp.type === 'watchtower') { yield* towerPost(v, 'archer'); continue; }
+    // badly hurt: fall back to the town hall (archers cover it) and patch up before fighting again
+    if (v.hp < v.maxHp * 0.35 && vil.townHall) {
+      v.task = 'Отступает к ратуше лечиться';
+      const d = vil.townHall.door;
+      const walk = v.walkTo(d, 1.5, { maxTime: 20, speed: v.walkSpeed * 1.2 });
+      let r; while (!(r = walk.next(yield)).done) { /* keep walking */ }
+      v.stopMove();
+      while (v.hp < v.maxHp * 0.8 && !v.dead) yield* v.wait(1);
+      continue;
+    }
     const z = vil.guardTarget(v);
     if (z) { yield* meleeFight(v, z); continue; }
     // patrol
@@ -498,6 +508,7 @@ function* meleeFight(v, z) {
   while (!z.dead) {
     const dt = yield;
     if (z.dead) break;
+    if (v.hp < v.maxHp * 0.3) break;   // retreat (guardBrain handles healing)
     cd -= dt; repath -= dt;
     const d = Math.hypot(z.position.x - v.position.x, z.position.z - v.position.z);
     if (vil.townHall && vil.townHall.distanceTo(v.position) > leash) break;
@@ -510,7 +521,7 @@ function* meleeFight(v, z) {
         v.model.play('attack');
         game.audio?.play('swing', { pos: v.position, volume: 0.5 });
         const smith = game.state.researchDone.has('smithing');
-        const dmg = (smith ? 9 : 5) + vil.armory.level * 2;
+        const dmg = (smith ? 13 : 8) + vil.armory.level * 2;
         const dir = new THREE.Vector3(z.position.x - v.position.x, 0, z.position.z - v.position.z).normalize();
         let done = false;
         try { if (game.combat?.meleeHit) { game.combat.meleeHit(v, z, dmg, { knockback: dir.multiplyScalar(4), item: smith ? 'sword_iron' : 'sword_wood' }); done = true; } } catch (e) { done = false; }

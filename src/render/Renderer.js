@@ -149,8 +149,14 @@ export class Renderer {
     this.hemi.groundColor.set(0x6b6656).multiplyScalar(0.45 + amb * 0.55);
     this.scene.fog.color.copy(c.fog);
     // fog closes in a bit at night — spookier waves
-    this.scene.fog.near = Math.min(30, this.fogFar * 0.45) - night * 10;
-    this.scene.fog.far = this.fogFar * (1 - night * 0.25);
+    let fogFar = this.fogFar;
+    if (this.game.mode === 'command') {
+      // high strategy camera: push the fog out by the camera's distance to what it looks at
+      const d = this.camera.position.distanceTo(this.shadowFocus);
+      fogFar = Math.max(fogFar, d + 45);
+    }
+    this.scene.fog.near = Math.min(30, fogFar * 0.45) - night * 10;
+    this.scene.fog.far = fogFar * (1 - night * 0.25);
     worldUniforms.uSkyLight.value = 1 - night * 0.7;
     worldUniforms.uBlockLightStrength.value = 1.1 + night * 0.6;
     this.renderer.toneMappingExposure = 1.0 + night * 0.25;
