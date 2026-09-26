@@ -353,7 +353,8 @@ function* minerBrain(v) {
       yield* v.work('mine', 4.5 / v.workSpeed, 0.5, () => game.audio?.play('pick_hit', { pos: deep, volume: 0.5 }));
       v.addCarry('stone', 1);
       const r = rnd();
-      if (r < 0.2) v.addCarry('coal', 1); else if (r < 0.3) v.addCarry('iron', 1); else if (r < 0.34) v.addCarry('gold', 1); else if (r < 0.36) v.addCarry('crystal', 1);
+      const lucky = game.state.researchDone.has('mining') ? 1.5 : 1;
+      if (r < 0.22 * lucky) v.addCarry('coal', 1); else if (r < 0.36 * lucky) v.addCarry('iron_ore', 1); else if (r < 0.40 * lucky) v.addCarry('gold_ore', 1); else if (r < 0.42 * lucky) v.addCarry('crystal', 1);
       continue;
     }
     const key = t.x + ',' + t.y + ',' + t.z;
@@ -375,6 +376,7 @@ function* minerBrain(v) {
       game.audio?.play('break_block', { pos: P, volume: 0.5 });
       const drop = BLOCKS[id].drop || {};
       for (const k in drop) if (drop[k] > 0) v.addCarry(k, drop[k]);
+      if (id === B.STONE) { const r = rnd(), lucky = game.state.researchDone.has('mining') ? 1.5 : 1; if (r < 0.08 * lucky) v.addCarry('coal', 1); else if (r < 0.13 * lucky) v.addCarry('iron_ore', 1); }
     }
     v.release(rel);
   }
@@ -393,6 +395,17 @@ function* blacksmithBrain(v) {
     v.face({ x: anvil.x + 0.5, z: anvil.z + 0.5 });
     const has = (st.resources.iron || 0) >= 2 && (st.resources.coal || 0) >= 1;
     const A = { x: anvil.x + 0.5, y: anvil.y + 1.05, z: anvil.z + 0.5 };
+    const oreKind = (st.resources.coal || 0) >= 1 ? ((st.resources.iron_ore || 0) >= 2 ? 'iron' : (st.resources.gold_ore || 0) >= 2 ? 'gold' : null) : null;
+    if (oreKind) {
+      // smelt raw ore in the forge furnace first
+      const furnace = vil.findBlockNear(spot, B.FURNACE, 4) || anvil;
+      v.face({ x: furnace.x + 0.5, z: furnace.z + 0.5 });
+      v.task = oreKind === 'iron' ? 'Плавит железную руду' : 'Плавит золотую руду';
+      const F = { x: furnace.x + 0.5, y: furnace.y + 1, z: furnace.z + 0.5 };
+      yield* v.work('hammer', 6 / v.workSpeed, 0.9, () => game.particles?.emit({ pos: F, count: 5, colors: [0xff6a10, 0xffb040, 0x5a5a5a], additive: true, speed: 1.2, dir: { x: 0, y: 2, z: 0 }, gravity: -1, life: 0.8, size: 0.14 }));
+      if (st.spend({ [oreKind + '_ore']: 2, coal: 1 })) st.add(oreKind, 2);
+      continue;
+    }
     if (has && vil.armory.level < 5) {
       v.task = pick(['Куёт оружие', 'Куёт доспехи для стражи', 'Раздувает горн']);
       yield* v.work('hammer', 8 / v.workSpeed, 0.45, () => {

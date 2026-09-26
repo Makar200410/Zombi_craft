@@ -427,7 +427,19 @@ export class Village {
     }
     this.radius = r + 4;
   }
-  get builderCap() { return 2 + (this.townHall ? this.townHall.level : 0); }
+  get builderCap() {
+    let huts = 0;
+    for (const b of this.buildings) if (b.state === 'complete' && b.def.builderSlots) huts += b.def.builderSlots;
+    return 2 + (this.townHall ? this.townHall.level : 0) + huts;
+  }
+  /** Hiring cost of the n-th builder (1-based). The first two are free, then it grows as a power law (~k^1.5). */
+  builderHireCost(n = this.villagersByJob('builder').length + 1) {
+    const k = n - 2;
+    if (k <= 0) return {};
+    const f = Math.pow(k, 1.5);
+    return { food: Math.round(6 * f), wood: Math.round(5 * f), ...(k >= 3 ? { gold: Math.round(1.5 * Math.pow(k - 2, 1.5)) } : {}) };
+  }
+  get builderSpeedBonus() { return this.buildings.some(b => b.state === 'complete' && b.def.builderSlots) ? 1.15 : 1; }
   get population() { return this.villagers.length; }
 
   onResearch(id) {
@@ -487,13 +499,19 @@ export class Village {
     const b = this.buildings.find(b => b.def.jobs[job] && b.freeSlots > 0 && b.state !== 'destroyed');
     return b ? this.assign(v, b, job) : false;
   }
-  setBuilderCount(n) {
+  setBuilderCount(n, { free = false } = {}) {
     n = Math.max(0, Math.min(this.builderCap, n | 0));
     let builders = this.villagersByJob('builder');
     while (builders.length > n) { this.assign(builders.pop(), null, 'idle'); }
     if (builders.length < n) {
       const idle = this.villagersByJob('idle');
-      while (builders.length < n && idle.length) { const v = idle.shift(); this.assign(v, null, 'builder'); builders.push(v); }
+      while (builders.length < n && idle.length) {
+        if (!free) {
+          const cost = this.builderHireCost(builders.length + 1);
+          if (!this.game.state.spend(cost)) { this.toast('Не хватает ресурсов, чтобы нанять строителя', 'bad'); break; }
+        }
+        const v = idle.shift(); this.assign(v, null, 'builder'); builders.push(v);
+      }
     }
     return builders.length;
   }

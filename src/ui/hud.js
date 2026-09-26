@@ -51,6 +51,9 @@ export class Hud {
     this.modeBtn = h('button.zc-mode-btn.ui-i', { title: 'Переключить режим (Tab)', onclick: () => ui.toggleMode() },
       h('span.zc-mode-ico', this.modeIco), this.modeLbl);
 
+    this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.craft.toggle(); } },
+      h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'));
+
     // --- resources
     this.chips = {};
     this.resbar = h('div.zc-resbar.zc-panel');
@@ -100,7 +103,7 @@ export class Hud {
     this.bottom = h('div.zc-bottom', this.itemName, h('div.zc-palette-wrap', this.paletteLbl, this.palette), this.hotbar);
 
     this.fps = h('div.zc-fps');
-    root.append(this.topLeft, this.modeBtn, this.resbar, this.topRight, this.crosshair, this.bottom, this.fps);
+    root.append(this.topLeft, this.modeBtn, this.craftBtn, this.resbar, this.topRight, this.crosshair, this.bottom, this.fps);
 
     this._prevRes = { ...this.game.state.resources };
     this._nameT = 0; this._lastSel = -1; this._lastBuild = -1;
@@ -200,6 +203,8 @@ export class Hud {
         c.shown = Math.abs(diff) < 1 ? target : c.shown + diff * Math.min(1, dt * 10);
         setText(c.n, fmtNum(Math.round(c.shown)));
       }
+      // raw ores only take space in the bar while you actually have some
+      if (r.endsWith('_ore')) { const show = target > 0; if (c._vis !== show) { c._vis = show; c.el.style.display = show ? '' : 'none'; } }
     }
     const alive = (g.village?.villagers || []).filter(v => !v.dead).length;
     const cap = g.village?.popCap ?? 0;

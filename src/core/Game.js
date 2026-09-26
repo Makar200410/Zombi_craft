@@ -16,6 +16,7 @@ import { Village } from '../village/Village.js';
 import { WaveDirector } from '../enemies/WaveDirector.js';
 import { Research } from '../systems/research.js';
 import { SaveSystem } from '../systems/save.js';
+import { Crafting } from '../systems/crafting.js';
 import { UI } from '../ui/UI.js';
 
 function detectQuality() {
@@ -65,11 +66,12 @@ export class Game {
     this.village = new Village(this);
     this.waves = new WaveDirector(this);
     this.research = new Research(this);
+    this.crafting = new Crafting(this);
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.save];
-    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.save, this.ui]) s.init?.();
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.save];
+    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.save, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
@@ -101,7 +103,7 @@ export class Game {
 
   /** Starts gameplay. opts.loaded = true when restoring a save (systems already deserialized). */
   begin(opts = {}) {
-    if (!opts.loaded) for (const s of [this.village, this.player, this.waves, this.research, this.combat, this.cameraRig, this.ui]) s.onNewGame?.();
+    if (!opts.loaded) for (const s of [this.crafting, this.village, this.player, this.waves, this.research, this.combat, this.cameraRig, this.ui]) s.onNewGame?.();
     this.running = true;
     this.paused = false;
     this.bus.emit('game:begin', { loaded: !!opts.loaded });

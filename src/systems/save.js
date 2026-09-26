@@ -114,6 +114,7 @@ export class SaveSystem {
       player: safe(g.player),
       waves: safe(g.waves),
       research: safe(g.research),
+      crafting: safe(g.crafting),
       combat: safe(g.combat),
       camera: safe(g.cameraRig),
       mode: g.mode,
@@ -166,6 +167,7 @@ export class SaveSystem {
       g.state.deserialize(o.state || {});
       const safe = (sys, data) => { try { if (data != null) sys?.deserialize?.(data); } catch (e) { console.error('deserialize failed', sys?.constructor?.name, e); } };
       safe(g.research, o.research);
+      safe(g.crafting, o.crafting);
       safe(g.village, o.village);
       safe(g.player, o.player);
       safe(g.waves, o.waves);

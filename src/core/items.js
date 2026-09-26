@@ -37,5 +37,5 @@ item('tome_meteor', { name: 'Фолиант метеоров', kind: 'spell', da
 // Default hotbar layout for a new game (ids may be locked until researched).
 export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'build_hammer', 'bow', 'staff_fire', 'musket', 'staff_frost', 'staff_storm'];
 
-export const RESOURCES = ['wood', 'stone', 'food', 'iron', 'coal', 'gold', 'crystal'];
-export const RESOURCE_LABELS = { wood: 'Дерево', stone: 'Камень', food: 'Еда', iron: 'Железо', coal: 'Уголь', gold: 'Золото', crystal: 'Кристаллы маны' };
+export const RESOURCES = ['wood', 'stone', 'food', 'coal', 'iron_ore', 'iron', 'gold_ore', 'gold', 'crystal'];
+export const RESOURCE_LABELS = { wood: 'Дерево', stone: 'Камень', food: 'Еда', iron: 'Железо', coal: 'Уголь', gold: 'Золото', iron_ore: 'Железная руда', gold_ore: 'Золотая руда', crystal: 'Кристаллы маны' };

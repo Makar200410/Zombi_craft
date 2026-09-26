@@ -46,8 +46,8 @@ def(9, 'leaves', { label: 'Листва', render: 'cutout', hardness: 0.4, drop:
 def(10, 'planks', { label: 'Доски', hardness: 2, drop: { wood: 1 }, cost: { wood: 1 }, tool: 'axe' });
 def(11, 'stone_bricks', { label: 'Каменный кирпич', hardness: 4, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
 def(12, 'coal_ore', { label: 'Угольная руда', hardness: 3.5, drop: { stone: 1, coal: 2 }, tool: 'pick' });
-def(13, 'iron_ore', { label: 'Железная руда', hardness: 4.5, drop: { iron: 2 }, tool: 'pick' });
-def(14, 'gold_ore', { label: 'Золотая руда', hardness: 5, drop: { gold: 2 }, tool: 'pick' });
+def(13, 'iron_ore', { label: 'Железная руда', hardness: 4.5, drop: { iron_ore: 2 }, tool: 'pick' });
+def(14, 'gold_ore', { label: 'Золотая руда', hardness: 5, drop: { gold_ore: 2 }, tool: 'pick' });
 def(15, 'crystal_ore', { label: 'Кристалл маны', hardness: 5, drop: { crystal: 2 }, light: 9, tool: 'pick' });
 def(16, 'glass', { label: 'Стекло', render: 'transparent', hardness: 0.6, cost: { stone: 1 } });
 def(17, 'thatch', { label: 'Соломенная крыша', hardness: 1, drop: { food: 0 }, cost: { wood: 1 }, tool: 'axe' });

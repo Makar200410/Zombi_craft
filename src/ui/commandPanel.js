@@ -39,6 +39,7 @@ export class CommandPanel {
       tb('build', 'Строить', glyph('hammer')),
       tb('people', 'Жители', glyph('people')),
       tb('research', 'Исследования', glyph('flask')),
+      tb('craft', 'Крафт', glyph('hammer')),
       this.waveTab);
 
     // build sheet
@@ -95,6 +96,7 @@ export class CommandPanel {
   onTab(id) {
     this.ui.click();
     if (id === 'research') { this.closeTab(true); this.ui.openResearch(); return; }
+    if (id === 'craft') { this.closeTab(true); this.ui.craft.show(); return; }
     if (id === 'wave') { this.callWave(); return; }
     if (this.tab === id) { this.closeTab(); return; }
     this.cancelPlacement(true);
@@ -276,7 +278,9 @@ export class CommandPanel {
     if (job === 'builder' && vil?.setBuilderCount) {
       const n = this.jobCounts().builder || 0;
       if (!(this.jobCounts().idle > 0)) { this.ui.toast('Нет свободных жителей', 'bad'); return; }
-      if (typeof vil.builderCap === 'number' && n >= vil.builderCap) { this.ui.toast('Предел строителей — улучшите ратушу', 'bad'); return; }
+      if (typeof vil.builderCap === 'number' && n >= vil.builderCap) { this.ui.toast('Предел строителей — постройте «Дом строителя» или улучшите ратушу', 'bad'); return; }
+      const cost = vil.builderHireCost?.(n + 1) || {};
+      if (!this.game.state.canAfford(cost)) { this.ui.toast('Не хватает ресурсов, чтобы нанять строителя', 'bad'); return; }
       vil.setBuilderCount(n + 1); this.ui.click(); this._peopleDirty = true; return;
     }
     const idle = this.villagers().find(v => (v.job || 'idle') === 'idle');
@@ -326,8 +330,17 @@ export class CommandPanel {
           list.append(h('div.zc-job.off', img(jobIcon(job)), h('div.zc-job-name', JOB_PLURAL[job], h('small', this.jobHint(job))), h('div.zc-job-n', '—')));
           continue;
         }
-        list.append(h('div.zc-job', img(jobIcon(job)),
-          h('div.zc-job-name', JOB_PLURAL[job], h('small', builder ? 'Строят и чинят здания' : `Мест: ${cp}`)),
+        let sub = builder ? 'Строят и чинят здания' : `Мест: ${cp}`;
+        let hire = null;
+        if (builder) {
+          const vil = this.game.village;
+          const cost = vil.builderHireCost?.(c + 1) || {};
+          if (cp && c >= cp) sub = 'Предел — постройте «Дом строителя»';
+          else if (Object.keys(cost).length) hire = h('div.zc-job-hire', h('span', 'Нанять:'), costRow(this.game.state, cost));
+          else sub = 'Следующий строитель — бесплатно';
+        }
+        list.append(h('div.zc-job' + (hire ? '.has-hire' : ''), img(jobIcon(job)),
+          h('div.zc-job-name', JOB_PLURAL[job], h('small', sub), hire),
           h('div.zc-job-ctl',
             h('button.zc-iconbtn.small.ui-i', { title: 'Убрать', disabled: c <= 0, onclick: () => this.jobMinus(job) }, glyphImg('minus')),
             h('div.zc-job-n', h('b', c), cp ? ' / ' + cp : ''),

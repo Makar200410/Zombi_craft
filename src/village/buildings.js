@@ -130,6 +130,32 @@ function house(v) {
   return bp;
 }
 
+function builderHut(v) {
+  // builder's workshop: small timber house + yard with stacked planks, scaffolding and a crane post
+  const bp = new BP(7, 7);
+  const roof = v & 1 ? B.ROOF_TILES : B.THATCH;
+  bp.box(0, 0, 0, 6, 0, 6, B.PATH);
+  bp.box(1, 0, 1, 4, 0, 4, B.PLANKS);
+  bp.ring(1, 1, 1, 4, 1, 4, B.COBBLESTONE);
+  bp.ring(1, 2, 1, 4, 2, 4, B.TIMBER_FRAME);
+  bp.posts(1, 1, 4, 4, 1, 2, B.SPRUCE_LOG);
+  bp.del(4, 1, 2); bp.del(4, 2, 2);
+  bp.set(2, 2, 1, B.GLASS);
+  bp.gableX(0, 5, 0, 5, 3, roof, B.PLANKS, 1, 4);
+  bp.set(2, 1, 2, B.WORKBENCH); bp.set(3, 1, 3, B.HAY_BALE);
+  // yard: plank stacks, stone pile, scaffolding tower
+  bp.box(6, 1, 0, 6, 2, 1, B.PLANKS); bp.set(6, 1, 2, B.PLANKS);
+  bp.box(0, 1, 6, 1, 1, 6, B.COBBLESTONE); bp.set(0, 2, 6, B.COBBLESTONE);
+  for (const [x, z] of [[4, 6], [6, 6], [6, 4]]) bp.box(x, 1, z, x, 4, z, B.SPRUCE_LOG);
+  bp.box(4, 4, 4, 6, 4, 6, B.PLANKS); bp.del(5, 4, 5);
+  bp.set(5, 5, 6, B.LANTERN);
+  bp.set(6, 1, 3, B.TORCH);
+  bp.point('door', 5, 1, 2);
+  bp.point('work', 5, 1, 3);
+  bp.point('inside', 2, 1, 3);
+  return bp;
+}
+
 function lumberCamp(v) {
   const bp = new BP(7, 7);
   bp.box(0, 0, 0, 6, 0, 6, B.PATH);
@@ -434,11 +460,15 @@ function def(id, o) {
 
 def('town_hall', {
   name: 'Ратуша', desc: 'Сердце деревни. Даёт жильё 4 жителям и строителей. Если её разрушат — игра окончена.',
-  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'coal', 'gold', 'crystal'], auto: true,
+  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal'], auto: true,
 });
 def('house', {
   name: 'Дом', desc: 'Уютный фахверковый дом. +4 к населению. Ночью жители прячутся внутри.',
   cost: { wood: 20, stone: 10 }, hp: 300, popBonus: 4, category: 'economy', design: house, variants: 4,
+});
+def('builder_hut', {
+  name: 'Дом строителя', desc: 'Мастерская бригады строителей: +2 места для строителей. Строители из хижины работают на 15% быстрее.',
+  cost: { wood: 30, stone: 15 }, hp: 300, popBonus: 1, category: 'economy', design: builderHut, variants: 2, builderSlots: 2,
 });
 def('lumber_camp', {
   name: 'Лесопилка', desc: 'Лесорубы валят деревья поблизости, приносят дерево и сажают новые саженцы.',
@@ -450,11 +480,11 @@ def('farm', {
 });
 def('storehouse', {
   name: 'Склад', desc: 'Ближняя точка сдачи ресурсов: рабочие меньше ходят и больше работают.',
-  cost: { wood: 30, stone: 15 }, hp: 350, category: 'economy', design: storehouse, storage: ['wood', 'stone', 'food', 'iron', 'coal', 'gold', 'crystal'],
+  cost: { wood: 30, stone: 15 }, hp: 350, category: 'economy', design: storehouse, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal'],
 });
 def('mine', {
   name: 'Шахта', desc: 'Шахтёры роют настоящий карьер ступенями вглубь: камень, уголь, железо, золото и кристаллы.',
-  cost: { wood: 25, stone: 10 }, hp: 300, jobs: { miner: 2 }, research: 'mining', category: 'economy', design: mine, storage: ['stone', 'coal', 'iron', 'gold', 'crystal'],
+  cost: { wood: 25, stone: 10 }, hp: 300, jobs: { miner: 2 }, research: null, category: 'economy', design: mine, storage: ['stone', 'coal', 'iron_ore', 'iron', 'gold_ore', 'gold', 'crystal'],
 });
 def('laboratory', {
   name: 'Лаборатория', desc: 'Учёные корпят над книгами и магическим столом, производя очки исследований.',
@@ -485,7 +515,7 @@ def('stone_wall', {
   cost: { stone: 5 }, hp: 450, research: 'fortification', category: 'defense', design: stoneWall, variants: 2, line: true,
 });
 
-export const BUILDING_ORDER = ['house', 'lumber_camp', 'farm', 'storehouse', 'mine', 'laboratory', 'forge', 'watchtower', 'barracks', 'mage_tower', 'wall', 'stone_wall'];
+export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'laboratory', 'forge', 'watchtower', 'barracks', 'mage_tower', 'wall', 'stone_wall'];
 
 export const RESEARCH_LABELS = {
   masonry: 'Каменная кладка', agriculture: 'Земледелие', mining: 'Горное дело', smithing: 'Кузнечное дело', archery: 'Стрельба из лука',

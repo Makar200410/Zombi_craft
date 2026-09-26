@@ -19,14 +19,14 @@ export const TECHS = {
   mining: {
     name: 'Горное дело', icon: { item: 'pickaxe_stone' }, tier: 0, pos: [0, 2], prereqs: [],
     cost: { wood: 30, stone: 20 }, points: 25,
-    desc: 'Шахтёры научатся прокладывать штольни к рудным жилам.',
-    effects: ['Открывает здание «Шахта»'],
+    desc: 'Шахтёры научатся находить рудные жилы.',
+    effects: ['Шахтёры находят в 1,5 раза больше руды'],
   },
   archery: {
     name: 'Стрельба из лука', icon: { item: 'bow' }, tier: 0, pos: [0, 3], prereqs: [],
     cost: { wood: 40, food: 10 }, points: 25,
     desc: 'Тисовые луки и сторожевые вышки с лучниками.',
-    effects: ['Предмет: Длинный лук', 'Открывает «Сторожевую вышку»'],
+    effects: ['Рецепт крафта: Длинный лук', 'Открывает «Сторожевую вышку»'],
   },
   alchemy: {
     name: 'Алхимия', icon: { res: 'mana' }, tier: 0, pos: [0, 4.6], prereqs: [],
@@ -38,7 +38,7 @@ export const TECHS = {
     name: 'Кузнечное дело', icon: { item: 'sword_iron' }, tier: 1, pos: [1, 2], prereqs: ['mining'],
     cost: { stone: 40, coal: 10, iron: 5 }, points: 50,
     desc: 'Горн и наковальня: железное оружие и инструменты.',
-    effects: ['Открывает «Кузницу»', 'Железный меч, кирка, боевой топор', 'Стражники получают железные мечи'],
+    effects: ['Открывает «Кузницу»', 'Рецепты: железный меч, кирка, боевой топор', 'Стражники получают железные мечи'],
   },
   fortification: {
     name: 'Фортификация', icon: { block: 45 }, tier: 1, pos: [1, 1], prereqs: ['masonry'],
@@ -50,37 +50,37 @@ export const TECHS = {
     name: 'Тайные знания', icon: { item: 'staff_fire' }, tier: 1, pos: [1, 4.6], prereqs: ['alchemy'],
     cost: { crystal: 8, gold: 10 }, points: 60,
     desc: 'Кристаллы маны раскрывают свою силу посвящённым.',
-    effects: ['Открывает «Башню магов»', 'Предмет: Посох углей'],
+    effects: ['Открывает «Башню магов»', 'Рецепт крафта: Посох углей'],
   },
   mechanics: {
     name: 'Механика', icon: { item: 'crossbow' }, tier: 2, pos: [2, 2], prereqs: ['smithing'],
     cost: { wood: 60, iron: 20 }, points: 80,
     desc: 'Шестерни, рычаги и блоки ускоряют любую стройку.',
-    effects: ['Предмет: Арбалет', 'Строители: +30% скорости'],
+    effects: ['Рецепт крафта: Арбалет', 'Строители: +30% скорости'],
   },
   crystal_forging: {
     name: 'Кристальная ковка', icon: { item: 'sword_crystal' }, tier: 2, pos: [2, 3.3], prereqs: ['smithing', 'arcana'],
     cost: { crystal: 20, iron: 20 }, points: 110,
     desc: 'Сплав стали и маны — клинок, режущий саму тьму.',
-    effects: ['Предмет: Кристальный клинок'],
+    effects: ['Рецепт крафта: Кристальный клинок'],
   },
   storm_magic: {
     name: 'Магия бури', icon: { item: 'staff_storm' }, tier: 2, pos: [2, 4.3], prereqs: ['arcana'],
     cost: { crystal: 20, gold: 20 }, points: 110,
     desc: 'Призыв молний, перескакивающих между врагами.',
-    effects: ['Предмет: Посох бури'],
+    effects: ['Рецепт крафта: Посох бури'],
   },
   frost_magic: {
     name: 'Магия льда', icon: { item: 'staff_frost' }, tier: 2, pos: [2, 5.3], prereqs: ['arcana'],
     cost: { crystal: 18, stone: 30 }, points: 100,
     desc: 'Ледяные осколки замедляют нежить.',
-    effects: ['Предмет: Посох стужи', 'Башни магов замедляют зомби'],
+    effects: ['Рецепт крафта: Посох стужи', 'Башни магов замедляют зомби'],
   },
   restoration: {
     name: 'Магия жизни', icon: { item: 'staff_life' }, tier: 2, pos: [2, 6.3], prereqs: ['arcana'],
     cost: { crystal: 15, food: 60 }, points: 90,
     desc: 'Целительная волна для вас и союзников рядом.',
-    effects: ['Предмет: Посох жизни'],
+    effects: ['Рецепт крафта: Посох жизни'],
   },
   gunpowder: {
     name: 'Порох', icon: { item: 'musket' }, tier: 3, pos: [3, 2], prereqs: ['mechanics', 'mining'],
@@ -92,7 +92,7 @@ export const TECHS = {
     name: 'Звёздный огонь', icon: { item: 'tome_meteor' }, tier: 3, pos: [3, 4.8], prereqs: ['storm_magic', 'frost_magic'],
     cost: { crystal: 60, gold: 50 }, points: 300,
     desc: 'Древний фолиант, обрушивающий метеоры на орды мёртвых.',
-    effects: ['Предмет: Фолиант метеоров'],
+    effects: ['Рецепт крафта: Фолиант метеоров'],
   },
   ballistics: {
     name: 'Баллистика', icon: { item: 'blunderbuss' }, tier: 4, pos: [4, 1.5], prereqs: ['gunpowder', 'fortification'],
@@ -199,10 +199,10 @@ export class Research {
     this.state.researchDone.add(id);
     const bus = this.game.bus;
     bus.emit('research:done', { id });
-    for (const itemId in ITEMS) {
-      if (ITEMS[itemId].research === id) { this.state.unlockedItems.add(itemId); bus.emit('item:unlocked', { id: itemId }); }
-    }
+    const recipes = [];
+    for (const itemId in ITEMS) if (ITEMS[itemId].research === id) recipes.push(ITEMS[itemId].name);
     bus.emit('toast', { text: 'Исследование завершено: ' + t.name, kind: 'good' });
+    if (recipes.length) bus.emit('toast', { text: 'Новые рецепты в «Крафте»: ' + recipes.join(', '), kind: 'info' });
     this.game.audio?.play?.('research_done');
   }
 

@@ -7,8 +7,8 @@ import { JOBS } from './names.js';
 import { makeBlockMesh } from './visuals.js';
 import { brainFor } from './jobs.js';
 
-const CARRY_BLOCK = { wood: B.LOG, stone: B.COBBLESTONE, food: B.HAY_BALE, coal: B.COAL_ORE, iron: B.IRON_ORE, gold: B.GOLD_ORE, crystal: B.CRYSTAL_ORE };
-export const RES_GEN = { wood: 'дерева', stone: 'камня', food: 'еды', coal: 'угля', iron: 'железа', gold: 'золота', crystal: 'кристаллов' };
+const CARRY_BLOCK = { wood: B.LOG, stone: B.COBBLESTONE, food: B.HAY_BALE, coal: B.COAL_ORE, iron: B.IRON_BLOCK, gold: B.GOLD_ORE, crystal: B.CRYSTAL_ORE, iron_ore: B.IRON_ORE, gold_ore: B.GOLD_ORE };
+export const RES_GEN = { wood: 'дерева', stone: 'камня', food: 'еды', coal: 'угля', iron: 'железа', gold: 'золота', crystal: 'кристаллов', iron_ore: 'железной руды', gold_ore: 'золотой руды' };
 
 /**
  * Living villager (Millénaire-style). Behaviour is written as generator "brains" (see jobs.js):
@@ -177,7 +177,7 @@ export class Villager extends Entity {
     const every = st.researchDone.has('alchemy') ? 2.5 : 8;
     if (this._regen > every) { this._regen = 0; if (this.hp < this.maxHp && this.hunger > 20) this.heal(1); }
   }
-  get workSpeed() { return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1); }
+  get workSpeed() { return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1) * (this.job === 'builder' ? (this.village?.builderSpeedBonus || 1) : 1); }
 
   // ---------------------------------------------------------------- movement
   stopMove() { this._steer = null; }

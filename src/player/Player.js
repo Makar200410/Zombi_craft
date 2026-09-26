@@ -1,5 +1,8 @@
 // The hero: first/third-person movement, hotbar, mining/placing, weapons & spells, death/respawn.
 import * as THREE from 'three';
+import { STATIONS } from '../systems/crafting.js';
+import { B as _B } from '../core/blocks.js';
+const STATION_OF_BLOCK = { [_B.WORKBENCH]: 'workbench', [_B.FURNACE]: 'furnace', [_B.IRON_BLOCK]: 'anvil', [_B.ARCANE_TABLE]: 'arcane' };
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
 import { ITEMS, DEFAULT_HOTBAR, RESOURCE_LABELS } from '../core/items.js';
@@ -102,6 +105,8 @@ export class Player extends Entity {
   isUnlocked(itemId) {
     const it = ITEMS[itemId];
     if (!it) return false;
+    const cr = this.game.crafting;
+    if (cr) return cr.owns(itemId);
     if (!it.research) return true;
     const st = this.game.state;
     if (st.unlockedItems?.has(itemId) || st.researchDone?.has(it.research)) return true;
@@ -118,7 +123,13 @@ export class Player extends Entity {
     if (!force && this.game.time < this._hintT) return;
     this._hintT = this.game.time + 1.5;
     const it = ITEMS[itemId];
-    this.game.bus.emit('toast', { text: `Требуется исследование: ${this.researchName(it.research)}`, kind: 'bad' });
+    const cr = this.game.crafting;
+    if (cr && cr.researched(itemId)) {
+      const r = cr.recipeForItem(itemId);
+      this.game.bus.emit('toast', { text: `«${it.name}» нужно создать: кнопка «Крафт»${r ? ' → ' + (STATIONS[r.station]?.name || '') : ''}`, kind: 'info' });
+      return;
+    }
+    this.game.bus.emit('toast', { text: `Требуется исследование: ${this.researchName(it.research)}, затем крафт`, kind: 'bad' });
   }
   _hint(text, kind = 'info') {
     if (this.game.time < this._hintT) return;
@@ -458,6 +469,13 @@ export class Player extends Entity {
     this.target.place = ghost;
 
     let mining = false;
+    // interact with crafting stations (workbench, furnace, anvil, arcane table)
+    if (pressS && id !== 'build_hammer' && this.target.block && STATION_OF_BLOCK[this.target.block.id]) {
+      g.bus.emit('ui:craft', { station: STATION_OF_BLOCK[this.target.block.id] });
+      this._prevSecondary = true;
+      this.cursor.update(dt, this.target.block, null);
+      return;
+    }
     if (!it) { this.mining = false; this.cursor.update(dt, this.target.block, null); return; }
     if (!unlocked) {
       if (pressP || pressS) { this._lockedToast(id); g.audio?.play('mana_empty', { volume: 0.4, pitch: 0.7 }); }
@@ -502,7 +520,7 @@ export class Player extends Entity {
           if (pressS || this._placeT <= 0) { this._place(ghost); this._placeT = pressS ? 0.3 : 0.2; }
         } else if (pressS) {
           if (this.target.entity && this.target.entity.faction === 'village') g.bus.emit('select:entity', { entity: this.target.entity });
-          else if (this.target.block) this._hint('Выберите «Молот строителя», чтобы ставить блоки');
+          else if (this.target.block) this._hint('Выберите «Молот строителя», чтобы ставить блоки. Верстак, печь, железный блок и магический стол открывают крафт');
         }
       } else this._placeT = 0;
     }

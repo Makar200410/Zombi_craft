@@ -355,6 +355,14 @@ export function getItemSprite(itemId) {
 }
 
 // ------------------------------------------------------------------ resource icons (32x32)
+/** raw ore: a grey rock with coloured nuggets */
+function oreChunk(p, cols) {
+  RES_DRAW.stone(p);
+  const N = hexes(cols);
+  for (const [x, y] of [[10, 12], [18, 10], [21, 17], [12, 21], [16, 16], [23, 23], [9, 18]]) {
+    p.set(x, y, N[1]); p.set(x + 1, y, N[2]); p.set(x, y + 1, N[0]); p.set(x + 1, y + 1, N[1]); p.set(x + 1, y - 1, N[3]);
+  }
+}
 const RES_DRAW = {
   wood(p) {
     // two stacked logs with ring ends
@@ -396,6 +404,8 @@ const RES_DRAW = {
     for (const [x, y] of [[22, 6], [25, 6], [22, 4], [25, 4], [23, 3], [24, 2]]) p.set(x, y, hex('#f0c850'));
   },
   iron(p) { ingot(p, R.iron); },
+  iron_ore(p) { oreChunk(p, ['#6a4020', '#a8683a', '#d89a64', '#f2c89a']); },
+  gold_ore(p) { oreChunk(p, ['#7a5008', '#c08a14', '#f0c030', '#fff0a0']); },
   gold(p) { ingot(p, R.gold); p.set(24, 5, hex('#ffffff')); p.set(23, 5, hex('#fff4b0')); p.set(25, 5, hex('#fff4b0')); p.set(24, 4, hex('#fff4b0')); p.set(24, 6, hex('#fff4b0')); },
   coal(p) {
     const C = hexes(['#050507', '#121216', '#1e1e26', '#30303c', '#5a5c70']);
@@ -630,6 +640,17 @@ const BUILD_DRAW = {
     // chimney
     rect(p, 32, 8, 4, 9, tex('cobblestone'));
     p.set(33, 6, hex('#b8b8c0')); p.set(34, 4, hex('#d8d8e0')); p.set(33, 2, hex('#e8e8f0'));
+  },
+  builder_hut(p) {
+    house(p, { x: 4, g: 42, w: 22, h: 12, d: 10, wall: 'timber_frame', roof: 'thatch', roofH: 9, gable: 'planks' });
+    door(p, 12, 34, 6, 8);
+    windowAt(p, 6, 31);
+    // scaffolding tower on the right
+    for (const x of [30, 42]) rect(p, x, 14, 2, 28, (xx) => (xx === x ? hex('#8a5c32') : hex('#54341c')));
+    for (const y of [14, 24, 34]) rect(p, 29, y, 16, 2, tex('planks'));
+    // crossed hammer on top
+    for (let k = 0; k < 8; k++) { p.set(33 + k, 5 + k, hex('#6a4424')); }
+    rect(p, 38, 3, 6, 4, tex('iron_block'));
   },
   lumber_camp(p) {
     // open shed: posts + plank roof

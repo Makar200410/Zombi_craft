@@ -141,6 +141,26 @@ export function generateTerrain(world) {
       for (let y = 1; y <= ph; y++) world.blocks[world.index(x, h + y, z)] = rnd() < 0.5 ? B.MOSSY_COBBLE : B.DARK_STONE;
     }
   }
+  // ore boulders around the village (radius ~30–65): visible coal & iron so the player can find ore early
+  const boulders = Math.round(14 * Math.sqrt(area));
+  for (let i = 0, tries = 0; i < boulders && tries < 400; tries++) {
+    const ang = rnd() * Math.PI * 2, r = 30 + rnd() * 35;
+    const bx = Math.round(cx + Math.cos(ang) * r), bz = Math.round(cz + Math.sin(ang) * r);
+    if (bx < 6 || bz < 6 || bx >= size - 6 || bz >= size - 6) continue;
+    const h = heights[bz * size + bx];
+    if (h <= SEA_LEVEL + 1 || biome[bz * size + bx] === 4) continue;
+    const oreMain = i % 3 === 2 ? B.COAL_ORE : (i % 2 ? B.IRON_ORE : B.COAL_ORE);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (let dy = 1; dy <= 2; dy++) {
+      if (dy === 2 && (Math.abs(dx) + Math.abs(dz) > 1 || rnd() < 0.3)) continue;
+      if (Math.abs(dx) + Math.abs(dz) === 2 && rnd() < 0.5) continue;
+      const x = bx + dx, z = bz + dz, y = heights[z * size + x] + dy;
+      if (y >= height - 2) continue;
+      for (let yy = y; yy < y + 6 && yy < height; yy++) { const k = world.index(x, yy, z); const id = world.blocks[k]; if (id === B.LOG || id === B.LEAVES || id === B.BIRCH_LOG || id === B.BIRCH_LEAVES || id === B.SPRUCE_LOG || id === B.SPRUCE_LEAVES || id === B.TALL_GRASS) world.blocks[k] = B.AIR; }
+      const roll = rnd();
+      world.blocks[world.index(x, y, z)] = roll < 0.45 ? oreMain : roll < 0.6 ? (oreMain === B.IRON_ORE ? B.COAL_ORE : B.IRON_ORE) : (roll < 0.85 ? B.STONE : B.MOSSY_COBBLE);
+    }
+    i++;
+  }
   world.heights = heights;
 }
 
