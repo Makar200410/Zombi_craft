@@ -28,6 +28,8 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => log('[loaded] ' + win.webContents.getURL()));
   // debug: ZC_RESIZE=WxH resizes the window after 6 s (to test layout after maximize)
   if (process.env.ZC_RESIZE) setTimeout(() => { const [w, h] = process.env.ZC_RESIZE.split('x').map(Number); win.setSize(w, h); log('[resize] ' + w + 'x' + h); }, 6000);
+  // debug: ZC_EVAL runs JS in the page after ZC_EVAL_DELAY ms
+  if (process.env.ZC_EVAL) setTimeout(() => win.webContents.executeJavaScript(process.env.ZC_EVAL).then(r => log('[eval] ' + JSON.stringify(r))).catch(e => log('[eval err] ' + e.message)), +(process.env.ZC_EVAL_DELAY || 10000));
   // debug: ZC_SHOT=<file.png> saves a screenshot after ZC_SHOT_DELAY ms and quits (used for automated checks)
   if (process.env.ZC_SHOT) setTimeout(async () => { const img = await win.webContents.capturePage(); require('fs').writeFileSync(process.env.ZC_SHOT, img.toPNG()); log('[shot] ' + process.env.ZC_SHOT); app.quit(); }, +(process.env.ZC_SHOT_DELAY || 20000));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });

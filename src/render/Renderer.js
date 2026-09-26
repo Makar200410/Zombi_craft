@@ -64,6 +64,7 @@ export class Renderer {
     if (q === 'high') this.enableBloom();
     this.resize();
     addEventListener('resize', () => this.resize());
+    try { new ResizeObserver(() => this.resize()).observe(this.renderer.domElement); } catch (e) { /* old browsers */ }
     addEventListener('orientationchange', () => setTimeout(() => this.resize(), 200));
   }
   get domElement() { return this.renderer.domElement; }
@@ -103,13 +104,29 @@ export class Renderer {
     const touch = this.game.isTouch;
     let pr = q === 'low' ? Math.min(dpr, 1) : q === 'medium' ? Math.min(dpr, touch ? 1.25 : 1.5) : Math.min(dpr, 2);
     pr *= this.renderScale || 1;
+    // size from the actual element box (falls back to the window); CSS keeps the canvas at 100% of the window,
+    // so a missed resize event can never leave it stuck at an old, narrower width
+    const el = this.renderer.domElement;
+    const W = Math.max(1, Math.round(el.clientWidth || innerWidth)), H = Math.max(1, Math.round(el.clientHeight || innerHeight));
+    this._size = W + 'x' + H + '@' + pr;
     this.renderer.setPixelRatio(pr);
-    this.renderer.setSize(innerWidth, innerHeight);
-    this.camera.aspect = innerWidth / innerHeight;
+    this.renderer.setSize(W, H, false);
+    this.camera.aspect = W / H;
     this.camera.updateProjectionMatrix();
     if (this.composer) {
       this.composer.setPixelRatio(pr);
-      this.composer.setSize(innerWidth, innerHeight);
+      this.composer.setSize(W, H);
+    }
+  }
+  /** Cheap per-frame guard: resize if the canvas box changed without an event (window snapping, DPI change…). */
+  checkSize() {
+    const el = this.renderer.domElement;
+    const W = Math.round(el.clientWidth || innerWidth), H = Math.round(el.clientHeight || innerHeight);
+    const pr = this.renderer.getPixelRatio();
+    // compare the real drawing buffer with the box it is shown in (catches any stale size)
+    if (Math.abs(el.width - Math.floor(W * pr)) > 1 || Math.abs(el.height - Math.floor(H * pr)) > 1 || this._dpr !== (window.devicePixelRatio || 1)) {
+      this._dpr = window.devicePixelRatio || 1;
+      this.resize();
     }
   }
 
@@ -165,6 +182,7 @@ export class Renderer {
   }
 
   render(dt) {
+    this.checkSize();
     worldUniforms.uTime.value = this.game.time;
     this.updateDayNight(dt);
     if (this.composer) this.composer.render(dt);
