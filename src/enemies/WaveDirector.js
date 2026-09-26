@@ -2,6 +2,7 @@
 // dawn cleanup, rewards, daytime wanderers and save/load.
 import { Zombie } from './Zombie.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
+import { countFor, weightsFor, introducedOn, BOSSES, HINTS, hpScale, dmgScale, eraOf } from './waveSchedule.js';
 import { FlowField } from './flowfield.js';
 import { EnemyProjectiles } from './fx.js';
 
@@ -75,29 +76,21 @@ export class WaveDirector {
   /** Composition of wave n: array of type ids (boss last). */
   compose(n) {
     const d = this.diff;
-    const count = Math.min(140, Math.round((5 + n * 4 + Math.max(0, n - 5) * 2) * d.count));
-    const weights = { walker: 1 };
-    if (n >= 2) weights.runner = 0.28 + Math.min(0.2, n * 0.02);
-    if (n >= 3) weights.spitter = 0.14 + Math.min(0.1, n * 0.01);
-    if (n >= 4) weights.brute = 0.08 + Math.min(0.12, n * 0.012);
-    if (n >= 5) weights.exploder = 0.1 + Math.min(0.1, n * 0.01);
-    // extended bestiary: each kind joins from its own wave, rarer at first
-    const EXTRA = { crawler: [3, 0.1], armored: [4, 0.1], frost: [6, 0.09], skeleton: [6, 0.1], burning: [7, 0.09], leaper: [7, 0.09], screamer: [8, 0.05], digger: [8, 0.08], giant: [9, 0.025] };
-    for (const [k, [w0, wt]] of Object.entries(EXTRA)) if (n >= w0) weights[k] = wt + Math.min(wt, (n - w0) * wt * 0.1);
+    const count = Math.min(170, Math.round(countFor(n) * d.count));
+    const weights = weightsFor(n);
     const total = Object.values(weights).reduce((a, b) => a + b, 0);
     const out = [];
-    // guarantee the newly introduced types show up
-    const intro = { 2: ['runner'], 3: ['spitter', 'crawler'], 4: ['brute', 'armored'], 5: ['exploder'], 6: ['frost', 'skeleton'], 7: ['burning', 'leaper'], 8: ['screamer', 'digger'], 9: ['giant'] }[n] || [];
-    for (const t of intro) out.push(t, t);
+    // guarantee the newly introduced kinds show up
+    for (const t of introducedOn(n)) out.push(t, t);
     while (out.length < count) {
       let r = Math.random() * total;
       for (const k in weights) { r -= weights[k]; if (r <= 0) { out.push(k); break; } }
       if (r > 0) out.push('walker');
     }
-    // shuffle, but keep the first group mostly walkers for a readable build-up
     for (let i = out.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [out[i], out[j]] = [out[j], out[i]]; }
-    if (n % 5 === 0) out.splice(Math.floor(out.length * 0.45), 0, 'necromancer');
-    if (n % 10 === 0) out.splice(Math.floor(out.length * 0.6), 0, 'giant', 'giant');
+    // scripted bosses arrive mid-wave; past the finale: a necromancer every 5 waves, giants every 10
+    const bosses = BOSSES[n] || (n > 50 ? [...(n % 5 === 0 ? ['necromancer'] : []), ...(n % 10 === 0 ? ['giant', 'giant'] : [])] : []);
+    bosses.forEach((t, i) => out.splice(Math.floor(out.length * (0.4 + i * 0.08)), 0, t));
     return out;
   }
 
@@ -125,9 +118,11 @@ export class WaveDirector {
     game.audio?.play('wave_horn', { volume: 1 });
     game.bus.emit('wave:start', { wave: n, count: types.length, directions: this.spawnDirections });
     game.bus.emit('toast', { text: `Волна ${n}! Нежить наступает`, kind: 'wave' });
-    const HINT = { runner: 'быстрые', crawler: 'мелкие и юркие', spitter: 'плюются кислотой издали', brute: 'ломают стены', armored: 'броня — бейте магией', exploder: 'взрываются у стен', frost: 'замедляют ударом, не боятся льда', skeleton: 'стреляют из луков', burning: 'поджигают, не боятся огня', leaper: 'перепрыгивают стены', screamer: 'ускоряют и усиливают соседей', digger: 'быстро роют стены', giant: 'огромный и очень прочный' };
-    const fresh = { 2: ['runner'], 3: ['spitter', 'crawler'], 4: ['brute', 'armored'], 5: ['exploder'], 6: ['frost', 'skeleton'], 7: ['burning', 'leaper'], 8: ['screamer', 'digger'], 9: ['giant'] }[n];
-    if (fresh) game.bus.emit('toast', { text: 'Новые враги: ' + fresh.map(t => `${ZOMBIE_TYPES[t].name} (${HINT[t]})`).join(', '), kind: 'bad' });
+    const era = eraOf(n);
+    if (n === era.from) game.bus.emit('toast', { text: `Эпоха «${era.name}» — волны ${era.from}–${era.from + 9 > 50 && era.from <= 50 ? 50 : era.from + 9}`, kind: 'wave' });
+    const fresh = introducedOn(n);
+    if (fresh.length) game.bus.emit('toast', { text: 'Новые враги: ' + fresh.map(t => `${ZOMBIE_TYPES[t].name} (${HINTS[t]})`).join(', '), kind: 'bad' });
+    if (BOSSES[n]) game.bus.emit('toast', { text: 'Боссы этой ночи: ' + BOSSES[n].map(t => ZOMBIE_TYPES[t].name).join(', '), kind: 'bad' });
     return true;
   }
 
@@ -165,7 +160,12 @@ export class WaveDirector {
     this.bonus = false;
     game.audio?.play('wave_cleared', { volume: 1 });
     game.bus.emit('wave:end', { wave: n, count: this.waveCount, reward: { gold, crystal } });
-    game.bus.emit('toast', { text: `Волна отбита! +${gold} золота` + (crystal ? `, +${crystal} кристаллов` : ''), kind: 'good' });
+    game.bus.emit('toast', { text: `Волна ${n}/50 отбита! +${gold} золота` + (crystal ? `, +${crystal} кристаллов` : ''), kind: 'good' });
+    if (n === 50) {
+      game.bus.emit('toast', { text: 'ПОБЕДА! Деревня выстояла все 50 волн. Дальше — бесконечная ночь…', kind: 'wave' });
+      game.bus.emit('game:victory', { wave: n });
+      game.audio?.play('build_complete', { volume: 1 });
+    }
   }
 
   _dawn() {
@@ -225,8 +225,8 @@ export class WaveDirector {
     if (!p) { const y = w.surfaceY(x, z) + 1; p = { x, y, z }; }
     const d = this.diff;
     const wave = opts.wave ?? this.currentWave;
-    const hpMul = (opts.hpMul ?? 1) * d.hp * (1 + Math.max(0, wave - 1) * 0.07);
-    const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * (1 + Math.max(0, wave - 1) * 0.03), wave });
+    const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave);
+    const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave), wave });
     zb.position.set(p.x, p.y, p.z);
     zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
     zb.progPos.copy(zb.position);
