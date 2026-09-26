@@ -219,8 +219,11 @@ export class World {
     }
     this._spread(queue, 4, null);
     const bq = [];
-    for (let i = 0; i < this.blocks.length; i++) {
-      const e = EMIT[this.blocks[i]];
+    const blocks = this.blocks;
+    for (let i = 0; i < blocks.length; i++) {
+      const id = blocks[i];
+      if (id === 0 || id === 3 || id === 2 || id === 1) continue;   // air/stone/dirt/grass fast path
+      const e = EMIT[id];
       if (e) {
         this.light[i] = (this.light[i] & 0xF0) | e;
         const x = i % size, z = Math.floor(i / size) % size, y = Math.floor(i / (size * size));

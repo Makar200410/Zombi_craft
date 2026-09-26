@@ -126,7 +126,7 @@ export class Minimap {
     // view window
     const cmd = g.mode === 'command';
     const focus = cmd ? g.renderer.shadowFocus : g.player?.position;
-    let span = S;
+    let span = Math.min(S, 200);        // big worlds: show the region around the village / player
     if (!cmd && this.zoomed) span = Math.min(S, 96);
     let x0 = 0, z0 = 0;
     if (span < S && focus) {

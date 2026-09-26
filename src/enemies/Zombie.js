@@ -3,6 +3,7 @@ import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
 import { B, BLOCKS } from '../core/blocks.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
+import { CONSTRUCTION } from './flowfield.js';
 import { getZombieSkin } from './skinFallback.js';
 import { groundBurst, coinBurst, fallbackExplode } from './fx.js';
 
@@ -13,7 +14,7 @@ const LOD_FAR = 60 * 60;       // squared distance to camera beyond which AI/ani
 const EMERGE_TIME = 1.4;
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
-const _goal = { x: 0, y: 0, z: 0 };
+const _goal = { x: 0, y: 0, z: 0 }, _goal2 = { x: 0, y: 0, z: 0 };
 const _nb = [];
 
 // shared eye resources
@@ -64,6 +65,7 @@ export class Zombie extends Entity {
     const hpMul = opts.hpMul || 1;
     super(game, { kind: 'zombie', faction: 'undead', radius: T.radius, height: T.height, maxHp: Math.round(T.hp * hpMul) });
     this.type = ZOMBIE_TYPES[type] ? type : 'walker';
+    this.base = T.base || this.type;       // behaviour archetype (walker/runner/brute/spitter/exploder/necromancer)
     this.T = T;
     this.dmgMul = opts.dmgMul || 1;
     this.wave = opts.wave || 0;
@@ -87,6 +89,9 @@ export class Zombie extends Entity {
     this.object3d.add(this.visual);
     this._addEyes();
     if (this.type === 'necromancer') this._addNecroProps();
+    if (T.hunch) { this.visual.rotation.x = T.hunch * 0.85; }
+    if (T.glow) { this.model.material.emissive.setHex(T.glow); this.model.material.emissiveIntensity = 0.55; }
+    this.buffUntil = 0; this.leapT = 1 + Math.random() * 2; this.trailT = 0;
     if (this.type === 'exploder') this._addBoils();
 
     // --- AI state
@@ -191,7 +196,61 @@ export class Zombie extends Entity {
   }
 
   // ------------------------------------------------------------------ main update
+  get _buffMul() { return this.buffUntil > this.game.time ? 1.3 : 1; }
+  /** Type-specific extras: screamer aura, leaper jumps, elemental trails. */
+  _extras(dt) {
+    const T = this.T, game = this.game, pos = this.position;
+    if (this.dead || this.emergeT > 0) return;
+    if (T.aura) {
+      this.auraT2 = (this.auraT2 || 0) - dt;
+      if (this.auraT2 <= 0) {
+        this.auraT2 = 0.6;
+        let n = 0;
+        for (const o of game.waves?.zombies || []) if (o !== this && !o.dead && o.position.distanceTo(pos) < T.aura) { o.buffUntil = game.time + 1.4; n++; }
+        if (n && !this.far) game.particles?.emit({ pos: this.eye, count: 6, colors: [0xff40c0, 0xff90e0], additive: true, speed: 3, spread: 1, life: 0.5, size: 0.2, gravity: 0 });
+        if (n && Math.random() < 0.25) game.audio?.play('zombie_groan', { pos, pitch: 1.9, volume: 0.9 });
+      }
+    }
+    if (T.leap) {
+      this.leapT -= dt;
+      if (this.leapT <= 0 && this.onGround && this.stunTimer <= 0) {
+        const tgt = this.target, td = tgt ? tgt.position.distanceTo(pos) : 99;
+        let dx = 0, dz = 0, go = false;
+        if (this.hitWall || this.blockedT > 0.15) { dx = this.moveDirX; dz = this.moveDirZ; go = true; }          // vault over walls
+        else if (tgt && td > 2.2 && td < 7) { dx = (tgt.position.x - pos.x) / td; dz = (tgt.position.z - pos.z) / td; go = true; }   // pounce
+        if (go) {
+          this.leapT = 2.2 + Math.random();
+          this.velocity.y = T.leap; this.velocity.x += dx * 5; this.velocity.z += dz * 5;
+          this.breakCell = null;
+          if (!this.far) game.particles?.emit({ pos, count: 8, colors: [0x6a5a40, 0x8a7a5a], speed: 2, dir: { x: 0, y: 1, z: 0 }, life: 0.5, size: 0.14 });
+        }
+      }
+    }
+    if (T.trail && !this.far) {
+      this.trailT -= dt;
+      if (this.trailT <= 0) { this.trailT = 0.12; game.particles?.emit({ pos: this.center, box: 0.3, count: 1, colors: T.trail, additive: this.type === 'burning', speed: 0.4, dir: { x: 0, y: this.type === 'burning' ? 1.5 : -0.4, z: 0 }, gravity: this.type === 'burning' ? -1 : 2, life: 0.7, size: 0.16 }); }
+    }
+  }
+
+  /** Armour and elemental immunities. */
+  damage(amount, source, opts = {}) {
+    const T = this.T;
+    const kind = opts.kind || 'phys';
+    if (T.immune && kind === T.immune) {
+      if (kind === 'fire') this.burnTimer = 0;
+      if (kind === 'frost') this.slowTimer = 0;
+      if (!this.far) this.game.particles?.emit({ pos: this.center, count: 4, colors: [0xffffff], additive: true, speed: 1, life: 0.3, size: 0.1 });
+      return false;
+    }
+    if (T.armor && (kind === 'phys' || kind === 'poison')) {
+      amount *= 1 - T.armor;
+      this.game.audio?.play('pick_hit', { pos: this.eye, volume: 0.5, pitch: 1.3 + Math.random() * 0.2 });
+    }
+    return super.damage(amount, source, opts);
+  }
+
   update(dt) {
+    this._extras(dt);
     const game = this.game;
     if (this.dead) { this._updateDead(dt); return; }
     const w = game.world; if (!w) return;
@@ -228,7 +287,7 @@ export class Zombie extends Entity {
     if (!far || (this._animSkip -= dt) <= 0) {
       const adt = far ? 0.5 : dt;
       if (far) this._animSkip = 0.5;
-      this.model.update(adt, this.type === 'runner' ? hs * 1.25 : hs);
+      this.model.update(adt, this.base === 'runner' ? hs * 1.25 : hs);
       this._postAnim(adt);
     }
     this.syncObject(dt);
@@ -263,7 +322,7 @@ export class Zombie extends Entity {
       const d = Math.sqrt(this.camD2 || 0);
       this.eyeGlow.scale.setScalar(this._glowBase * Math.min(3.2, Math.max(1, d / 18)));
     }
-    if (this.type === 'exploder') {
+    if (this.base === 'exploder') {
       const fusing = this.fuseT >= 0;
       const f = fusing ? 0.5 + 0.5 * Math.sin(game.time * 30) : 0.5 + 0.5 * Math.sin(game.time * 3 + this.id);
       for (const b of this.boils) b.scale.setScalar(this.model.px * (1.8 + f * (fusing ? 1.6 : 0.6)));
@@ -287,7 +346,7 @@ export class Zombie extends Entity {
     this.visual.position.y = -this.height * 0.95 * k * k;
     this.visual.rotation.z = Math.sin(k * 12) * 0.08 * k;
     if (first || Math.random() < dt * 8) {
-      if (first) groundBurst(game, this.position.x, this.position.y, this.position.z, { purple: this.boss || this.raisedByNecro, big: this.boss || this.type === 'brute' });
+      if (first) groundBurst(game, this.position.x, this.position.y, this.position.z, { purple: this.boss || this.raisedByNecro, big: this.boss || this.base === 'brute' });
       else game.particles?.emit({ pos: { x: this.position.x, y: this.position.y + 0.1, z: this.position.z }, box: 0.4, count: 3, colors: [0x4a3a2a, 0x3a2e22], speed: 1.5, dir: { x: 0, y: 3, z: 0 }, gravity: 14, life: 0.6, size: 0.12 });
     }
     if (first && this.camD2 < 40 * 40) game.audio?.play('dig_dirt', { pos: this.position, pitch: 0.6, volume: 0.8 });
@@ -335,7 +394,7 @@ export class Zombie extends Entity {
   /** Sets velocity toward the current objective. Returns true if the zombie wants to move. */
   _steer(dt) {
     const game = this.game, pos = this.position, T = this.T;
-    let gx = null, gz = null, speed = this.speed, face = null;
+    let gx = null, gz = null, speed = this.speed * (this.buffUntil > this.game.time ? 1.35 : 1), face = null;
     const tgt = this.target;
     this.marching = false;
     if (this.fuseT >= 0 || this._pendingCast || this.stunTimer > 0) {
@@ -346,7 +405,7 @@ export class Zombie extends Entity {
       face = Math.atan2(dx, dz);
       this.losT -= dt;
       if (this.losT <= 0) { this.losT = 0.8; this.losOk = this._los(tgt); }
-      if (this.type === 'spitter' && d < T.keep[1] + 2) {
+      if (this.base === 'spitter' && d < T.keep[1] + 2) {
         // keep distance: back off when too close, hold when in range
         if (d < T.keep[0]) { gx = pos.x - dx; gz = pos.z - dz; speed *= 0.8; }
         else if (d > T.keep[1]) { gx = tgt.position.x; gz = tgt.position.z; }
@@ -395,7 +454,13 @@ export class Zombie extends Entity {
           if (!this.bTarget) this.bTarget = flow.buildingAtCell(pos.x, pos.z) || flow.buildingAtCell(_goal.x, _goal.z) || this._nearestBuilding();
         }
         gx = _goal.x; gz = _goal.z;
-        if (this.type === 'spitter' && here < T.keep[1] && here < 1e8) {
+        // look one more cell ahead and aim between them: smoother lines, less corner-scraping
+        if (d > 0 && flow.next(_goal.x, _goal.z, _goal2) >= 0) {
+          const ax = (gx + _goal2.x) * 0.5, az = (gz + _goal2.z) * 0.5;
+          const mxc = (pos.x + ax) * 0.5, mzc = (pos.z + az) * 0.5;
+          if (!flow.isObstacle(mxc, mzc) && !flow.isObstacle(ax, az) && Math.abs((flow.standAt?.(ax, az) ?? 0) - (flow.standAt?.(gx, gz) ?? 0)) <= 1) { gx = ax; gz = az; }
+        }
+        if (this.base === 'spitter' && here < T.keep[1] && here < 1e8) {
           const b = this.bTarget || flow.buildingAtCell(_goal.x, _goal.z) || this._nearestBuilding();
           if (b) { this.bTarget = b; speed = 0; const c = buildingCenter(b); face = Math.atan2(c.x - pos.x, c.z - pos.z); }
         }
@@ -465,18 +530,42 @@ export class Zombie extends Entity {
     if (this.progT > 2) {
       const moved = Math.hypot(pos.x - this.progPos.x, pos.z - this.progPos.z);
       if (wantMove && moved < 0.35 && !this.breakCell) {
+        this.stallN = (this.stallN || 0) + 1;
         const cell = this._findBlocking();
-        if (cell) this.breakCell = cell;
-        else { this.sideT = 0.8; this.sideSign = Math.random() < 0.5 ? -1 : 1; if (this.onGround) this.velocity.y = 6.5; }
+        // walls & buildings get smashed right away; natural blocks (trees, rock) only when truly stuck
+        if (cell && (this._isBuilt(cell) || this.stallN >= 2 || this.base === 'brute')) this.breakCell = cell;
+        else { this.sideT = 0.9; this.sideSign = Math.random() < 0.5 ? -1 : 1; if (this.onGround) this.velocity.y = 7; }
         this.path = null;
-      }
+      } else if (moved > 0.8) this.stallN = 0;
       this.progT = 0; this.progPos.copy(pos);
     }
     if (this.blockedT > 0.25 && !this.breakCell && this.T.blockDps > 0) {
       const cell = this._findBlocking();
-      if (cell) this.breakCell = cell;
-      else if (this.blockedT > 0.8) { this.sideT = 0.6; this.sideSign = Math.random() < 0.5 ? -1 : 1; this.blockedT = 0; }
+      if (cell && (this._isBuilt(cell) || this.base === 'brute')) this.breakCell = cell;
+      else if (this.blockedT > 0.5) {
+        // scraping a corner / tree / step: hop and slide sideways instead of chopping through it
+        this.sideT = 0.6; this.sideSign = this._freeSide(); this.blockedT = 0;
+        if (this.onGround && cell && !this.game.world.isSolid(cell.x, cell.y + 1, cell.z)) this.velocity.y = 7;
+      }
     }
+  }
+
+  /** Was this block placed by someone (walls, buildings) rather than generated terrain / trees? */
+  _isBuilt(c) {
+    const w = this.game.world, id = w.getBlock(c.x, c.y, c.z);
+    if (CONSTRUCTION[id]) return true;
+    try { if (this.game.village?.buildingAt?.(c.x, c.y, c.z)) return true; } catch (e) { /* ignore */ }
+    return false;
+  }
+  /** Which side (±1) relative to the move direction is open? */
+  _freeSide() {
+    const w = this.game.world, p = this.position;
+    const mx = this.moveDirX || Math.sin(this.yaw), mz = this.moveDirZ || Math.cos(this.yaw);
+    const y = Math.floor(p.y + 0.05);
+    const open = (sg) => { const x = Math.floor(p.x - mz * sg * 0.9 + mx * 0.4), z = Math.floor(p.z + mx * sg * 0.9 + mz * 0.4); return !w.isSolid(x, y, z) && !w.isSolid(x, y + 1, z); };
+    const l = open(1), r = open(-1);
+    if (l && !r) return 1; if (r && !l) return -1;
+    return Math.random() < 0.5 ? -1 : 1;
   }
 
   _findBlocking() {
@@ -518,7 +607,7 @@ export class Zombie extends Entity {
     }
 
     // --- exploder
-    if (this.type === 'exploder') {
+    if (this.base === 'exploder') {
       if (this.fuseT >= 0) {
         this.fuseT -= dt;
         if (Math.random() < dt * 25) game.particles?.emit({ pos: this.center, box: 0.4, count: 2, colors: [0xffffa0, 0xffa030], additive: true, speed: 2, life: 0.3, size: 0.2, gravity: 0 });
@@ -562,12 +651,12 @@ export class Zombie extends Entity {
     }
 
     // --- spitter: lob acid
-    if (this.type === 'spitter') {
+    if (this.base === 'spitter') {
       this.spitT -= dt;
       let aim = null;
       if (tgt && tgtDist < T.keep[1] + 3 && this.losOk) aim = tgt.position.clone().add(_v.set(tgt.velocity.x * 0.6, 0.9, tgt.velocity.z * 0.6));
       else if (!tgt && this.bTarget && this.velocity.lengthSq() < 0.3) aim = buildingCenter(this.bTarget);
-      if (aim && this.spitT <= 0) {
+      if (aim && this.spitT <= 0 && T.proj !== null) {
         this.spitT = T.spitCd * (0.85 + Math.random() * 0.3);
         this.model.play('cast');
         this._pendingCast = { t: 0.3, fn: () => this._spit(aim) };
@@ -585,15 +674,17 @@ export class Zombie extends Entity {
         const combat = game.combat;
         let done = false;
         if (combat && typeof combat.meleeHit === 'function') {
-          try { combat.meleeHit(this, tgt, T.dmg * this.dmgMul, { kind: 'phys', knockback: T.knock, dir: dir.clone(), point: tgt.center.clone() }); done = true; } catch (e) { done = false; }
+          try { combat.meleeHit(this, tgt, T.dmg * this.dmgMul * this._buffMul, { kind: 'phys', knockback: T.knock, dir: dir.clone(), point: tgt.center.clone() }); done = true; } catch (e) { done = false; }
+          if (T.hitSlow) tgt.slowTimer = Math.max(tgt.slowTimer || 0, T.hitSlow);
+          if (T.hitBurn && !tgt.inWater) tgt.burnTimer = Math.max(tgt.burnTimer || 0, T.hitBurn);
         }
         if (!done) {
           const kb = dir.clone().multiplyScalar(T.knock);
           kb.y = T.knock > 5 ? 5 : 0;
-          tgt.damage(T.dmg * this.dmgMul, this, { kind: 'phys', knockback: kb });
-          game.audio?.play('hit_flesh', { pos: tgt.position, pitch: this.type === 'brute' ? 0.6 : 1 });
+          tgt.damage(T.dmg * this.dmgMul * this._buffMul, this, { kind: 'phys', knockback: kb });
+          game.audio?.play('hit_flesh', { pos: tgt.position, pitch: this.base === 'brute' ? 0.6 : 1 });
         }
-        if (this.type === 'brute') game.particles?.emit({ pos: tgt.position, box: 0.4, count: 10, colors: [0x6a5a4a, 0x8a7a6a], speed: 3, dir: { x: 0, y: 2, z: 0 }, life: 0.6, size: 0.18 });
+        if (this.base === 'brute') game.particles?.emit({ pos: tgt.position, box: 0.4, count: 10, colors: [0x6a5a4a, 0x8a7a6a], speed: 3, dir: { x: 0, y: 2, z: 0 }, life: 0.6, size: 0.18 });
       }
       return;
     }
@@ -645,9 +736,9 @@ export class Zombie extends Entity {
     }
     if (this.camD2 < 45 * 45) {
       const snd = b?.tool === 'axe' ? 'dig_wood' : b?.tool === 'shovel' ? 'dig_dirt' : 'dig_stone';
-      game.audio?.play(res.broken ? 'break_block' : snd, { pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, pitch: this.type === 'brute' ? 0.7 : 0.9, volume: 0.8 });
+      game.audio?.play(res.broken ? 'break_block' : snd, { pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, pitch: this.base === 'brute' ? 0.7 : 0.9, volume: 0.8 });
     }
-    if (this.type === 'brute') {
+    if (this.base === 'brute') {
       // heavy slam knocks nearby defenders back
       for (const e of game.entities.query(this.center, 2.2, (e) => e.faction === 'village')) {
         const kb = new THREE.Vector3(e.position.x - this.position.x, 0, e.position.z - this.position.z).normalize().multiplyScalar(4);
@@ -689,14 +780,16 @@ export class Zombie extends Entity {
   _spit(aim) {
     const game = this.game;
     const from = this._handPos();
-    const dmg = this.T.spitDmg * this.dmgMul;
+    const dmg = this.T.spitDmg * this.dmgMul * this._buffMul;
+    const proj = this.T.proj || 'acid';
     const combat = game.combat;
     let done = false;
     if (combat && typeof combat.fireProjectile === 'function') {
-      try { done = !!combat.fireProjectile('acid', this, from, aim, { damage: dmg, faction: 'undead' }); } catch (e) { done = false; }
+      try { done = !!combat.fireProjectile(proj, this, from, aim, { damage: dmg, faction: 'undead' }); } catch (e) { done = false; }
     }
     if (!done) game.waves?.projectiles?.fire('acid', this, from, aim, { damage: dmg });
-    game.particles?.emit({ pos: from, count: 6, colors: [0x66ff33, 0xaaff55], additive: true, speed: 1.5, life: 0.4, size: 0.18 });
+    if (proj === 'arrow') { game.audio?.play('bow_shoot', { pos: from, volume: 0.6, pitch: 0.85 }); this.model.play('shoot'); }
+    else game.particles?.emit({ pos: from, count: 6, colors: [0x66ff33, 0xaaff55], additive: true, speed: 1.5, life: 0.4, size: 0.18 });
   }
 
   _raise() {
@@ -770,6 +863,12 @@ export class Zombie extends Entity {
   }
 
   onDeath(source) {
+    if (this.T.deathFire && source !== 'sun') {
+      const game = this.game, pos = this.center.clone();
+      game.particles?.emit({ pos, count: 40, colors: [0xffa030, 0xff5020, 0xffe070], additive: true, speed: 6, life: 0.7, size: 0.3, gravity: -1 });
+      game.audio?.play('fire_impact', { pos, volume: 0.9 });
+      for (const e of game.entities.query(pos, this.T.deathFire, (e) => e.faction === 'village' && e.kind !== 'projectile')) { e.damage(8, this, { kind: 'fire' }); if (!e.inWater) e.burnTimer = Math.max(e.burnTimer || 0, 2.5); }
+    }
     const game = this.game;
     this.removeAt = game.time + (this._exploded ? 0.05 : 2.4);
     this.killedBy = source;
@@ -782,7 +881,7 @@ export class Zombie extends Entity {
       if (game.state.stats) game.state.stats.kills = (game.state.stats.kills || 0) + 1;
       this._dropLoot();
     }
-    if (this.type === 'exploder' && !sun) {
+    if (this.base === 'exploder' && !sun) {
       // popping the bloated corpse: small burst that doesn't break blocks
       const pos = this.center.clone();
       game.particles?.emit({ pos, box: 0.3, count: 30, colors: [0x9aff40, 0x60c020, 0xe0ff90], additive: true, speed: 5, life: 0.5, size: 0.3, gravity: 6 });
@@ -800,8 +899,8 @@ export class Zombie extends Entity {
     let gold = 0, crystal = 0;
     if (this.boss) { gold = 15 + ((Math.random() * 10) | 0); crystal = 3; }
     else {
-      if (Math.random() < T.loot) gold = 1 + ((Math.random() * 3) | 0) + (this.type === 'brute' ? 2 : 0);
-      if (Math.random() < (this.type === 'brute' ? 0.12 : 0.04)) crystal = 1;
+      if (Math.random() < T.loot) gold = 1 + ((Math.random() * 3) | 0) + (this.base === 'brute' ? 2 : 0);
+      if (Math.random() < (this.base === 'brute' ? 0.12 : 0.04)) crystal = 1;
     }
     if (this.raisedByNecro) { gold = Math.min(gold, 1); crystal = 0; }
     if (!gold && !crystal) return;

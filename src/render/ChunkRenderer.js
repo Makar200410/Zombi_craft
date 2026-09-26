@@ -14,9 +14,17 @@ export class ChunkRenderer {
     this.materials = createChunkMaterials(game.atlas.texture);
     game.scene.add(this.group);
   }
+  /** Mesh only the chunks around a point now; the rest stay dirty and are meshed lazily as the camera approaches. */
+  buildNear(x, z, radius = 88) {
+    const r2 = radius * radius;
+    for (const k of [...this.world.dirty]) {
+      if (dist(k, { x, z }) > r2) continue;
+      this.rebuild(k); this.world.dirty.delete(k);
+    }
+  }
   buildAll() {
-    for (const k of [...this.world.dirty]) this.rebuild(k);
-    this.world.dirty.clear();
+    const w = this.world, c = this.game.village?.townHall?.center || { x: w.size / 2, z: w.size / 2 };
+    this.buildNear(c.x, c.z);
   }
   rebuild(key) {
     const [cx, cz] = key.split(',').map(Number);
@@ -68,7 +76,13 @@ export class ChunkRenderer {
     const dirty = this.world.dirty;
     if (!dirty.size) return;
     const cam = this.game.camera.position;
-    const keys = [...dirty].sort((a, b) => dist(a, cam) - dist(b, cam));
+    // only chunks that could actually be seen (inside the fog + margin); far ones wait until we get closer
+    const fog = this.game.scene.fog;
+    const reach = (fog ? fog.far : 200) + 32, r2 = reach * reach;
+    const keys = [];
+    for (const k of dirty) if (dist(k, cam) < r2) keys.push(k);
+    if (!keys.length) return;
+    keys.sort((a, b) => dist(a, cam) - dist(b, cam));
     const t0 = performance.now();
     for (const k of keys) {
       this.rebuild(k);

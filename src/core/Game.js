@@ -79,7 +79,7 @@ export class Game {
   }
 
   /** (Re)generates the world for a seed. Call before begin(). */
-  async setup({ seed = (Math.random() * 1e9) | 0, size = 192 } = {}, progress = () => {}) {
+  async setup({ seed = (Math.random() * 1e9) | 0, size = 384 } = {}, progress = () => {}) {
     progress(0.15, 'Генерация мира…');
     await tick();
     if (this.chunkRenderer) { this.scene.remove(this.chunkRenderer.group); this.chunkRenderer.group.traverse(o => o.geometry?.dispose()); }
@@ -90,12 +90,15 @@ export class Game {
     progress(0.55, 'Строим ландшафт…');
     await tick();
     this.chunkRenderer = new ChunkRenderer(this);
-    const keys = [...this.world.dirty];
+    // mesh the area around the village now (same amount of work as the old small map); the rest of the
+    // big world is meshed in the background as the camera approaches it
+    const c = size / 2, R = 88;
+    const keys = [...this.world.dirty].filter(k => { const [cx, cz] = k.split(',').map(Number); return Math.hypot(cx * 16 + 8 - c, cz * 16 + 8 - c) < R; });
     for (let i = 0; i < keys.length; i++) {
       this.chunkRenderer.rebuild(keys[i]);
+      this.world.dirty.delete(keys[i]);
       if (i % 12 === 0) { progress(0.55 + 0.4 * i / keys.length, 'Строим ландшафт…'); await tick(); }
     }
-    this.world.dirty.clear();
     this.world.changes = new Map();   // idx -> id, block edits since generation (for saves)
     this.bus.emit('world:ready', { world: this.world });
     progress(1, '');

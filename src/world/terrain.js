@@ -74,12 +74,16 @@ export function generateTerrain(world) {
 
   // caves (3D worms via noise), keep away from the village plateau surface
   for (let z = 1; z < size - 1; z++) for (let x = 1; x < size - 1; x++) {
+    // cheap 2D mask first: caves only exist in roughly half of the columns, skip the 3D noise elsewhere
+    if (n3.noise2(x / 38 + 300, z / 38 - 300) < -0.15) continue;
     const h = heights[z * size + x];
     const dist = Math.hypot(x - cx, z - cz);
+    let cv = 1, cw = 1;
     for (let y = 3; y < h - 1; y++) {
       if (dist < 34 && y > h - 8) continue;
-      const v = n.noise3(x / 22, y / 14, z / 22), w = n2.noise3(x / 22, y / 14, z / 22);
-      if (v * v + w * w < 0.012 + (y < 12 ? 0.01 : 0)) {
+      // caves stretch vertically (y/14), so sampling every other layer and reusing it is visually identical
+      if (!(y & 1) || y === 3) { cv = n.noise3(x / 22, y / 14, z / 22); cw = n2.noise3(x / 22, y / 14, z / 22); }
+      if (cv * cv + cw * cw < 0.012 + (y < 12 ? 0.01 : 0)) {
         const i = world.index(x, y, z);
         if (world.blocks[i] !== B.WATER && world.blocks[world.index(x, y + 1, z)] !== B.WATER) world.blocks[i] = B.AIR;
       }

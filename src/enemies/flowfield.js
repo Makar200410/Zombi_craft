@@ -88,8 +88,9 @@ export class FlowField {
     else if (a && !b && !c) { s += 1; }                 // one-block floor/slab/path: just a step
     else {
       // wall / building shell / tree trunk: cost of breaking what's in the way at body height
-      if (a) obst += HARD[at(s)];
-      if (b) obst += HARD[at(s + 1)];
+      // trees are cheap to chop but walking around them is almost always faster: weight them up
+      if (a) obst += HARD[at(s)] * (TREE[at(s)] ? 3 : 1);
+      if (b) obst += HARD[at(s + 1)] * (TREE[at(s + 1)] ? 3 : 1);
       if (!isFinite(obst)) obst = INF;
       obst = Math.max(0.5, obst);
     }
@@ -294,6 +295,12 @@ export class FlowField {
     out.x = (best % S) + 0.5; out.z = ((best / S) | 0) + 0.5;
     out.y = stand[best];
     return bd;
+  }
+  standAt(x, z) {
+    if (!this.stand) return 0;
+    x = Math.floor(x); z = Math.floor(z);
+    if (x < 0 || z < 0 || x >= this.size || z >= this.size) return 0;
+    return this.stand[z * this.size + x];
   }
   isObstacle(x, z) {
     if (!this.obst) return false;

@@ -20,7 +20,8 @@ async function main() {
   const game = new Game();
   window.game = game;   // handy for debugging from the console
   await game.init(progress);
-  await game.setup({}, progress);
+  const qs = new URLSearchParams(location.search);
+  await game.setup(qs.has('seed') ? { seed: +qs.get('seed') } : {}, progress);
   await prewarmIcons(game, progress);
   loader?.classList.add('hidden');
   setTimeout(() => loader?.remove(), 800);

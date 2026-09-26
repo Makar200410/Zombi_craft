@@ -1,6 +1,7 @@
 // Skin provider for zombies. Uses src/art/skins.js `zombieSkin(type, seed)` when available,
 // otherwise draws a simple procedural 64×64 Minecraft-layout skin so enemies always render.
 import { mulberry32 } from '../core/rng.js';
+import { ZOMBIE_TYPES } from './zombieTypes.js';
 
 const artMods = import.meta.glob('../art/skins.js', { eager: true });
 const art = artMods['../art/skins.js'] || null;
@@ -13,6 +14,12 @@ export function getZombieSkin(type, seed) {
   const key = type + ':' + v;
   let c = cache.get(key);
   if (c) return c;
+  const T = ZOMBIE_TYPES[type];
+  if (T && T.skinBase) {
+    c = deriveSkin(getZombieSkin(T.skinBase, seed), T, v);
+    cache.set(key, c);
+    return c;
+  }
   try { if (art && typeof art.zombieSkin === 'function') c = art.zombieSkin(type, v * 7919 + 13); } catch (e) { c = null; }
   if (!c) c = drawFallback(type, v);
   cache.set(key, c);
@@ -54,3 +61,49 @@ function drawFallback(type, v) {
   return cv;
 }
 function clamp(v) { return Math.max(0, Math.min(255, v | 0)); }
+
+/** Recolour a base zombie skin for the extended bestiary (frost, burning, armoured, skeleton …). */
+function deriveSkin(base, T, v) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.drawImage(base, 0, 0);
+  const img = g.getImageData(0, 0, 64, 64), d = img.data;
+  const [tint, amt] = T.tint || [0xffffff, 0];
+  const tr = (tint >> 16) & 255, tg = (tint >> 8) & 255, tb = tint & 255;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 10) continue;
+    let r = d[i], gg = d[i + 1], b = d[i + 2];
+    if (T.bones) {           // bleach to bone, keep shading
+      const l = (r * 0.3 + gg * 0.59 + b * 0.11) / 255;
+      const k = 0.45 + l * 0.9;
+      r = tr * k; gg = tg * k; b = tb * k;
+    } else {
+      const l = (r * 0.3 + gg * 0.59 + b * 0.11) / 255;
+      r = r * (1 - amt) + tr * l * 1.4 * amt; gg = gg * (1 - amt) + tg * l * 1.4 * amt; b = b * (1 - amt) + tb * l * 1.4 * amt;
+    }
+    d[i] = Math.min(255, r); d[i + 1] = Math.min(255, gg); d[i + 2] = Math.min(255, b);
+  }
+  g.putImageData(img, 0, 0);
+  const R = mulberry32(v * 31 + 7);
+  if (T.bones) {
+    // dark eye sockets, nose hole and rib shadows
+    g.fillStyle = '#1a1612'; g.fillRect(9, 11, 2, 2); g.fillRect(13, 11, 2, 2); g.fillRect(11, 13, 2, 1);
+    g.fillStyle = '#2a241c'; for (let y = 21; y < 31; y += 2) g.fillRect(21, y, 6, 1);
+    g.fillStyle = '#6aa0ff'; g.fillRect(9, 11, 1, 1); g.fillRect(14, 11, 1, 1);
+  }
+  if (T.plate) {
+    // breastplate + pauldrons with rivets
+    const plate = (x, y, w, h) => { g.fillStyle = '#8e949c'; g.fillRect(x, y, w, h); g.fillStyle = '#b8bec6'; g.fillRect(x, y, w, 1); g.fillStyle = '#5a6068'; g.fillRect(x, y + h - 1, w, 1); g.fillStyle = '#dde2e8'; g.fillRect(x + 1, y + 1, 1, 1); g.fillRect(x + w - 2, y + 1, 1, 1); };
+    plate(20, 20, 8, 7); plate(32, 20, 8, 7); plate(44, 20, 4, 4); plate(36, 52, 4, 4); plate(4, 20, 4, 3); plate(20, 52, 4, 3);
+  }
+  if (T.glow) {
+    // glowing cracks
+    g.fillStyle = '#ffb040';
+    for (let k = 0; k < 40; k++) { const x = 16 + Math.floor(R() * 40), y = 16 + Math.floor(R() * 16); g.fillRect(x, y, 1, 1 + Math.floor(R() * 2)); }
+  }
+  if (T.trail && T.immune === 'frost') {
+    g.fillStyle = 'rgba(235,250,255,0.9)';
+    for (let k = 0; k < 50; k++) g.fillRect(Math.floor(R() * 64), Math.floor(R() * 64), 1, 1);
+  }
+  return c;
+}
