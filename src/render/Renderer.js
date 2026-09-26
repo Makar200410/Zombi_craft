@@ -165,6 +165,8 @@ export class Renderer {
     this.hemi.color.copy(c.horizon).lerp(new THREE.Color(0xffffff), 0.4);
     this.hemi.groundColor.set(0x6b6656).multiplyScalar(0.45 + amb * 0.55);
     this.scene.fog.color.copy(c.fog);
+    // anything not covered by geometry shows the horizon colour instead of black
+    this.renderer.setClearColor(c.horizon, 1);
     // fog closes in a bit at night — spookier waves
     let fogFar = this.fogFar;
     if (this.game.mode === 'command') {

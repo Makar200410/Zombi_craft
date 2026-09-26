@@ -11,8 +11,8 @@ export class Sky {
       uNight: { value: 0 }, uTime: { value: 0 },
     };
     const skyMat = new THREE.ShaderMaterial({
-      uniforms: this.uniforms, side: THREE.BackSide, depthWrite: false, fog: false,
-      vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }`,
+      uniforms: this.uniforms, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+      vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `
         uniform vec3 uTop, uHorizon, uBottom, uSunDir, uSunColor; uniform float uNight, uTime; varying vec3 vDir;
         float hash(vec3 p){ p = fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
