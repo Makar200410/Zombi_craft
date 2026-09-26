@@ -230,8 +230,7 @@ export class Hud {
     if (active > 0 || (st.isNight && (w?.waveActive || w?.active))) {
       txt = 'ВОЛНА ' + (w?.currentWave || 1) + ' — осталось ' + active; cls = 'wave';
     } else if (st.isNight) {
-      let d = 0.25 - st.timeOfDay; if (d < 0) d += 1;
-      txt = 'До рассвета ' + fmtTime(d * st.dayLength); cls = 'night';
+      txt = 'До рассвета ' + fmtTime(st.secondsToDawn ?? 0); cls = 'night';
     } else {
       const s = (typeof w?.nextWaveIn === 'number' && w.nextWaveIn >= 0) ? w.nextWaveIn : st.secondsToDusk;
       txt = 'До ночи ' + fmtTime(s); cls = s < 30 ? 'warn' : '';

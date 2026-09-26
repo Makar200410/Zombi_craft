@@ -9,8 +9,8 @@ import { EnemyProjectiles } from './fx.js';
 const DIFF = {
   // "alive" = max undead on the field at once (phones on low quality get ~55% of it)
   easy: { count: 0.9, hp: 1.0, dmg: 0.9, reward: 0.9, alive: 45 },
-  normal: { count: 1.6, hp: 1.3, dmg: 1.25, reward: 1.2, alive: 65 },
-  hard: { count: 2.2, hp: 1.7, dmg: 1.5, reward: 1.5, alive: 85 },
+  normal: { count: 1.4, hp: 1.3, dmg: 1.2, reward: 1.2, alive: 60 },
+  hard: { count: 1.9, hp: 1.65, dmg: 1.45, reward: 1.5, alive: 80 },
 };
 const GRID = 2;   // spatial hash cell size for separation queries
 
@@ -226,8 +226,10 @@ export class WaveDirector {
     if (!p) { const y = w.surfaceY(x, z) + 1; p = { x, y, z }; }
     const d = this.diff;
     const wave = opts.wave ?? this.currentWave;
-    const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave);
-    const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave), wave });
+    // first nights are a grace period while the village gets on its feet (full strength from wave 7)
+    const grace = Math.min(1, 0.65 + wave * 0.05);
+    const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace;
+    const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave) * grace, wave });
     zb.position.set(p.x, p.y, p.z);
     zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
     zb.progPos.copy(zb.position);

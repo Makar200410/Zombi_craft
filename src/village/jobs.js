@@ -476,13 +476,20 @@ function* guardBrain(v) {
     v.model.blocking = false;
     if (v.heldOverride) { v.heldOverride = null; v.updateTool(); }
     // badly hurt: fall back to the town hall (archers cover it) and patch up before fighting again
-    if (v.hp < v.maxHp * 0.35 && vil.townHall) {
+    if (v.hp < v.maxHp * 0.46 && vil.townHall) {
       v.task = 'Отступает к ратуше лечиться';
       const d = vil.townHall.door;
       const walk = v.walkTo(d, 1.5, { maxTime: 20, speed: v.walkSpeed * 1.2 });
       let r; while (!(r = walk.next(yield)).done) { /* keep walking */ }
       v.stopMove();
-      while (v.hp < v.maxHp * 0.8 && !v.dead) yield* v.wait(1);
+      // heal with the shield up towards anything that followed
+      while (v.hp < v.maxHp * 0.8 && !v.dead) {
+        const nz = vil.nearestZombie(v.position, 4);
+        v.model.blocking = !!nz && !!v._shieldKind;
+        if (nz) v.face(nz.position);
+        yield* v.wait(0.5);
+      }
+      v.model.blocking = false;
       continue;
     }
     const z = vil.guardTarget(v);
@@ -510,7 +517,7 @@ function* guardBrain(v) {
  */
 function* meleeFight(v, z) {
   const game = v.game, vil = v.village;
-  let repath = 0, cd = 0.2, req = null, path = null, pi = 0, retarget = 0.8, shootCd = 0, bashCd = 2 + rnd() * 2;
+  let repath = 0, cd = 0.2, req = null, path = null, pi = 0, retarget = 0.8, shootCd = 0, bashCd = 2 + rnd() * 2, lastClose = 0;
   const leash = vil.radius + 22;
   const hasBow = () => game.state.researchDone.has('archery');
   const setBow = (on) => { const want = on ? 'bow' : null; if (v.heldOverride !== want) { v.heldOverride = want; v.updateTool(); } };
@@ -518,7 +525,7 @@ function* meleeFight(v, z) {
   while (!z.dead) {
     const dt = yield;
     if (z.dead || v.dead) break;
-    if (v.hp < v.maxHp * 0.3) break;   // retreat (guardBrain handles healing)
+    if (v.hp < v.maxHp * (lastClose >= 2 ? 0.45 : 0.3)) break;   // retreat (earlier when outnumbered; guardBrain handles healing)
     cd -= dt; repath -= dt; retarget -= dt; shootCd -= dt; bashCd -= dt;
     // switch to a more urgent target now and then
     if (retarget <= 0) {
@@ -538,6 +545,7 @@ function* meleeFight(v, z) {
       if (od < 3.2) { close++; cx += o.position.x; cz += o.position.z; }
       if (o.type === 'exploder' && od < 5.5 && (!exploder || od < exploder.d)) exploder = { z: o, d: od };
     }
+    lastClose = close;
     // 1) exploder nearby: never stand next to it — back off (and shoot it if we can)
     if (exploder) {
       v.model.blocking = true;
@@ -628,7 +636,7 @@ function* swing(v, z, bash) {
   v.model.play('attack');
   game.audio?.play('swing', { pos: v.position, volume: 0.5 });
   const smith = game.state.researchDone.has('smithing');
-  let dmg = (smith ? 13 : 8) + vil.armory.level * 2;
+  let dmg = (smith ? 14 : 10) + vil.armory.level * 2;
   if (z.stunTimer > 0) dmg *= 1.5;    // hitting a stunned zombie
   let done = false;
   try { if (game.combat?.meleeHit) { game.combat.meleeHit(v, z, dmg, { knockback: dir.clone().multiplyScalar(4), item: smith ? 'sword_iron' : 'sword_wood' }); done = true; } } catch (e) { done = false; }

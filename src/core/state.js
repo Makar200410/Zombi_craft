@@ -7,7 +7,8 @@ export class GameState {
     for (const r of RESOURCES) this.resources[r] = 0;
     Object.assign(this.resources, { wood: 80, stone: 60, food: 60, iron: 0, coal: 0, gold: 10, crystal: 0 });
     this.day = 1;
-    this.dayLength = 300;          // seconds per full day
+    this.dayDuration = 300;        // seconds of daylight (0.22 → 0.78 of the cycle)
+    this.nightDuration = 150;      // seconds of night (0.78 → 0.22)
     this.timeOfDay = 0.3;          // start in the morning
     this.researchDone = new Set();
     this.unlockedItems = new Set();
@@ -23,14 +24,29 @@ export class GameState {
     const sun = Math.sin((t - 0.25) * Math.PI * 2); // 1 at noon, -1 at midnight
     return Math.min(1, Math.max(0, (0.15 - sun) / 0.35));
   }
+  /** Full cycle length in seconds (day + night). */
+  get dayLength() { return this.dayDuration + this.nightDuration; }
+  set dayLength(v) { /* legacy saves stored a single length; durations are fixed now */ }
+  _isDayPart(t) { return t >= 0.22 && t < 0.78; }
+  get _dayRate() { return 0.56 / this.dayDuration; }
+  get _nightRate() { return 0.44 / this.nightDuration; }
   /** Seconds until the next dusk (0.78). */
   get secondsToDusk() {
-    let d = 0.78 - this.timeOfDay; if (d < 0) d += 1;
-    return d * this.dayLength;
+    const t = this.timeOfDay;
+    if (this._isDayPart(t)) return (0.78 - t) / this._dayRate;
+    let n = 0.22 - t; if (n < 0) n += 1;
+    return n / this._nightRate + this.dayDuration;
+  }
+  /** Seconds until sunrise (0.25). */
+  get secondsToDawn() {
+    const t = this.timeOfDay;
+    if (this._isDayPart(t)) return t < 0.25 ? (0.25 - t) / this._dayRate : (0.78 - t) / this._dayRate + this.nightDuration + 0.03 / this._dayRate;
+    let n = 0.22 - t; if (n < 0) n += 1;
+    return n / this._nightRate + 0.03 / this._dayRate;
   }
   update(dt) {
     const prev = this.timeOfDay;
-    this.timeOfDay += dt / this.dayLength;
+    this.timeOfDay += dt * (this._isDayPart(prev) ? this._dayRate : this._nightRate);
     if (this.timeOfDay >= 1) { this.timeOfDay -= 1; }
     if (prev < 0.25 && this.timeOfDay >= 0.25) { this.day++; this.bus.emit('time:dawn', { day: this.day }); }
     if (prev < 0.78 && this.timeOfDay >= 0.78) this.bus.emit('time:dusk', { day: this.day });
@@ -58,14 +74,14 @@ export class GameState {
   refund(cost) { this.addAll(cost, 1); }
   serialize() {
     return {
-      resources: { ...this.resources }, day: this.day, timeOfDay: this.timeOfDay, dayLength: this.dayLength,
+      resources: { ...this.resources }, day: this.day, timeOfDay: this.timeOfDay,
       researchDone: [...this.researchDone], unlockedItems: [...this.unlockedItems], stats: { ...this.stats },
       difficulty: this.difficulty, seed: this.seed,
     };
   }
   deserialize(o) {
     Object.assign(this.resources, o.resources || {});
-    this.day = o.day || 1; this.timeOfDay = o.timeOfDay ?? 0.3; this.dayLength = o.dayLength || 300;
+    this.day = o.day || 1; this.timeOfDay = o.timeOfDay ?? 0.3;
     this.researchDone = new Set(o.researchDone || []); this.unlockedItems = new Set(o.unlockedItems || []);
     Object.assign(this.stats, o.stats || {});
     this.difficulty = o.difficulty || 'normal'; this.seed = o.seed ?? this.seed;

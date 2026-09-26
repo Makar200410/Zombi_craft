@@ -17,7 +17,7 @@ export const RES_GEN = { wood: 'дерева', stone: 'камня', food: 'ед�
  */
 export class Villager extends Entity {
   constructor(game, village, o = {}) {
-    super(game, { kind: 'villager', faction: 'village', maxHp: o.job === 'guard' ? 110 : 40, radius: 0.3, height: 1.8 });
+    super(game, { kind: 'villager', faction: 'village', maxHp: o.job === 'guard' ? 130 : 40, radius: 0.3, height: 1.8 });
     this.village = village;
     this.name = o.name || 'Житель';
     this.female = !!o.female;
@@ -83,7 +83,7 @@ export class Villager extends Entity {
     if (job === this.job) return;
     this.job = job;
     const wasGuard = this.maxHp;
-    this.maxHp = job === 'guard' ? 110 : 40;
+    this.maxHp = job === 'guard' ? 130 : 40;
     this.hp = Math.min(this.maxHp, this.hp + Math.max(0, this.maxHp - wasGuard));
     this.interrupt();
     this.buildModel();
