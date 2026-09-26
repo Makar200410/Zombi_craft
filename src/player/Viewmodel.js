@@ -14,13 +14,13 @@ const RO = 1000;   // render order for viewmodel parts (after everything else, i
 //   grip = sprite coords (0..1) of the hand        end  = sprite coords of the business end (muzzle / staff tip)
 //   arm  = direction from the hand back to the shoulder   axis = sprite axis mapped to `tip` (default diagonal)
 export const GRIPS = {
-  blade: { pos: [0.33, -0.31, -0.56], tip: [-0.35, 0.85, -0.42], face: [0.45, 0.25, 0.86], s: 0.7, grip: [0.2, 0.2], end: [0.9, 0.9], arm: [0.45, -0.85, 0.3] },
-  tool:  { pos: [0.33, -0.31, -0.56], tip: [-0.3, 0.85, -0.45], face: [0.5, 0.25, 0.83], s: 0.7, grip: [0.16, 0.16], end: [0.85, 0.85], arm: [0.45, -0.85, 0.3] },
-  staff: { pos: [0.31, -0.33, -0.58], tip: [-0.2, 0.92, -0.35], face: [0.5, 0.2, 0.84], s: 0.8, grip: [0.3, 0.3], end: [0.9, 0.9], arm: [0.45, -0.85, 0.3] },
-  gun:   { pos: [0.25, -0.27, -0.44], tip: [-0.33, 0.07, -0.94], face: [-0.94, 0.15, 0.33], s: 0.74, grip: [0.3, 0.3], end: [0.97, 0.97], arm: [0.4, -0.85, 0.35] },
-  bow:   { pos: [0.24, -0.22, -0.55], tip: [0.3, 1, -0.12], face: [-0.3, 0, 1], s: 0.58, grip: [0.45, 0.45], end: [0.5, 0.5], arm: [0.45, -0.85, 0.3] },
-  throw: { pos: [0.31, -0.3, -0.52], tip: [-0.3, 0.8, -0.5], face: [0.5, 0.25, 0.83], s: 0.44, grip: [0.3, 0.3], end: [0.6, 0.6], arm: [0.45, -0.85, 0.3] },
-  book:  { pos: [0.22, -0.32, -0.5], tip: [-0.1, 0.5, -0.86], face: [0.25, 0.85, 0.47], s: 0.42, grip: [0.3, 0.2], end: [0.5, 0.9], arm: [0.4, -0.85, 0.35], axis: [0, 1, 0] },
+  blade: { pos: [0.37, -0.3, -0.6], tip: [-0.24, 0.82, -0.52], face: [0.45, 0.25, 0.86], s: 0.52, grip: [0.2, 0.2], end: [0.9, 0.9], arm: [0.45, -0.85, 0.3] },
+  tool:  { pos: [0.37, -0.29, -0.6], tip: [-0.22, 0.82, -0.53], face: [0.5, 0.25, 0.83], s: 0.52, grip: [0.16, 0.16], end: [0.85, 0.85], arm: [0.45, -0.85, 0.3] },
+  staff: { pos: [0.35, -0.32, -0.6], tip: [-0.15, 0.92, -0.35], face: [0.5, 0.2, 0.84], s: 0.62, grip: [0.3, 0.3], end: [0.9, 0.9], arm: [0.45, -0.85, 0.3] },
+  gun:   { pos: [0.28, -0.3, -0.48], tip: [-0.3, 0.07, -0.95], face: [-0.94, 0.15, 0.33], s: 0.6, grip: [0.3, 0.3], end: [0.97, 0.97], arm: [0.4, -0.85, 0.35] },
+  bow:   { pos: [0.27, -0.25, -0.58], tip: [0.3, 1, -0.12], face: [-0.3, 0, 1], s: 0.48, grip: [0.45, 0.45], end: [0.5, 0.5], arm: [0.45, -0.85, 0.3] },
+  throw: { pos: [0.34, -0.34, -0.55], tip: [-0.3, 0.8, -0.5], face: [0.5, 0.25, 0.83], s: 0.38, grip: [0.3, 0.3], end: [0.6, 0.6], arm: [0.45, -0.85, 0.3] },
+  book:  { pos: [0.25, -0.35, -0.52], tip: [-0.1, 0.5, -0.86], face: [0.25, 0.85, 0.47], s: 0.36, grip: [0.3, 0.2], end: [0.5, 0.9], arm: [0.4, -0.85, 0.35], axis: [0, 1, 0] },
 };
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 /** Quaternion that maps sprite axis → tip and sprite +Z → face (orthonormalized). */
@@ -179,6 +179,9 @@ export class Viewmodel {
 
   update(dt, st) {
     this.t += dt;
+    const k = Math.min(1.45, Math.max(0.45, (this.game.camera.aspect || 1.78) / 1.78));
+    this.root.position.x = (k - 1) * 0.3;
+    this.root.scale.setScalar(Math.min(1, 0.55 + 0.45 * k));
     const g = this.game;
     // equip lower/raise
     if (this.equipT < 1) {

@@ -26,6 +26,8 @@ function createWindow() {
   win.webContents.on('did-fail-load', (e, code, desc, url) => log(`[load failed] ${code} ${desc} ${url}`));
   win.webContents.on('render-process-gone', (e, d) => log(`[renderer gone] ${d.reason}`));
   win.webContents.on('did-finish-load', () => log('[loaded] ' + win.webContents.getURL()));
+  // debug: ZC_RESIZE=WxH resizes the window after 6 s (to test layout after maximize)
+  if (process.env.ZC_RESIZE) setTimeout(() => { const [w, h] = process.env.ZC_RESIZE.split('x').map(Number); win.setSize(w, h); log('[resize] ' + w + 'x' + h); }, 6000);
   // debug: ZC_SHOT=<file.png> saves a screenshot after ZC_SHOT_DELAY ms and quits (used for automated checks)
   if (process.env.ZC_SHOT) setTimeout(async () => { const img = await win.webContents.capturePage(); require('fs').writeFileSync(process.env.ZC_SHOT, img.toPNG()); log('[shot] ' + process.env.ZC_SHOT); app.quit(); }, +(process.env.ZC_SHOT_DELAY || 20000));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });

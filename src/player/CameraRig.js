@@ -196,6 +196,8 @@ export class CameraRig {
       const hit = g.world.raycast(pivot, back, this.tpDist + 0.3, { solidOnly: true });
       const d = hit ? Math.max(0.2, hit.dist - 0.3) : this.tpDist;
       this._pos.copy(pivot).addScaledVector(back, d);
+      // a wall right behind the hero: the camera would end up inside the head — show first person instead
+      if (wantTP && d < 1.25) { p.firstPerson = true; this._pos.copy(eye); }
     } else {
       this._pos.copy(eye).addScaledVector(this.right, bobX);
       this._pos.y += bobY;
