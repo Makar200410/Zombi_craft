@@ -26,6 +26,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
       - run: npm run build
       - name: Generate Android project
         run: |

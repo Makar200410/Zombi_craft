@@ -1,0 +1,49 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main, master, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-exe
+  cancel-in-progress: true
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package (portable exe + installer)
+        run: npx electron-builder --win portable nsis --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZombiCraft-windows
+          path: |
+            release/ZombiCraft-portable.exe
+            release/ZombiCraft-Setup.exe
+      - name: Publish to GitHub Release "win-latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: win-latest
+          name: Zombi Craft — последняя сборка для Windows
+          body: |
+            Сборка для Windows из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
+            • ZombiCraft-portable.exe — просто запустите, установка не нужна.
+            • ZombiCraft-Setup.exe — установщик с ярлыком на рабочем столе.
+            Если Windows покажет «Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае» (приложение не подписано сертификатом).
+          prerelease: true
+          files: |
+            release/ZombiCraft-portable.exe
+            release/ZombiCraft-Setup.exe

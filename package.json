@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win portable nsis --publish never"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.2",
@@ -16,6 +18,39 @@
   "devDependencies": {
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "vite": "^8.3.1"
+  },
+  "main": "electron/main.cjs",
+  "author": "Zombi Craft",
+  "build": {
+    "appId": "com.zombicraft.game",
+    "productName": "Zombi Craft",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "electron/icon.png",
+      "artifactName": "ZombiCraft-${version}-${arch}-${target}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ZombiCraft-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "ZombiCraft-Setup.exe",
+      "shortcutName": "Zombi Craft"
+    }
   }
 }
