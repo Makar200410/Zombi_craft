@@ -7,9 +7,10 @@ import { FlowField } from './flowfield.js';
 import { EnemyProjectiles } from './fx.js';
 
 const DIFF = {
-  easy: { count: 0.7, hp: 0.85, dmg: 0.75, reward: 0.9 },
-  normal: { count: 1, hp: 1, dmg: 1, reward: 1 },
-  hard: { count: 1.4, hp: 1.2, dmg: 1.25, reward: 1.25 },
+  // "alive" = max undead on the field at once (phones on low quality get ~55% of it)
+  easy: { count: 0.9, hp: 1.0, dmg: 0.9, reward: 0.9, alive: 45 },
+  normal: { count: 1.6, hp: 1.3, dmg: 1.25, reward: 1.2, alive: 65 },
+  hard: { count: 2.2, hp: 1.7, dmg: 1.5, reward: 1.5, alive: 85 },
 };
 const GRID = 2;   // spatial hash cell size for separation queries
 
@@ -38,7 +39,7 @@ export class WaveDirector {
   get nextWaveIn() { return this.waveActive ? 0 : Math.max(0, this.game.state.secondsToDusk); }
   /** Zombies of the current wave still to defeat (alive + not yet spawned). */
   get remaining() { return this.activeCount + (this.waveActive ? this.queue.length : 0); }
-  get maxAlive() { return this.game.quality === 'low' ? 25 : 45; }
+  get maxAlive() { const a = this.diff.alive || 45; return this.game.quality === 'low' ? Math.round(a * 0.55) : a; }
   get diff() { return DIFF[this.game.state.difficulty] || DIFF.normal; }
   aliveCount() { let n = 0; for (const z of this.zombies) if (!z.dead) n++; return n; }
 
@@ -76,7 +77,7 @@ export class WaveDirector {
   /** Composition of wave n: array of type ids (boss last). */
   compose(n) {
     const d = this.diff;
-    const count = Math.min(170, Math.round(countFor(n) * d.count));
+    const count = Math.min(560, Math.round(countFor(n) * d.count));
     const weights = weightsFor(n);
     const total = Object.values(weights).reduce((a, b) => a + b, 0);
     const out = [];
@@ -107,9 +108,9 @@ export class WaveDirector {
     this.waveCount = types.length;
     this.waveActive = true;
     this.waveStartTime = game.time;
-    const duration = Math.min(90, 55 + n * 3);
-    // groups of 2–6 spaced across the duration
-    const avgGroup = Math.min(6, 2.5 + n * 0.35);
+    const duration = Math.min(120, 55 + n * 3);
+    // groups spaced across the night; bigger groups on harder settings
+    const avgGroup = Math.min(10, (2.5 + n * 0.35) * Math.sqrt(this.diff.count));
     this.spawnInterval = duration / Math.max(1, types.length / avgGroup);
     this.groupSize = avgGroup;
     this.spawnT = 1.5;
