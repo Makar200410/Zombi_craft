@@ -11,6 +11,7 @@ export class GameState {
     this.nightDuration = 150;      // seconds of night (0.78 → 0.22)
     this.timeOfDay = 0.3;          // start in the morning
     this.researchDone = new Set();
+    this.age = 0;                  // index into AGES (systems/ages.js)
     this.unlockedItems = new Set();
     this.stats = { kills: 0, wavesSurvived: 0, blocksMined: 0, blocksPlaced: 0, villagersLost: 0 };
     this.difficulty = 'normal';
@@ -76,7 +77,7 @@ export class GameState {
     return {
       resources: { ...this.resources }, day: this.day, timeOfDay: this.timeOfDay,
       researchDone: [...this.researchDone], unlockedItems: [...this.unlockedItems], stats: { ...this.stats },
-      difficulty: this.difficulty, seed: this.seed,
+      difficulty: this.difficulty, seed: this.seed, age: this.age,
     };
   }
   deserialize(o) {
@@ -84,7 +85,7 @@ export class GameState {
     this.day = o.day || 1; this.timeOfDay = o.timeOfDay ?? 0.3;
     this.researchDone = new Set(o.researchDone || []); this.unlockedItems = new Set(o.unlockedItems || []);
     Object.assign(this.stats, o.stats || {});
-    this.difficulty = o.difficulty || 'normal'; this.seed = o.seed ?? this.seed;
+    this.difficulty = o.difficulty || 'normal'; this.seed = o.seed ?? this.seed; this.age = o.age | 0;
     this.bus.emit('resources:changed', { resources: this.resources });
   }
 }

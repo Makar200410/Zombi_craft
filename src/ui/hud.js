@@ -1,4 +1,5 @@
 // Explore-mode HUD: vitals, resources, clock & wave status, hotbar, build palette, crosshair.
+import { ageOf } from '../systems/ages.js';
 import { ITEMS, RESOURCES, RESOURCE_LABELS } from '../core/items.js';
 import { BLOCKS, PALETTE } from '../core/blocks.js';
 import { TECHS } from '../systems/research.js';
@@ -71,7 +72,8 @@ export class Hud {
     this.dial = h('canvas.zc-dial', { width: 64, height: 64 });
     this.dayLbl = h('div.zc-day', 'День 1');
     this.timeLbl = h('div.zc-timer', '');
-    this.clock = h('div.zc-clock.zc-panel', this.dial, h('div.zc-clock-txt', this.dayLbl, this.timeLbl));
+    this.ageLbl = h('div.zc-age', '');
+    this.clock = h('div.zc-clock.zc-panel', this.dial, h('div.zc-clock-txt', this.dayLbl, this.timeLbl, this.ageLbl));
     this.researchPill = h('button.zc-rpill.ui-i', { onclick: () => ui.openResearch() },
       img(resourceIcon('research')), this.rpName = h('span.zc-rpill-name'), h('div.zc-rpill-track', this.rpFill = h('div.zc-rpill-fill')));
     this.topRight = h('div.zc-topright', ui.minimap.root, this.clock, this.researchPill);
@@ -225,6 +227,8 @@ export class Hud {
   updateClock(dt) {
     const g = this.game, st = g.state, w = g.waves;
     setText(this.dayLbl, 'День ' + st.day);
+    const age = ageOf(g);
+    if (this._age !== age) { this._age = age; setText(this.ageLbl, age.name); this.ageLbl.style.color = age.color; }
     let txt, cls = '';
     const active = w?.activeCount || 0;
     if (active > 0 || (st.isNight && (w?.waveActive || w?.active))) {

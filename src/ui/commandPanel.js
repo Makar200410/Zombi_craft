@@ -1,5 +1,6 @@
 // Command mode (Clash-of-Clans style) UI: tab bar, build menu, villagers & jobs, placement bar, inspectors.
 import { TECHS } from '../systems/research.js';
+import { AGES, ageOf, checkNextAge, advanceAge } from '../systems/ages.js';
 import {
   h, img, glyph, glyphImg, buildingIcon, costRow, clear, setText, setStyle, toggle, fmtNum,
   BUILDING_TYPES, BUILDING_ORDER, JOB_LABELS, JOB_PLURAL, JOB_ORDER, jobIcon, STATE_LABELS, clamp,
@@ -10,6 +11,7 @@ const ZOMBIE_NAMES = { walker: 'Ходок', runner: 'Бегун', brute: 'Гр�
 const CONTINUOUS = new Set(['wall', 'stone_wall']);   // keep placing after each placement
 
 function jobSlotsOf(b) {
+  if (b?.slotMap) return b.slotMap;
   if (b?.jobSlots && typeof b.jobSlots === 'object') return b.jobSlots;
   return b?.def?.jobs || BUILDING_TYPES[b?.type]?.jobs || {};
 }
@@ -424,7 +426,6 @@ export class CommandPanel {
     const hp = this._ins.hp = bar('hp', 'Прочность');
     el.append(prog.el, hp.el);
     const extra = [];
-    if (t.popBonus) extra.push(h('span', img(glyph('people')), '+' + t.popBonus + ' к населению'));
     if (extra.length) el.append(h('div.zc-ins-tags', extra));
     const jobsBox = this._ins.jobs = h('div.zc-ins-jobs');
     el.append(jobsBox);
@@ -432,13 +433,19 @@ export class CommandPanel {
     const btns = h('div.zc-row.zc-ins-actions');
     const vil = this.game.village;
     if (b.type === 'laboratory') btns.append(h('button.zc-btn.primary.small.ui-i', { onclick: () => { this.ui.click(); this.ui.openResearch(); } }, img(glyph('flask'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Исследования')));
-    if (b.type === 'town_hall' && vil?.upgradeTownHall) {
-      const cost = vil.upgradeCost?.(b);
+    // levels & upgrades
+    if (!t.line && vil?.startUpgrade) {
       this._ins.lvl = h('div.zc-ins-lvl');
-      el.insertBefore(this._ins.lvl, prog.el);
-      if (cost && (b.level || 1) < 5) btns.append(h('button.zc-btn.primary.small.ui-i', { onclick: () => { this.ui.click(); if (vil.upgradeTownHall()) this.renderInspector(); } },
-        img(glyph('star'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Улучшить', costRow(this.game.state, cost))));
+      this._ins.up = bar('build', 'Улучшение');
+      el.insertBefore(this._ins.up.el, prog.el);
+      el.insertBefore(this._ins.lvl, this._ins.up.el);
+      const why = vil.upgradeBlocker(b), cost = vil.upgradeCost(b);
+      if (!why) btns.append(h('button.zc-btn.primary.small.ui-i', { onclick: () => { this.ui.click(); if (vil.startUpgrade(b)) this.renderInspector(); } },
+        img(glyph('star'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Улучшить до ' + ((b.level || 1) + 1), costRow(this.game.state, cost))));
+      else if (b.state === 'complete' && !b.upgrade) el.append(h('div.zc-note', why));
+      this._ins.upSig = this._upSig(b);
     }
+    if (b.type === 'town_hall') el.append(this._ageBox());
     if (b.type !== 'town_hall' && vil?.demolish) {
       btns.append(h('button.zc-btn.danger.small.ui-i', { onclick: () => this.ui.confirm('Снести «' + (t.name || b.type) + '»?', b.state === 'complete' ? 'Вернётся половина ресурсов.' : 'Ресурсы вернутся полностью.', 'Снести', () => { if (vil.demolish(b)) this.deselect(true); }) },
         img(glyph('close'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Снести')));
@@ -470,9 +477,41 @@ export class CommandPanel {
     if (b.state !== 'complete') box.append(h('div.zc-note', 'Рабочие начнут трудиться, когда стройка завершится.'));
   }
   _jobsSig(b) { return b.state + '|' + workersOf(b).map(w => w.id + ':' + w.job).join(','); }
+  _upSig(b) {
+    const vil = this.game.village;
+    return [b.state, b.level, !!b.upgrade, vil?.upgradeBlocker?.(b), this.game.state.age, b.type === 'town_hall' ? checkNextAge(this.game).ok : ''].join('|');
+  }
+  /** Town hall: current age and what the next one needs. */
+  _ageBox() {
+    const g = this.game, a = ageOf(g), c = checkNextAge(g);
+    const box = h('div.zc-ins-age');
+    const idx = g.state.age | 0;
+    box.append(h('div.zc-ins-sub', 'Эпоха ' + (idx + 1) + ' из ' + AGES.length + ': ', h('b', { style: 'color:' + a.color }, a.name)));
+    box.append(h('div.zc-note', a.desc));
+    if (!c.age) return box;
+    box.append(h('div.zc-ins-sub', 'Следующая: ' + c.age.name));
+    if (c.age.soon) { box.append(h('div.zc-note', c.age.desc + ' Скоро в игре.')); return box; }
+    const list = h('div.zc-age-req');
+    for (const it of c.items) list.append(h('div.zc-age-item' + (it.ok ? '.ok' : ''), (it.ok ? '✓ ' : '✗ ') + (it.tech ? 'Исследование «' + (TECHS[it.tech]?.name || it.tech) + '»' : it.text)));
+    box.append(list);
+    box.append(h('button.zc-btn.primary.small.ui-i', { disabled: !c.ok, onclick: () => { this.ui.click(); if (advanceAge(g)) this.renderInspector(); } },
+      img(glyph('star'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Перейти в ' + c.age.name, costRow(g.state, c.age.cost))));
+    return box;
+  }
   _updateBuilding(b) {
     const I = this._ins;
-    if (I.lvl) setText(I.lvl, 'Уровень ' + (b.level || 1) + ' · Население +' + (b.popBonus ?? 0) + ' · Строителей до ' + (this.game.village?.builderCap ?? '—'));
+    if (I.upSig !== undefined && I.upSig !== this._upSig(b)) { this.renderInspector(); return; }
+    if (I.lvl) {
+      const bits = ['Уровень ' + (b.level || 1) + ' из ' + (b.maxLevel || 1)];
+      if (b.type === 'town_hall') bits.push('Строителей до ' + (this.game.village?.builderCap ?? '—'));
+      if (b.popBonus) bits.push('Население +' + b.popBonus);
+      if ((b.level || 1) > 1 && b.jobSlots) bits.push('Работа +' + Math.round(((b.levelWorkBonus || 1) - 1) * 100) + '%');
+      setText(I.lvl, bits.join(' · '));
+    }
+    if (I.up) {
+      toggle(I.up.el, 'hidden', !b.upgrade);
+      if (b.upgrade) I.up.set(b.upgrade.total - b.upgrade.left, b.upgrade.total, Math.ceil(b.upgrade.left) + ' с');
+    }
     setText(I.badge, STATE_LABELS[b.state] || b.state);
     I.badge.className = 'zc-badge s-' + b.state;
     const building = b.state === 'planned' || b.state === 'constructing';

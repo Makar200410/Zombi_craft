@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ageWorkBonus } from '../systems/ages.js';
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
 import { makeShieldMesh } from '../entities/shield.js';
@@ -188,7 +189,10 @@ export class Villager extends Entity {
     const resting = this.task === 'Отступает к ратуше лечиться';
     if (this._regen > (resting ? 0.5 : every)) { this._regen = 0; if (this.hp < this.maxHp && this.hunger > 20) this.heal(resting ? 2 : 1); }
   }
-  get workSpeed() { return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1) * (this.job === 'builder' ? (this.village?.builderSpeedBonus || 1) : 1); }
+  get workSpeed() {
+    return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1) * (this.job === 'builder' ? (this.village?.builderSpeedBonus || 1) : 1)
+      * (this.workplace?.levelWorkBonus || 1) * ageWorkBonus(this.game);
+  }
 
   // ---------------------------------------------------------------- movement
   stopMove() { this._steer = null; }

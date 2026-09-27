@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { BUILDING_TYPES } from './buildings.js';
+import { ageOf, ageHpBonus } from '../systems/ages.js';
+
+// Upgrades rebuild parts of a building in sturdier materials (applied cumulatively by level).
+const LEVEL_MATERIALS = [
+  [2, { [B.THATCH]: B.ROOF_TILES }],
+  [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS }],
+  [4, { [B.TIMBER_FRAME]: B.PLASTER, [B.LOG]: B.STONE_BRICKS, [B.SPRUCE_LOG]: B.STONE_BRICKS, [B.BIRCH_LOG]: B.STONE_BRICKS }],
+];
+function levelId(id, level) {
+  for (const [lv, map] of LEVEL_MATERIALS) if (level >= lv && map[id] !== undefined) id = map[id];
+  return id;
+}
 
 const CLEAR = 0, FILL = 1, BP = 2;
 
@@ -27,7 +39,8 @@ export class Building {
     this.level = 1;
     this.workers = [];
     this.createdAt = this.game.time;
-    this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, dy: b.dy }));
+    this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, base: b.id, dy: b.dy }));
+    this.upgrade = null;         // {left, total} while an upgrade is under way
     this.built = new Uint8Array(this.blocks.length);
     this.builtCount = 0;
     this.points = {};
@@ -47,7 +60,18 @@ export class Building {
   }
 
   get typeDef() { return this.def; }
-  get jobSlots() { let n = 0; for (const k in this.def.jobs) n += this.def.jobs[k]; return n; }
+  /** Job slots per job: +1 for every two levels above the first. */
+  get slotMap() {
+    const m = {}, extra = Math.floor(((this.level || 1) - 1) / 2);
+    for (const k in this.def.jobs) m[k] = this.def.jobs[k] + (this.def.jobs[k] ? extra : 0);
+    return m;
+  }
+  get jobSlots() { const m = this.slotMap; let n = 0; for (const k in m) n += m[k]; return n; }
+  get builderSlots() { return this.def.builderSlots ? this.def.builderSlots + Math.floor(((this.level || 1) - 1) / 2) : 0; }
+  /** Highest level this building can reach in the current age (walls and fences don't level up). */
+  get maxLevel() { return this.def.line ? 1 : ageOf(this.game).maxLevel; }
+  /** Workers of a higher-level building work faster. */
+  get levelWorkBonus() { return 1 + 0.15 * ((this.level || 1) - 1); }
   get job() { for (const k in this.def.jobs) return k; return null; }
   get freeSlots() { return Math.max(0, this.jobSlots - this.workers.length); }
   get isComplete() { return this.state === 'complete'; }
@@ -56,6 +80,7 @@ export class Building {
     let p = this.def.popBonus;
     if (this.type === 'house' && this.game.state.researchDone.has('masonry')) p += 2;
     if (this.type === 'town_hall') p += (this.level - 1) * 2;
+    else if (this.type === 'house') p += this.level - 1;
     return p;
   }
   get door() { return (this.points.door && this.points.door[0]) || { x: this.center.x, y: this.y + 1, z: this.z + this.d + 0.5 }; }
@@ -65,7 +90,20 @@ export class Building {
     let hp = this.def.hp;
     if (this.game.state.researchDone.has('masonry')) hp *= 1.5;
     hp *= 1 + (this.level - 1) * 0.3;
+    hp *= ageHpBonus(this.game);
     return Math.round(hp);
+  }
+  /** Swap block materials to match the level. edit=true also changes the blocks already standing in the world. */
+  applyLevelMaterials(edit) {
+    const w = this.game.world, edits = [];
+    for (const b of this.blocks) {
+      const id = levelId(b.base ?? b.id, this.level || 1);
+      if (id === b.id) continue;
+      if (edit && w && w.getBlock(b.x, b.y, b.z) === b.id) edits.push([b.x, b.y, b.z, id]);
+      b.id = id;
+    }
+    if (edits.length) this.village.bulkEdit(edits);
+    return edits;
   }
   refreshMaxHp() {
     const f = this.hp / this.maxHp;
@@ -233,6 +271,6 @@ export class Building {
   }
 
   serialize() {
-    return { id: this.id, type: this.type, x: this.x, y: this.y, z: this.z, rot: this.rot, variant: this.variant, state: this.state, hp: this.hp, level: this.level, quarryDone: this.quarryDone };
+    return { id: this.id, type: this.type, x: this.x, y: this.y, z: this.z, rot: this.rot, variant: this.variant, state: this.state, hp: this.hp, level: this.level, quarryDone: this.quarryDone, upgrade: this.upgrade };
   }
 }

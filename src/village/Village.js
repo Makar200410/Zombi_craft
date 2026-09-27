@@ -346,21 +346,71 @@ export class Village {
     this.bus.emit('building:removed', { building: b });
     return true;
   }
-  /** Town hall upgrade: more population, builders and hp. */
-  upgradeCost(b = this.townHall) { if (!b) return null; return { wood: 80 * b.level, stone: 80 * b.level, gold: 10 * b.level }; }
-  upgradeTownHall() {
-    const b = this.townHall;
-    if (!b || b.state !== 'complete' || b.level >= 5) return false;
-    const cost = this.upgradeCost(b);
-    if (!this.game.state.spend(cost)) { this.toast('Не хватает ресурсов для улучшения', 'bad'); return false; }
-    b.level++;
+  // ================================================================ building upgrades
+  /** Cost of taking building b from its current level to the next one. */
+  upgradeCost(b = this.townHall) {
+    if (!b) return null;
+    const L = b.level || 1;
+    if (b.type === 'town_hall') {
+      const c = { wood: 80 * L, stone: 80 * L, gold: 10 * L };
+      if (L >= 4) c.iron = 20 * (L - 3);
+      if (L >= 6) c.crystal = 10 * (L - 5);
+      return c;
+    }
+    const c = {};
+    for (const k in b.def.cost) c[k] = Math.ceil(b.def.cost[k] * 1.5 * L);
+    if (L >= 2) c.iron = (c.iron || 0) + 3 * (L - 1);
+    if (L >= 3) c.gold = (c.gold || 0) + 2 * (L - 2);
+    if (L >= 5) c.crystal = (c.crystal || 0) + 3 * (L - 4);
+    return c;
+  }
+  upgradeTime(b) { return (b.type === 'town_hall' ? 40 : 20) + 20 * (b.level || 1); }
+  /** How many upgrades may run at once: one per two builders (at least one). */
+  get upgradeSlots() { return Math.max(1, Math.ceil(this.villagersByJob('builder').length / 2)); }
+  get activeUpgrades() { return this.buildings.filter(b => b.upgrade).length; }
+  /** null if building b can be upgraded now, otherwise the reason. */
+  upgradeBlocker(b) {
+    if (!b || b.state !== 'complete') return 'Здание не достроено';
+    if (b.upgrade) return 'Уже улучшается';
+    if (b.def.line) return 'Стены не улучшаются';
+    if ((b.level || 1) >= b.maxLevel) return 'Максимум для этой эпохи';
+    if (b.type !== 'town_hall' && this.townHall && (b.level || 1) >= this.townHall.level + 1) return 'Сначала улучшите ратушу';
+    if (this.activeUpgrades >= this.upgradeSlots) return 'Все строители заняты улучшениями — наймите ещё';
+    return null;
+  }
+  startUpgrade(b) {
+    const why = this.upgradeBlocker(b);
+    if (why) { this.toast(why, 'bad'); return false; }
+    if (!this.game.state.spend(this.upgradeCost(b))) { this.toast('Не хватает ресурсов для улучшения', 'bad'); return false; }
+    const t = this.upgradeTime(b);
+    b.upgrade = { left: t, total: t };
+    this.toast(`«${b.def.name}»: улучшение до ${b.level + 1} уровня началось`, 'info');
+    this.game.audio?.play('place_block', { pos: b.center });
+    this.bus.emit('building:upgrading', { building: b });
+    return true;
+  }
+  /** Kept for the town hall button. */
+  upgradeTownHall() { return this.startUpgrade(this.townHall); }
+  finishUpgrade(b) {
+    b.upgrade = null;
+    b.level = (b.level || 1) + 1;
+    b.applyLevelMaterials(true);
+    b.computeOps();
     b.refreshMaxHp(); b.hp = b.maxHp;
     this.recalcPop();
-    this.toast(`Ратуша улучшена до уровня ${b.level}!`, 'good');
+    this.toast(`«${b.def.name}» улучшено до ${b.level} уровня!`, 'good');
     this.game.audio?.play('level_up', { pos: b.center });
     this.celebrate(b);
+    if (b.jobSlots) this.autoAssign(b);
     this.bus.emit('building:upgraded', { building: b });
-    return true;
+  }
+  tickUpgrades(dt) {
+    for (const b of this.buildings) {
+      if (!b.upgrade) continue;
+      if (b.state !== 'complete') continue;          // paused while damaged down / rebuilding
+      b.upgrade.left -= dt * this.builderSpeedBonus;
+      if (b.upgrade.left <= 0) this.finishUpgrade(b);
+    }
   }
 
   buildingAt(x, y, z) {
@@ -455,7 +505,7 @@ export class Village {
   }
   get builderCap() {
     let huts = 0;
-    for (const b of this.buildings) if (b.state === 'complete' && b.def.builderSlots) huts += b.def.builderSlots;
+    for (const b of this.buildings) if (b.state === 'complete' && b.def.builderSlots) huts += b.builderSlots;
     return 2 + (this.townHall ? this.townHall.level : 0) + huts;
   }
   /** Hiring cost of the n-th builder (1-based). The first two are free, then it grows as a power law (~k^1.5). */
@@ -1072,6 +1122,7 @@ export class Village {
   /** once per second */
   tick1(dt) {
     const st = this.game.state;
+    this.tickUpgrades(dt);
     // crops grow (≈75 s from seed to ripe, faster with agriculture)
     const stage = st.researchDone.has('agriculture') ? 16 : 25;
     const w = this.game.world;
@@ -1151,6 +1202,8 @@ export class Village {
       if (!BUILDING_TYPES[s.type]) continue;
       const b = new Building(this, s.type, s.x, s.y, s.z, s.rot, s.variant || 0, s.id);
       b.level = s.level || 1;
+      b.upgrade = s.upgrade && s.upgrade.left > 0 ? { left: s.upgrade.left, total: s.upgrade.total || s.upgrade.left } : null;
+      b.applyLevelMaterials(false);
       this.addBuilding(b);
       b.computeOps();
       b.state = s.state || 'complete';

@@ -256,6 +256,12 @@
 .zc-clock { width: var(--mm); display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 5px; border-radius: 30px; }
 .zc-dial { width: 46px; height: 46px; flex: none; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .6)); }
 .zc-clock-txt { min-width: 0; flex: 1; }
+.zc-age { font-size: 11px; font-weight: 700; opacity: .9; white-space: nowrap; margin-top: 1px; }
+.zc-ins-age { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255, 220, 150, .15); }
+.zc-ins-age .zc-btn { margin-top: 6px; }
+.zc-age-req { display: grid; gap: 2px; margin: 4px 0; font-size: 12.5px; }
+.zc-age-item { color: #ff9a80; }
+.zc-age-item.ok { color: #9fe3a0; }
 .zc-day { font: 400 17px/1.1 var(--f-disp); color: var(--gold); text-shadow: 0 2px 0 #1a1004; letter-spacing: .5px; }
 .zc-timer { font-size: 12.5px; font-weight: 700; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .zc-clock[data-state='warn'] .zc-timer { color: #ffb14a; animation: zcBlink 1s ease-in-out infinite; }
@@ -910,4 +916,4 @@
 .zc-job-hire { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 2px; }
 .zc-job-hire .zc-cost { gap: 6px; }
 .zc-job-hire .zc-cost img { width: 14px; height: 14px; }
-.zc-cr-actions .zc-btn:disabled { filter: grayscale(.85) brightness(.6); opacity: .7; cursor: not-allowed; }
+.zc-cr-actions .zc-btn:disabled, .zc-ins-age .zc-btn:disabled { filter: grayscale(.85) brightness(.6); opacity: .7; cursor: not-allowed; }
