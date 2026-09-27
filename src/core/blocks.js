@@ -92,6 +92,9 @@ def(54, 'copper_roof', { label: 'Медная кровля', hardness: 3, cost: 
 def(56, 'concrete', { label: 'Бетон', hardness: 6, drop: { stone: 1 }, cost: { stone: 3 }, tool: 'pick' });
 def(57, 'steel_block', { label: 'Стальной блок', tiles: { top: 'steel_top', side: 'steel_side' }, hardness: 9, cost: { steel: 2 }, drop: { steel: 1 }, tool: 'pick' });
 def(58, 'lamp', { label: 'Электролампа', hardness: 1.5, light: 15, cost: { iron: 1, steel: 1 }, drop: { iron: 1 } });
+def(59, 'hazard', { label: 'Сигнальная полоса', hardness: 6, cost: { steel: 1, stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(60, 'server', { label: 'Серверная стойка', tiles: { top: 'steel_top', side: 'server' }, hardness: 4, light: 6, cost: { steel: 2, gold: 1 }, drop: { steel: 1 }, tool: 'pick' });
+def(61, 'polymer', { label: 'Полимерная панель', hardness: 7, cost: { steel: 1, stone: 2 }, drop: { stone: 1 }, tool: 'pick' });
 def(55, 'cannon', { label: 'Пушка', tiles: { top: 'cannon_top', side: 'cannon_side' }, hardness: 7, cost: { iron: 6 }, drop: { iron: 3 }, tool: 'pick' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
@@ -113,5 +116,5 @@ export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL
 export const PALETTE = [
   B.PLANKS, B.COBBLESTONE, B.STONE_BRICKS, B.LOG, B.TIMBER_FRAME, B.PLASTER, B.ROOF_TILES, B.THATCH,
   B.GLASS, B.TORCH, B.LANTERN, B.PALISADE, B.REINFORCED_WALL, B.DIRT, B.SAND, B.GRAVEL, B.PATH,
-  B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
+  B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.HAZARD, B.SERVER, B.POLYMER, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
 ];

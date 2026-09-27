@@ -355,6 +355,7 @@ function* minerBrain(v) {
       const r = rnd();
       const lucky = game.state.researchDone.has('mining') ? 1.5 : 1;
       if (r < 0.22 * lucky) v.addCarry('coal', 1); else if (r < 0.36 * lucky) v.addCarry('iron_ore', 1); else if (r < 0.40 * lucky) v.addCarry('gold_ore', 1); else if (r < 0.42 * lucky) v.addCarry('crystal', 1);
+      if (game.state.researchDone.has('nuclear') && rnd() < 0.07) v.addCarry('uranium', 1);
       continue;
     }
     const key = t.x + ',' + t.y + ',' + t.z;
@@ -439,7 +440,7 @@ function* researcherBrain(v) {
   const vil = v.village, game = v.game;
   while (true) {
     const lab = v.workplace;
-    if (!lab || lab.type !== 'laboratory' || !lab.isComplete) { yield* waitForWorkplace(v, 'Ждёт лабораторию'); continue; }
+    if (!lab || (lab.type !== 'laboratory' && lab.type !== 'computer_center') || !lab.isComplete) { yield* waitForWorkplace(v, 'Ждёт лабораторию'); continue; }
     const spots = lab.points.work || [lab.door];
     const spot = pick(spots);
     yield* v.walkTo(spot, 0.7, { maxTime: 30 });
@@ -449,14 +450,15 @@ function* researcherBrain(v) {
     v.face({ x: target.x + 0.5, z: target.z + 0.5 });
     const T = { x: target.x + 0.5, y: target.y + 1.1, z: target.z + 0.5 };
     const atTable = target === table;
-    v.task = atTable ? pick(['Колдует над магическим столом', 'Проводит опыт']) : 'Изучает свитки';
+    v.task = lab.type === 'computer_center' ? pick(['Пишет программу', 'Запускает расчёт на сервере']) : atTable ? pick(['Колдует над магическим столом', 'Проводит опыт']) : 'Изучает свитки';
     let acc = 0;
     yield* v.work(atTable ? 'cast' : 'harvest', 7, 0.5, () => {
       acc += 0.5;
       if (atTable) game.particles?.emit({ pos: T, box: 0.3, count: 3, colors: [0xb070ff, 0x70c0ff, 0xffffff], additive: true, speed: 0.6, dir: { x: 0, y: 1.2, z: 0 }, gravity: -0.5, life: 1, size: 0.12 });
       if (acc >= 2.5) {
         acc = 0;
-        const pts = (atTable ? 1.2 : 1) * v.workSpeed * (vil.hasWonder('stonehenge') ? 1.3 : 1);
+        const pc = lab.type === 'computer_center' ? 1 + 1.5 * (vil.industry?.running(lab) ? vil.industry.powered : 0) : 1;
+        const pts = (atTable ? 1.2 : 1) * v.workSpeed * pc * (vil.hasWonder('stonehenge') ? 1.3 : 1) * (vil.hasWonder('global_network') ? 1.5 : 1);
         try { game.research?.addPoints?.(pts); } catch (e) { /* research module not ready */ }
         vil.researchPoints += pts;
       }
@@ -694,12 +696,14 @@ function* towerPost(v, role) {
     }
     if (role === 'cannon') { range = 34; cooldown = 4.2; type = 'bomb'; dmg = 48; extra = { splash: 3.5 }; }
     if (role === 'mg') { range = 26; cooldown = 0.22; type = 'bullet'; dmg = 9; extra = {}; }
-    dmg *= (b.levelWorkBonus || 1) * (vil.hasWonder('colossus') ? 1.25 : 1) * (vil.hasWonder('eiffel_tower') ? 1.15 : 1);
-    if (vil.hasWonder('arsenal')) { range *= 1.25; cooldown *= 0.8; }
+    if (role === 'rocket') { range = 48; cooldown = 5.5; type = 'bomb'; dmg = 90; extra = { splash: 5 }; }
+    dmg *= (b.levelWorkBonus || 1) * (vil.industry?.dmgMul || 1);
+    range *= vil.industry?.rangeMul || 1;
+    if (vil.hasWonder('arsenal')) cooldown *= 0.8;
     const z = vil.nearestZombie(v.eye, range, true);
-    if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : role === 'cannon' ? 'Заряжает пушку' : role === 'mg' ? 'Держит сектор' : 'На посту'; v.model.setLoop(null); continue; }
+    if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : role === 'cannon' ? 'Заряжает пушку' : role === 'mg' ? 'Держит сектор' : role === 'rocket' ? 'Наводит ракеты' : 'На посту'; v.model.setLoop(null); continue; }
     v.face(z.position);
-    v.task = role === 'mage' ? (type === 'fireball' ? 'Колдует огненный шар' : 'Колдует ледяную стрелу') : role === 'cannon' ? 'Стреляет из пушки' : role === 'mg' ? 'Стреляет из пулемёта' : (type === 'bullet' ? 'Стреляет из мушкета' : 'Стреляет из лука');
+    v.task = role === 'mage' ? (type === 'fireball' ? 'Колдует огненный шар' : 'Колдует ледяную стрелу') : role === 'cannon' ? 'Стреляет из пушки' : role === 'mg' ? 'Стреляет из пулемёта' : role === 'rocket' ? 'Запускает ракету' : (type === 'bullet' ? 'Стреляет из мушкета' : 'Стреляет из лука');
     if (role !== 'mage') v.model.setLoop('aim');
     if (cd <= 0) {
       cd = cooldown;
@@ -720,12 +724,13 @@ function* mageBrain(v) {
   }
 }
 
+const GUN_ROLE = { cannon_tower: 'cannon', mg_nest: 'mg', rocket_battery: 'rocket' };
 function* gunnerBrain(v) {
   v.updateTool();
   while (true) {
     const b = v.workplace;
-    if (!b || (b.type !== 'cannon_tower' && b.type !== 'mg_nest') || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт бастион'); continue; }
-    yield* towerPost(v, b.type === 'mg_nest' ? 'mg' : 'cannon');
+    if (!b || !GUN_ROLE[b.type] || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт огневую точку'); continue; }
+    yield* towerPost(v, GUN_ROLE[b.type]);
   }
 }
 
@@ -761,13 +766,14 @@ function* engineerBrain(v) {
   v.updateTool();
   while (true) {
     const b = v.workplace;
-    if (!b || (b.type !== 'factory' && b.type !== 'power_plant') || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт завод'); continue; }
+    if (!b || !b.def.jobs.engineer || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт завод'); continue; }
     const spots = b.points.machine || [b.points.inside?.[0] || b.door];
     const m = spots[(v.id + (v._mN = (v._mN || 0) + 1)) % spots.length];
-    v.task = b.type === 'factory' ? 'Идёт к станку' : 'Идёт к котлам';
+    v.task = b.type === 'factory' ? 'Идёт к станку' : b.def.fuel === 'uranium' ? 'Идёт к пульту реактора' : 'Идёт к котлам';
     yield* v.walkTo(m, 1.2, { maxTime: 25 });
-    if (b.type === 'power_plant') {
-      v.task = (game.state.resources.coal || 0) > 0 ? 'Подбрасывает уголь в топку' : 'Нет угля — котлы остывают';
+    if (b.def.powerOut) {
+      const fuel = b.def.fuel || 'coal';
+      v.task = (game.state.resources[fuel] || 0) <= 0 ? (fuel === 'uranium' ? 'Нет урана — реактор заглушен' : 'Нет угля — котлы остывают') : fuel === 'uranium' ? 'Следит за реактором' : 'Подбрасывает уголь в топку';
       yield* v.work('harvest', 6, 0.7, () => game.particles?.emit({ pos: { x: m.x, y: m.y + 1.2, z: m.z }, count: 2, colors: [0xff9a30, 0xffd060], additive: true, speed: 1, dir: { x: 0, y: 1.5, z: 0 }, gravity: -0.5, life: 0.6, size: 0.1 }));
       continue;
     }

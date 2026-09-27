@@ -411,7 +411,7 @@ export class Combat {
     const vel = target.clone().sub(start).divideScalar(T);
     vel.y += 0.5 * PROJECTILES.meteor.gravity * T;
     this._play('meteor_fall', target, 1);
-    return this.projectiles.spawn('meteor', user, start, vel, { damage: opts.damage ?? 80, splash, breakBlocks: 'natural', craterRadius: opts.craterRadius ?? 3.2, shake: 1.1, burn: 5, life: T + 2 });
+    return this.projectiles.spawn('meteor', user, start, vel, { damage: opts.damage ?? 80, splash, breakBlocks: opts.breakBlocks ?? 'natural', craterRadius: opts.craterRadius ?? 3.2, shake: 1.1, burn: 5, life: T + 2 });
   }
 
   // ------------------------------------------------------------------ explosions

@@ -30,6 +30,7 @@ export class Village {
     this.townHall = null;
     this.nextBuildingId = 1;
     this.armory = { level: 0, progress: 0 };
+    this.industry?.dispose(); this.industry = new Industry(this);
     this.industry = new Industry(this);
     this.researchPoints = 0;
     this.spawnTimer = SPAWN_INTERVAL * 0.5;
@@ -368,6 +369,7 @@ export class Village {
       const c = { wood: 80 * L, stone: 80 * L, gold: 10 * L };
       if (L >= 4) c.iron = 20 * (L - 3);
       if (L >= 6) { c.crystal = 10 * (L - 5); c.steel = 25 * (L - 5); }
+      if (L >= 8) c.uranium = 10 * (L - 7);
       return c;
     }
     const c = {};

@@ -209,7 +209,7 @@ export class Hud {
         setText(c.n, fmtNum(Math.round(c.shown)));
       }
       // raw ores only take space in the bar while you actually have some
-      if (r.endsWith('_ore') || r === 'steel') { const show = target > 0; if (c._vis !== show) { c._vis = show; c.el.style.display = show ? '' : 'none'; } }
+      if (r.endsWith('_ore') || r === 'steel' || r === 'uranium') { const show = target > 0; if (c._vis !== show) { c._vis = show; c.el.style.display = show ? '' : 'none'; } }
     }
     const alive = (g.village?.villagers || []).filter(v => !v.dead).length;
     const cap = g.village?.popCap ?? 0;

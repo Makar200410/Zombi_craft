@@ -226,6 +226,17 @@ export class Zombie extends Entity {
         }
       }
     }
+    if (T.rad) {
+      this.radT = (this.radT || 0) - dt;
+      if (this.radT <= 0) {
+        this.radT = 0.5;
+        const r2 = T.rad * T.rad, dmg = T.radDps * 0.5 * (this.dmgMul || 1);
+        for (const v of game.village?.villagers || []) if (!v.dead && !v.hidden && v.position.distanceToSquared(pos) < r2) v.damage(dmg, this, { kind: 'poison' });
+        const pl = game.player;
+        if (pl && !pl.dead && pl.position.distanceToSquared(pos) < r2) pl.damage?.(dmg, this, { kind: 'poison' });
+        if (!this.far) game.particles?.emit({ pos: this.center, box: T.rad * 0.6, count: 3, colors: [0xc0ff60, 0x80e030], additive: true, speed: 0.4, gravity: -0.3, life: 0.8, size: 0.14 });
+      }
+    }
     if (T.regen && this.hp > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + this.maxHp * T.regen * dt);
     if (T.noSlow) this.slowTimer = 0;
     if (T.trail && !this.far) {

@@ -753,6 +753,154 @@ function eiffelTower(v) {
   return bp;
 }
 
+// ---- atomic & information ages
+function reactor(v) {
+  const bp = new BP(11, 11);
+  bp.box(0, 0, 0, 10, 0, 10, B.CONCRETE);
+  bp.ring(0, 0, 0, 10, 0, 10, B.HAZARD);
+  // containment dome (stepped cylinder)
+  const circle = (r) => { const out = []; for (let z = 0; z < 11; z++) for (let x = 0; x < 11; x++) { const d = Math.hypot(x - 4, z - 4); if (d <= r + 0.4 && d > r - 0.7) out.push([x, z]); } return out; };
+  for (let y = 1; y <= 4; y++) for (const [x, z] of circle(3.2)) bp.set(x, y, z, B.CONCRETE);
+  const disc = (r, y) => { for (let z = 0; z < 11; z++) for (let x = 0; x < 11; x++) if (Math.hypot(x - 4, z - 4) <= r + 0.4) bp.set(x, y, z, B.CONCRETE); };
+  disc(3.2, 5); disc(2.4, 6); disc(1.4, 7);
+  bp.set(4, 8, 4, B.LAMP);
+  bp.set(4, 2, 1, B.GLASS); bp.set(1, 2, 4, B.GLASS);
+  bp.set(4, 1, 4, B.LAMP);
+  // cooling tower
+  for (let y = 1; y <= 9; y++) { const r = y < 5 ? 1.9 - y * 0.12 : 1.4 + (y - 5) * 0.1; for (let z = 6; z <= 10; z++) for (let x = 6; x <= 10; x++) { const d = Math.hypot(x - 8, z - 8); if (d <= r + 0.4 && d > r - 0.8) bp.set(x, y, z, y > 7 ? B.HAZARD : B.CONCRETE); } }
+  // entrance
+  bp.del(4, 1, 7); bp.del(4, 2, 7);
+  bp.set(3, 3, 7, B.HAZARD); bp.set(5, 3, 7, B.HAZARD);
+  bp.point('door', 4, 1, 8);
+  bp.point('machine', 4, 1, 8); bp.point('machine', 7, 1, 5);
+  return bp;
+}
+
+function bunker(v) {
+  const bp = new BP(9, 7);
+  bp.box(0, 0, 0, 8, 0, 6, B.CONCRETE);
+  bp.ring(0, 1, 0, 8, 3, 6, B.CONCRETE);
+  bp.box(0, 4, 0, 8, 4, 6, B.CONCRETE);
+  bp.box(1, 5, 1, 7, 5, 5, B.GRASS);
+  // firing slits & blast door
+  for (const x of [2, 6]) bp.set(x, 2, 6, B.GLASS);
+  bp.set(0, 2, 3, B.GLASS); bp.set(8, 2, 3, B.GLASS);
+  bp.del(4, 1, 6); bp.del(4, 2, 6);
+  bp.set(3, 3, 6, B.HAZARD); bp.set(4, 3, 6, B.HAZARD); bp.set(5, 3, 6, B.HAZARD);
+  bp.set(4, 3, 3, B.LAMP); bp.set(2, 1, 2, B.STEEL_BLOCK); bp.set(6, 1, 2, B.STEEL_BLOCK);
+  bp.point('door', 4, 1, 6);
+  bp.point('inside', 4, 1, 3);
+  return bp;
+}
+
+function rocketBattery(v) {
+  const bp = new BP(5, 5);
+  bp.box(0, 0, 0, 4, 0, 4, B.CONCRETE);
+  bp.ring(0, 1, 0, 4, 1, 4, B.HAZARD);
+  bp.box(1, 1, 1, 3, 1, 3, B.STEEL_BLOCK);
+  // launch rails with rockets
+  for (const x of [1, 3]) { bp.set(x, 2, 1, B.STEEL_BLOCK); bp.set(x, 3, 1, B.POLYMER); bp.set(x, 4, 1, B.HAZARD); }
+  bp.set(2, 2, 2, B.STEEL_BLOCK);
+  bp.del(2, 1, 4);
+  bp.point('door', 2, 1, 4);
+  bp.point('post', 2, 2, 3);
+  return bp;
+}
+
+function turret(v) {
+  const bp = new BP(3, 3);
+  bp.box(0, 0, 0, 2, 0, 2, B.HAZARD);
+  bp.box(1, 1, 1, 1, 2, 1, B.STEEL_BLOCK);
+  bp.box(0, 3, 0, 2, 3, 2, B.POLYMER);
+  bp.set(1, 3, 0, B.STEEL_BLOCK); bp.set(1, 4, 1, B.LAMP);
+  bp.point('door', 1, 1, 2);
+  bp.point('top', 1, 4, 1);
+  return bp;
+}
+
+function radar(v) {
+  const bp = new BP(5, 5);
+  bp.box(0, 0, 0, 4, 0, 4, B.CONCRETE);
+  bp.box(1, 1, 1, 3, 2, 3, B.POLYMER);
+  bp.set(2, 3, 2, B.STEEL_BLOCK); bp.set(2, 4, 2, B.STEEL_BLOCK);
+  // dish
+  bp.box(0, 5, 1, 4, 5, 3, B.POLYMER); bp.set(0, 6, 2, B.POLYMER); bp.set(4, 6, 2, B.POLYMER); bp.set(2, 6, 2, B.LAMP);
+  bp.set(2, 2, 4, B.SERVER);
+  bp.point('door', 2, 1, 4);
+  bp.point('top', 2, 6, 2);
+  return bp;
+}
+
+function computerCenter(v) {
+  const bp = new BP(9, 9);
+  bp.box(0, 0, 0, 8, 0, 8, B.PATH);
+  bp.box(1, 0, 1, 7, 0, 7, B.POLYMER);
+  bp.ring(1, 1, 1, 7, 4, 7, B.POLYMER);
+  for (let x = 2; x <= 6; x++) for (let y = 2; y <= 3; y++) bp.set(x, y, 7, B.GLASS);
+  for (let z = 2; z <= 6; z++) for (let y = 2; y <= 3; y++) { bp.set(1, y, z, B.GLASS); bp.set(7, y, z, B.GLASS); }
+  bp.box(1, 5, 1, 7, 5, 7, B.STEEL_BLOCK);
+  bp.box(3, 6, 3, 5, 6, 5, B.POLYMER); bp.set(4, 7, 4, B.LAMP);
+  // server rows
+  for (const z of [2, 4]) for (const x of [2, 3, 5, 6]) { bp.set(x, 1, z, B.SERVER); bp.set(x, 2, z, B.SERVER); }
+  bp.set(4, 4, 4, B.LAMP);
+  bp.del(4, 1, 7); bp.del(4, 2, 7);
+  bp.point('door', 4, 1, 8);
+  bp.point('work', 4, 1, 3); bp.point('work', 4, 1, 5); bp.point('work', 2, 1, 6);
+  return bp;
+}
+
+function droneHub(v) {
+  const bp = new BP(7, 7);
+  bp.box(0, 0, 0, 6, 0, 6, B.CONCRETE);
+  bp.ring(1, 1, 1, 5, 2, 5, B.POLYMER);
+  bp.box(1, 3, 1, 5, 3, 5, B.HAZARD);
+  bp.box(2, 3, 2, 4, 3, 4, B.STEEL_BLOCK);
+  bp.set(3, 3, 3, B.LAMP);
+  for (const [x, z] of [[1, 1], [5, 1], [1, 5], [5, 5]]) bp.set(x, 4, z, B.LAMP);
+  bp.set(3, 1, 3, B.SERVER);
+  bp.del(3, 1, 5); bp.del(3, 2, 5);
+  bp.point('door', 3, 1, 6);
+  bp.point('top', 3, 4, 3);
+  return bp;
+}
+
+function cosmodrome(v) {
+  const bp = new BP(11, 11);
+  bp.box(0, 0, 0, 10, 0, 10, B.CONCRETE);
+  bp.ring(1, 0, 1, 9, 0, 9, B.HAZARD);
+  // launch tower
+  bp.box(1, 1, 4, 1, 16, 4, B.STEEL_BLOCK); bp.box(1, 1, 6, 1, 16, 6, B.STEEL_BLOCK);
+  for (let y = 3; y <= 15; y += 3) bp.set(1, y, 5, B.STEEL_BLOCK);
+  for (let y = 4; y <= 14; y += 5) bp.box(2, y, 5, 3, y, 5, B.STEEL_BLOCK);
+  // rocket
+  bp.box(4, 1, 4, 6, 12, 6, B.POLYMER);
+  for (let y = 3; y <= 9; y += 3) bp.set(5, y, 6, B.GLASS);
+  bp.box(5, 13, 5, 5, 16, 5, B.POLYMER); bp.set(5, 17, 5, B.LAMP);
+  for (const [x, z] of [[3, 5], [7, 5], [5, 3], [5, 7]]) bp.box(x, 1, z, x, 3, z, B.HAZARD);
+  bp.box(4, 12, 4, 6, 12, 6, B.HAZARD);
+  bp.set(9, 1, 9, B.SERVER); bp.set(9, 2, 9, B.LAMP);
+  bp.point('door', 5, 1, 10);
+  bp.point('inside', 8, 1, 8);
+  return bp;
+}
+
+function globalNetwork(v) {
+  const bp = new BP(11, 11);
+  bp.box(0, 0, 0, 10, 0, 10, B.POLYMER);
+  // server halls around a glass core
+  bp.ring(1, 1, 1, 9, 3, 9, B.POLYMER);
+  for (let i = 2; i <= 8; i += 2) { bp.set(i, 2, 1, B.SERVER); bp.set(i, 2, 9, B.SERVER); bp.set(1, 2, i, B.SERVER); bp.set(9, 2, i, B.SERVER); }
+  bp.box(1, 4, 1, 9, 4, 9, B.STEEL_BLOCK);
+  // glass spire
+  for (let y = 5; y <= 14; y++) { const r = y < 10 ? 2 : y < 13 ? 1 : 0; bp.ring(5 - r, y, 5 - r, 5 + r, y, 5 + r, r ? B.GLASS : B.LAMP); }
+  bp.set(5, 15, 5, B.LAMP);
+  for (const [x, z] of [[1, 1], [9, 1], [1, 9], [9, 9]]) { bp.box(x, 5, z, x, 7, z, B.STEEL_BLOCK); bp.set(x, 8, z, B.LAMP); }
+  bp.del(5, 1, 9); bp.del(5, 2, 9);
+  bp.point('door', 5, 1, 10);
+  bp.point('inside', 5, 1, 5);
+  return bp;
+}
+
 function rotXZ(x, z, w, d, rot) {
   switch (rot & 3) {
     case 1: return [d - 1 - z, x];
@@ -816,7 +964,7 @@ function def(id, o) {
 
 def('town_hall', {
   name: 'Ратуша', desc: 'Сердце деревни: жильё для 4 жителей, 2 поста стражи, лучники на башне сами стреляют по нежити. Если её разрушат — игра окончена.',
-  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, jobs: { guard: 2 }, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal'], auto: true,
+  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, jobs: { guard: 2 }, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal', 'uranium'], auto: true,
 });
 def('house', {
   name: 'Дом', desc: 'Уютный фахверковый дом. +4 к населению. Ночью жители прячутся внутри.',
@@ -836,11 +984,11 @@ def('farm', {
 });
 def('storehouse', {
   name: 'Склад', desc: 'Ближняя точка сдачи ресурсов: рабочие меньше ходят и больше работают.',
-  cost: { wood: 30, stone: 15 }, hp: 350, category: 'economy', design: storehouse, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal'],
+  cost: { wood: 30, stone: 15 }, hp: 350, category: 'economy', design: storehouse, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal', 'uranium'],
 });
 def('mine', {
   name: 'Шахта', desc: 'Шахтёры роют настоящий карьер ступенями вглубь: камень, уголь, железо, золото и кристаллы.',
-  cost: { wood: 25, stone: 10 }, hp: 300, jobs: { miner: 2 }, research: null, category: 'economy', design: mine, storage: ['stone', 'coal', 'iron_ore', 'iron', 'gold_ore', 'gold', 'crystal'],
+  cost: { wood: 25, stone: 10 }, hp: 300, jobs: { miner: 2 }, research: null, category: 'economy', design: mine, storage: ['stone', 'coal', 'iron_ore', 'iron', 'gold_ore', 'gold', 'crystal', 'uranium'],
 });
 def('laboratory', {
   name: 'Лаборатория', desc: 'Учёные корпят над книгами и магическим столом, производя очки исследований.',
@@ -939,14 +1087,53 @@ def('eiffel_tower', {
   cost: { steel: 300, iron: 300, gold: 300, crystal: 40 }, hp: 5000, age: 6, wonder: true, category: 'wonder', maxCount: 1, design: eiffelTower, powerOut: 150,
 });
 
+def('reactor', {
+  name: 'Атомный реактор', desc: 'Инженеры запускают реактор на уране: 450 энергии (1 уран в 20 с). Прочный, но береги его от нежити.',
+  cost: { steel: 250, stone: 500, crystal: 30, uranium: 10 }, hp: 4000, age: 7, research: 'nuclear', jobs: { engineer: 2 }, category: 'economy', design: reactor, powerOut: 450, fuel: 'uranium', fuelEvery: 20,
+});
+def('bunker', {
+  name: 'Бункер', desc: 'Бетонное убежище: +8 жителей и 3 поста стражи. Выдерживает любую осаду.',
+  cost: { steel: 120, stone: 400 }, hp: 6000, popBonus: 8, age: 7, research: 'nuclear', jobs: { guard: 3 }, category: 'military', design: bunker,
+});
+def('rocket_battery', {
+  name: 'Ракетная батарея', desc: 'Ракетчик накрывает толпы нежити ракетами с огромной дальностью.',
+  cost: { steel: 120, iron: 100, coal: 60 }, hp: 1200, age: 7, research: 'rocketry', jobs: { gunner: 1 }, category: 'military', design: rocketBattery,
+});
+def('turret', {
+  name: 'Автотурель', desc: 'Автоматическая турель без экипажа: быстрые очереди по нежити. Нужно 25 энергии.',
+  cost: { steel: 60, gold: 30 }, hp: 900, age: 8, research: 'computing', category: 'military', design: turret, power: 25,
+});
+def('radar', {
+  name: 'Радар', desc: 'Засекает волну заранее: число врагов и направления атаки. Башни и турели видят на 10% дальше. Нужно 15 энергии.',
+  cost: { steel: 80, gold: 60, crystal: 10 }, hp: 800, age: 8, research: 'computing', category: 'defense', design: radar, power: 15, maxCount: 1,
+});
+def('computer_center', {
+  name: 'Вычислительный центр', desc: 'Учёные с компьютерами дают в 2,5 раза больше очков исследований (при питании). Нужно 30 энергии.',
+  cost: { steel: 150, gold: 150, crystal: 20 }, hp: 1500, age: 8, research: 'computing', jobs: { researcher: 3 }, category: 'magic', design: computerCenter, power: 30,
+});
+def('drone_hub', {
+  name: 'Дронопорт', desc: 'Три боевых дрона патрулируют небо и расстреливают нежить. Нужно 40 энергии.',
+  cost: { steel: 200, uranium: 10, gold: 150 }, hp: 1400, age: 8, research: 'robotics', category: 'military', design: droneHub, power: 40,
+});
+def('cosmodrome', {
+  name: 'Космодром', desc: 'Чудо атомного века. Орбитальный удар каждые 25 секунд ночью бьёт по самой большой толпе нежити.',
+  cost: { steel: 400, uranium: 40, gold: 400, crystal: 60 }, hp: 6000, age: 7, wonder: true, category: 'wonder', maxCount: 1, design: cosmodrome,
+});
+def('global_network', {
+  name: 'Всемирная сеть', desc: 'Чудо информационной эры. Исследования в 1,5 раза быстрее, жители работают на 10% быстрее, в каждом дронопорте +2 дрона.',
+  cost: { steel: 600, uranium: 60, gold: 600, crystal: 100 }, hp: 6000, age: 8, wonder: true, category: 'wonder', maxCount: 1, design: globalNetwork,
+});
+
 export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'factory', 'power_plant', 'laboratory', 'forge', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mg_nest',
-  'tesla_tower', 'searchlight', 'mage_tower', 'wall', 'stone_wall', 'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal', 'crystal_palace', 'eiffel_tower'];
+  'tesla_tower', 'searchlight', 'reactor', 'bunker', 'rocket_battery', 'computer_center', 'radar', 'turret', 'drone_hub', 'mage_tower', 'wall', 'stone_wall',
+  'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal', 'crystal_palace', 'eiffel_tower', 'cosmodrome', 'global_network'];
 
 export const RESEARCH_LABELS = {
   masonry: 'Каменная кладка', agriculture: 'Земледелие', mining: 'Горное дело', smithing: 'Кузнечное дело', archery: 'Стрельба из лука',
   mechanics: 'Механика', fortification: 'Фортификация', gunpowder: 'Порох', ballistics: 'Баллистика', alchemy: 'Алхимия', arcana: 'Тайные искусства',
   frost_magic: 'Магия льда', storm_magic: 'Магия бури', restoration: 'Восстановление', crystal_forging: 'Кристальная ковка', meteor: 'Метеоры',
   steam_power: 'Паровая машина', machine_guns: 'Пулемёты', electricity: 'Электричество', tesla: 'Токи Теслы',
+  nuclear: 'Ядерная физика', rocketry: 'Ракеты', computing: 'Вычислительная техника', robotics: 'Робототехника',
 };
 
 export { rotXZ };

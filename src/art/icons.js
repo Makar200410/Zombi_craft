@@ -405,6 +405,11 @@ const RES_DRAW = {
     for (const [x, y] of [[22, 6], [25, 6], [22, 4], [25, 4], [23, 3], [24, 2]]) p.set(x, y, hex('#f0c850'));
   },
   iron(p) { ingot(p, R.iron); },
+  uranium(p) {
+    const U = hexes(['#0e2a0a', '#1f5a14', '#3a9a20', '#6ada30', '#b8ff70', '#f0ffd0']);
+    blob(p, 12, 19, 7, 6, U, { dither: 0.4 }); blob(p, 21, 17, 6, 7, U, { dither: 0.4 }); blob(p, 16, 11, 5, 4, U, { dither: 0.4 });
+    for (const [x, y] of [[12, 16], [20, 13], [16, 9], [22, 20]]) p.set(x, y, U[5]);
+  },
   steel(p) { ingot(p, hexes(['#1c2a3a', '#34506a', '#5a82a4', '#9cc4e0', '#e8f6ff'])); p.set(18, 11, hex('#ffffff')); p.set(19, 11, hex('#cfefff')); },
   iron_ore(p) { oreChunk(p, ['#6a4020', '#a8683a', '#d89a64', '#f2c89a']); },
   gold_ore(p) { oreChunk(p, ['#7a5008', '#c08a14', '#f0c030', '#fff0a0']); },
@@ -831,9 +836,15 @@ function voxelIcon(p, typeId) {
   const t = BUILDING_TYPES[typeId]; if (!t) return BUILD_DRAW.house(p);
   const L = t.layout(0);
   const blocks = L.blocks.filter(b => b.dy >= 1 || L.blocks.length < 60);
-  const W = L.w, D = L.d, H = Math.max(1, L.height);
-  const a = Math.min(44 / ((W + D) * 0.866), 44 / ((W + D) * 0.5 + H));
-  const cx = 24 - (W - D) * a * 0.433, cy = 46 - (W + D) * a * 0.5;
+  // fit the projected bounds of the actual blocks into the 48 px icon
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const b of blocks) for (let k = 0; k < 8; k++) {
+    const x = b.dx + (k & 1), y = b.dy + ((k >> 1) & 1), z = b.dz + ((k >> 2) & 1);
+    const px = (x - z) * 0.866, py = (x + z) * 0.5 - y;
+    if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
+  }
+  const a = Math.min(44 / Math.max(1, x1 - x0), 44 / Math.max(1, y1 - y0));
+  const cx = 24 - (x0 + x1) / 2 * a, cy = 46 - y1 * a;
   const P = (x, y, z) => [cx + (x - z) * a * 0.866, cy + (x + z) * a * 0.5 - y * a];
   blocks.sort((u, v) => (u.dx + u.dz + u.dy) - (v.dx + v.dz + v.dy) || u.dy - v.dy);
   for (const b of blocks) {

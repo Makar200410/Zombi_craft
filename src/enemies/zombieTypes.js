@@ -89,6 +89,22 @@ export const ZOMBIE_TYPES = {
     height: 1.85, width: 1, radius: 0.3, aggro: 20, knock: 2, eye: 0x60ffff, groanPitch: 1.3, loot: 0.7,
     immune: 'storm', noSlow: true, skinBase: 'runner', tint: [0x40d0ff, 0.4], trail: [0x9af0ff, 0xffffff],
   },
+  // ---- atomic & information ages
+  irradiated: {
+    base: 'walker', name: 'Облучённый', hp: 80, speed: 1.8, dmg: 10, cd: 1.0, reach: 1.0, blockDps: 2, bldDmg: 6,
+    height: 2.0, width: 1.1, radius: 0.34, aggro: 16, knock: 4, eye: 0xc0ff40, groanPitch: 0.8, loot: 0.9,
+    rad: 3.5, radDps: 5, deathFire: 3, skinBase: 'walker', tint: [0x9aff40, 0.5], glow: 0x9aff40, trail: [0xc0ff60, 0x70c020],
+  },
+  swarm: {
+    base: 'runner', name: 'Рой', hp: 10, speed: 4.1, dmg: 3, cd: 0.5, reach: 0.7, blockDps: 0.4, bldDmg: 1,
+    height: 1.0, width: 0.7, radius: 0.24, aggro: 24, knock: 1, eye: 0xff3030, groanPitch: 2.1, loot: 0.15,
+    hunch: 0.8, skinBase: 'runner', tint: [0x3a3a44, 0.45],
+  },
+  hacker: {
+    base: 'spitter', proj: null, name: 'Хакер', hp: 50, speed: 2.0, dmg: 5, cd: 1.0, reach: 0.9, blockDps: 0.8, bldDmg: 2,
+    height: 1.85, width: 1, radius: 0.3, aggro: 20, knock: 2, eye: 0x40a0ff, groanPitch: 1.6, loot: 0.9,
+    keep: [9, 14], jam: true, hat: 'hood', hatColor: 0x1a2a3a, skinBase: 'spitter', tint: [0x3060c0, 0.4], trail: [0x60c0ff, 0x2060ff],
+  },
 };
 
 export const ZOMBIE_TYPE_IDS = Object.keys(ZOMBIE_TYPES);

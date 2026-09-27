@@ -16,7 +16,8 @@ const DIFF = {
 const GRID = 2;   // spatial hash cell size for separation queries
 
 /** Champions of each age's siege (index = the age just reached). */
-const SIEGE_BOSSES = { 1: ['brute', 'brute'], 2: ['brute', 'armored', 'armored'], 3: ['necromancer', 'brute'], 4: ['giant', 'necromancer'] };
+const SIEGE_BOSSES = { 1: ['brute', 'brute'], 2: ['brute', 'armored', 'armored'], 3: ['necromancer', 'brute'], 4: ['giant', 'necromancer'],
+  5: ['giant', 'mutant', 'mutant'], 6: ['giant', 'giant', 'necromancer'], 7: ['giant', 'necromancer', 'irradiated', 'irradiated'], 8: ['giant', 'giant', 'necromancer', 'hacker'] };
 
 export class WaveDirector {
   constructor(game) {
@@ -87,6 +88,8 @@ export class WaveDirector {
     const age = this.game.state.age | 0;
     if (age >= 5) weights.mutant = 0.1 + 0.03 * (age - 5);
     if (age >= 6) weights.conductor = 0.09 + 0.02 * (age - 6);
+    if (age >= 7) weights.irradiated = 0.1 + 0.03 * (age - 7);
+    if (age >= 8) { weights.swarm = 0.35; weights.hacker = 0.06; }
     const total = Object.values(weights).reduce((a, b) => a + b, 0);
     const out = [];
     // guarantee the newly introduced kinds show up
@@ -137,13 +140,22 @@ export class WaveDirector {
       game.state.siegePending = 0;
       game.bus.emit('toast', { text: `Осада эпохи! Нежить почуяла силу «${AGES[siege].name}»: орда больше, с ней идут: ${(SIEGE_BOSSES[siege] || []).map(t => ZOMBIE_TYPES[t].name).join(', ')}`, kind: 'bad' });
     }
+    // radar intel
+    const ind = game.village?.industry;
+    if (ind?.radarOn) {
+      const names = ['восток', 'юго-восток', 'юг', 'юго-запад', 'запад', 'северо-запад', 'север', 'северо-восток'];
+      const dirs = this.spawnDirections.map(d => names[((Math.round((d.angle || 0) / (Math.PI / 4)) % 8) + 8) % 8]);
+      const kinds = {}; for (const t of types) kinds[t] = (kinds[t] || 0) + 1;
+      const top = Object.entries(kinds).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, c]) => `${ZOMBIE_TYPES[k].name} ×${c}`).join(', ');
+      game.bus.emit('toast', { text: `Радар: ${types.length} целей, направление: ${[...new Set(dirs)].join(' и ')}. Больше всего: ${top}`, kind: 'info' });
+    }
     game.bus.emit('wave:start', { wave: n, count: types.length, directions: this.spawnDirections });
     game.bus.emit('toast', { text: `Волна ${n}! Нежить наступает`, kind: 'wave' });
     const era = eraOf(n);
     if (n === era.from) game.bus.emit('toast', { text: `Эпоха «${era.name}» — волны ${era.from}–${era.from + 9 > 50 && era.from <= 50 ? 50 : era.from + 9}`, kind: 'wave' });
     const fresh = introducedOn(n);
     this._seenAge = this._seenAge || new Set();
-    for (const t of ['mutant', 'conductor']) if (types.includes(t) && !this._seenAge.has(t)) { this._seenAge.add(t); fresh.push(t); }
+    for (const t of ['mutant', 'conductor', 'irradiated', 'swarm', 'hacker']) if (types.includes(t) && !this._seenAge.has(t)) { this._seenAge.add(t); fresh.push(t); }
     if (fresh.length) game.bus.emit('toast', { text: 'Новые враги: ' + fresh.map(t => `${ZOMBIE_TYPES[t].name} (${HINTS[t]})`).join(', '), kind: 'bad' });
     if (BOSSES[n]) game.bus.emit('toast', { text: 'Боссы этой ночи: ' + BOSSES[n].map(t => ZOMBIE_TYPES[t].name).join(', '), kind: 'bad' });
     return true;
@@ -367,6 +379,34 @@ export class WaveDirector {
       for (const z of this.zombies) if (z.wanderer) wanderers++;
       if (wanderers < (game.state.isNight ? 4 : 3) && alive < this.maxAlive && !this.waveActive) this._spawnWanderer();
     }
+
+    // from the atomic age on the dead no longer fear the sun: one raid around noon each day
+    const st = game.state;
+    if ((st.age | 0) >= 7 && !st.isNight && !this.waveActive && st.timeOfDay >= 0.5 && st.timeOfDay < 0.7 && this._raidDay !== st.day) {
+      this._raidDay = st.day;
+      this._raid();
+    }
+  }
+
+  _raid() {
+    const game = this.game;
+    const n = Math.max(1, this.currentWave + 1);
+    const count = Math.max(6, Math.round(countFor(n) * this.diff.count * 0.35));
+    const types = this.compose(n).filter(t => !ZOMBIE_TYPES[t].boss).slice(0, count);
+    this._makeDirections(1);
+    if (this.flow.version) this.flow._startJob(); else this.flow.recomputeNow();
+    const dir = this.spawnDirections[0];
+    const anchor = this._edgePoint(dir.angle, 14);
+    const room = Math.max(0, this.maxAlive - this.aliveCount());
+    let made = 0;
+    for (let i = 0; i < Math.min(types.length, room); i++) {
+      const x = anchor ? anchor.x + (Math.random() - 0.5) * 8 : undefined, z = anchor ? anchor.z + (Math.random() - 0.5) * 8 : undefined;
+      const zb = this.spawn(types[i], x, z, { wave: n, sunproof: true });
+      if (zb) { zb.emergeT = 1.4 + i * 0.1; made++; }
+    }
+    if (!made) return;
+    game.audio?.play('wave_horn', { volume: 0.7, pitch: 1.2 });
+    game.bus.emit('toast', { text: `Дневной рейд! ${made} мертвецов в защитных костюмах идут при свете солнца`, kind: 'wave' });
   }
 
   // ------------------------------------------------------------------ save / load

@@ -12,6 +12,8 @@ const LEVEL_MATERIALS = [
   [6, { [B.ROOF_TILES]: B.COPPER_ROOF, [B.STONE_BRICKS]: B.BRICK }],
   [7, { [B.BRICK]: B.CONCRETE, [B.DARK_STONE]: B.CONCRETE, [B.COBBLESTONE]: B.CONCRETE }],
   [8, { [B.COPPER_ROOF]: B.STEEL_BLOCK, [B.LANTERN]: B.LAMP }],
+  [9, { [B.CONCRETE]: B.POLYMER, [B.PLASTER]: B.POLYMER }],
+  [10, { [B.MARBLE]: B.POLYMER, [B.STONE_BRICKS]: B.POLYMER }],
 ];
 function levelId(id, level) {
   for (const [lv, map] of LEVEL_MATERIALS) if (level >= lv && map[id] !== undefined) id = map[id];

@@ -193,7 +193,7 @@ export class Villager extends Entity {
   }
   get workSpeed() {
     return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1) * (this.job === 'builder' ? (this.village?.builderSpeedBonus || 1) : 1)
-      * (this.workplace?.levelWorkBonus || 1) * ageWorkBonus(this.game) * (this.village?.hasWonder('crystal_palace') ? 1.2 : 1);
+      * (this.workplace?.levelWorkBonus || 1) * ageWorkBonus(this.game) * (this.village?.hasWonder('crystal_palace') ? 1.2 : 1) * (this.village?.hasWonder('global_network') ? 1.1 : 1);
   }
 
   // ---------------------------------------------------------------- movement

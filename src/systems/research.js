@@ -125,6 +125,31 @@ export const TECHS = {
     desc: 'Магия бури, пойманная в медную катушку.',
     effects: ['Открывает «Тесла-башню»: цепная молния по зомби'],
   },
+  // ---- atomic & information ages
+  nuclear: {
+    name: 'Ядерная физика', icon: { res: 'uranium' }, tier: 7, pos: [7, 1.2], prereqs: ['electricity'],
+    cost: { steel: 100, crystal: 40, gold: 150 }, points: 380,
+    desc: 'Энергия расщеплённого атома. Шахтёры начинают находить уран.',
+    effects: ['Шахтёры добывают уран', 'Открывает «Атомный реактор» и «Бункер»', 'Нужна для Атомного века'],
+  },
+  rocketry: {
+    name: 'Ракеты', icon: { item: 'grenade' }, tier: 7, pos: [7, 2.4], prereqs: ['machine_guns', 'electricity'],
+    cost: { steel: 120, coal: 150, gold: 120 }, points: 380,
+    desc: 'Реактивные снаряды накрывают толпы нежити издалека.',
+    effects: ['Открывает «Ракетную батарею»'],
+  },
+  computing: {
+    name: 'Вычислительная техника', icon: { block: 60 }, tier: 8, pos: [8, 1.2], prereqs: ['nuclear'],
+    cost: { steel: 200, gold: 250, crystal: 50, uranium: 10 }, points: 480,
+    desc: 'Машины считают быстрее учёных и никогда не спят.',
+    effects: ['Открывает «Вычислительный центр», «Радар» и «Автотурель»', 'Нужна для Информационной эры'],
+  },
+  robotics: {
+    name: 'Робототехника', icon: { block: 61 }, tier: 8, pos: [8, 2.4], prereqs: ['computing', 'rocketry'],
+    cost: { steel: 250, uranium: 20, gold: 300 }, points: 560,
+    desc: 'Летающие боевые дроны патрулируют небо над городом.',
+    effects: ['Открывает «Дронопорт»'],
+  },
 };
 for (const id in TECHS) TECHS[id].id = id;
 export const TECH_ORDER = Object.keys(TECHS);

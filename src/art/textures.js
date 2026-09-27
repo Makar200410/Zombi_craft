@@ -706,6 +706,40 @@ GEN.lamp = (p, r) => {
   for (let i = 4; i < 28; i += 8) { for (let k = 2; k < 30; k++) { p.set(i, k, P.ironD[4]); } }
 };
 
+GEN.hazard = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.6);
+  p.map((x, y) => {
+    const stripe = (((x + y) >> 3) & 1) === 0;
+    const v = 3.8 + (n(x, y) - 0.5) * 1.4;
+    return stripe ? rampDither(P.gold, v * 0.9, x, y, 0.3) : rampDither(P.ironD, v * 0.5, x, y, 0.3);
+  });
+  for (let i = 0; i < 12; i++) p.shade(r.int(0, 31), r.int(0, 31), -0.3);   // scuffs
+};
+GEN.server = (p, r) => {
+  p.map((x, y) => {
+    const e = Math.min(x, 31 - x);
+    if (e < 2) return rampAt(P.iron, 3);
+    const unit = (y % 8);
+    if (unit === 0) return rampAt(P.ironD, 1);
+    return rampAt(P.ironD, 2.4 + (unit === 1 ? 0.8 : 0));
+  });
+  for (let u = 0; u < 4; u++) for (let k = 0; k < 5; k++) {
+    const col = r.chance(0.7) ? [80, 255, 120] : r.chance(0.5) ? [90, 180, 255] : [255, 180, 60];
+    p.set(5 + k * 3, u * 8 + 4, col); if (r.chance(0.5)) p.set(5 + k * 3, u * 8 + 5, col.map(c => c * 0.6));
+  }
+  for (let u = 0; u < 4; u++) for (let x = 22; x < 29; x++) p.set(x, u * 8 + 4, P.iron[1]);
+};
+GEN.polymer = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.5);
+  p.map((x, y) => {
+    let v = 5.2 + (n(x, y) - 0.5) * 0.6;
+    if (x === 0 || y === 0) v += 0.6; if (x === 31 || y === 31) v -= 1.6;
+    if (y === 15) v -= 1.2; if (y === 16) v += 0.4;
+    return rampDither(P.snow.map(c => shift(c, -0.05)), v, x, y, 0.3);
+  });
+  for (let x = 4; x < 28; x++) p.set(x, 8, P.water[5]);
+};
+
 GEN.cannon_side = (p, r) => {
   // dark iron barrel seen from the side, on a wooden carriage
   const n = tileFbm(r, S, [8, 16], 0.6);
