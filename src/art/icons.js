@@ -4,6 +4,7 @@
 
 import { Px, hex, hexes, shift, mix, blob, poly, clamp, rampAt, makeRng, hash01 } from './pixel.js';
 import { BLOCKS } from '../core/blocks.js';
+import { BUILDING_TYPES } from '../village/buildings.js';
 import { getTilePx, getTileCanvas } from './textures.js';
 import { villagerSkin } from './skins.js';
 
@@ -812,10 +813,43 @@ const BUILD_DRAW = {
 
 const buildCache = new Map();
 /** 48x48 icon for a building type id. */
+// Buildings without a hand-drawn icon get an isometric render of their real blueprint.
+const tileAvg = new Map();
+function avgColor(name) {
+  let c = tileAvg.get(name);
+  if (c) return c;
+  const t = getTilePx(name);
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < t.d.length; i += 4) if (t.d[i + 3] > 128) { r += t.d[i]; g += t.d[i + 1]; b += t.d[i + 2]; n++; }
+  c = n ? [r / n, g / n, b / n].map(Math.round) : [128, 128, 128];
+  tileAvg.set(name, c);
+  return c;
+}
+const scaleCol = (c, k) => c.map(v => clamp(Math.round(v * k), 0, 255));
+function voxelIcon(p, typeId) {
+  const t = BUILDING_TYPES[typeId]; if (!t) return BUILD_DRAW.house(p);
+  const L = t.layout(0);
+  const blocks = L.blocks.filter(b => b.dy >= 1 || L.blocks.length < 60);
+  const W = L.w, D = L.d, H = Math.max(1, L.height);
+  const a = Math.min(44 / ((W + D) * 0.866), 44 / ((W + D) * 0.5 + H));
+  const cx = 24 - (W - D) * a * 0.433, cy = 46 - (W + D) * a * 0.5;
+  const P = (x, y, z) => [cx + (x - z) * a * 0.866, cy + (x + z) * a * 0.5 - y * a];
+  blocks.sort((u, v) => (u.dx + u.dz + u.dy) - (v.dx + v.dz + v.dy) || u.dy - v.dy);
+  for (const b of blocks) {
+    const def = BLOCKS[b.id]; if (!def || def.render === 'none') continue;
+    const x = b.dx, y = b.dy, z = b.dz;
+    const top = avgColor(def.tiles.top), side = avgColor(def.tiles.side);
+    if (def.shape === 'cross') { poly(p, [P(x + 0.3, y, z + 0.7), P(x + 0.7, y, z + 0.7), P(x + 0.7, y + 0.8, z + 0.7), P(x + 0.3, y + 0.8, z + 0.7)], side); continue; }
+    poly(p, [P(x, y + 1, z), P(x + 1, y + 1, z), P(x + 1, y + 1, z + 1), P(x, y + 1, z + 1)], scaleCol(top, 1.12));
+    poly(p, [P(x, y, z + 1), P(x + 1, y, z + 1), P(x + 1, y + 1, z + 1), P(x, y + 1, z + 1)], scaleCol(side, 0.86));
+    poly(p, [P(x + 1, y, z), P(x + 1, y, z + 1), P(x + 1, y + 1, z + 1), P(x + 1, y + 1, z)], scaleCol(side, 0.66));
+  }
+}
+
 export function getBuildingIcon(typeId) {
   if (buildCache.has(typeId)) return buildCache.get(typeId);
   const p = new Px(48, 48);
-  (BUILD_DRAW[typeId] || BUILD_DRAW.house)(p);
+  if (BUILD_DRAW[typeId]) BUILD_DRAW[typeId](p); else voxelIcon(p, typeId);
   p.outline(outlineCol);
   const c = p.toCanvas();
   buildCache.set(typeId, c);

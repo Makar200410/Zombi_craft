@@ -34,5 +34,7 @@ export const JOBS = {
   researcher: { label: 'Учёный', hat: 'hood', hatColor: 0x3b2d6a, tool: null },
   guard: { label: 'Стражник', hat: 'helmet', tool: 'sword_wood' },
   mage: { label: 'Маг', hat: 'wizard', hatColor: 0x4a2a9a, tool: 'staff_fire' },
+  merchant: { label: 'Торговец', hat: 'hood', hatColor: 0xb8862a, tool: null },
+  gunner: { label: 'Канонир', hat: 'helmet', tool: 'musket' },
 };
-export const JOB_ORDER = ['idle', 'builder', 'woodcutter', 'farmer', 'miner', 'blacksmith', 'researcher', 'guard', 'mage'];
+export const JOB_ORDER = ['idle', 'builder', 'woodcutter', 'farmer', 'miner', 'blacksmith', 'researcher', 'merchant', 'guard', 'gunner', 'mage'];

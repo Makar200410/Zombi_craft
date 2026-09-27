@@ -397,6 +397,215 @@ function stoneWall(v) {
 }
 
 // ---------------------------------------------------------------- rotation & caching
+// ---------------------------------------------------------------- civilisation-age designs
+
+function granary(v) {
+  const bp = new BP(7, 9);
+  bp.box(0, 0, 0, 6, 0, 8, B.PATH);
+  bp.box(1, 0, 1, 5, 0, 7, B.COBBLESTONE);
+  bp.ring(1, 1, 1, 5, 1, 7, B.COBBLESTONE);
+  bp.ring(1, 2, 1, 5, 4, 7, B.PLANKS);
+  bp.posts(1, 1, 5, 7, 1, 5, B.LOG);
+  bp.ring(1, 5, 1, 5, 5, 7, B.LOG);
+  for (let y = 1; y <= 3; y++) for (let x = 2; x <= 4; x++) bp.del(x, y, 7);
+  bp.box(2, 4, 7, 4, 4, 7, B.LOG);
+  bp.set(1, 3, 4, B.GLASS); bp.set(5, 3, 4, B.GLASS);
+  bp.gableZ(0, 6, 0, 8, 5, B.THATCH, B.PLANKS, 1, 7);
+  bp.box(2, 1, 2, 2, 2, 3, B.HAY_BALE); bp.box(4, 1, 2, 4, 1, 3, B.HAY_BALE); bp.set(3, 1, 2, B.HAY_BALE);
+  bp.set(0, 1, 8, B.HAY_BALE); bp.set(6, 1, 8, B.HAY_BALE); bp.set(6, 2, 8, B.HAY_BALE);
+  bp.set(3, 5, 8, B.LANTERN);
+  bp.point('door', 3, 1, 8);
+  bp.point('inside', 3, 1, 4);
+  return bp;
+}
+
+function market(v) {
+  const bp = new BP(9, 9);
+  bp.box(0, 0, 0, 8, 0, 8, B.PATH);
+  bp.box(1, 0, 1, 7, 0, 7, B.COBBLESTONE);
+  // fountain
+  bp.ring(3, 1, 3, 5, 1, 5, B.MARBLE);
+  bp.set(4, 1, 4, B.WATER);
+  // four stalls with awnings and goods
+  const roofs = [B.THATCH, B.ROOF_TILES, B.ROOF_TILES, B.THATCH];
+  const goods = [[B.HAY_BALE, B.HAY_BALE], [B.LOG, B.COBBLESTONE], [B.BOOKSHELF, B.LANTERN], [B.HAY_BALE, B.LOG]];
+  [[0, 0], [6, 0], [0, 6], [6, 6]].forEach(([x0, z0], i) => {
+    const front = z0 === 0 ? z0 + 1 : z0;       // counter row faces the plaza
+    const back = z0 === 0 ? z0 : z0 + 1;
+    bp.posts(x0, z0, x0 + 2, z0 + 1, 1, 2, B.LOG);
+    bp.box(x0, 3, z0, x0 + 2, 3, z0 + 1, roofs[i]);
+    bp.set(x0 + 1, 1, front, B.PLANKS);
+    bp.set(x0 + 1, 1, back, goods[i][0]);
+    bp.set(x0 + 1, 2, back, goods[i][1]);
+    bp.point('stall', x0 + 1, 1, z0 === 0 ? z0 + 2 : z0 - 1);
+  });
+  bp.set(4, 2, 1, B.BANNER); bp.set(4, 1, 1, B.LOG);
+  bp.point('door', 4, 1, 8);
+  bp.point('inside', 4, 1, 6);
+  return bp;
+}
+
+function castle(v) {
+  const bp = new BP(13, 13);
+  bp.box(0, 0, 0, 12, 0, 12, B.COBBLESTONE);
+  bp.box(2, 0, 2, 10, 0, 10, B.PATH);
+  // curtain wall with crenellations
+  bp.ring(1, 1, 1, 11, 4, 11, B.STONE_BRICKS);
+  for (let i = 1; i <= 11; i += 2) { bp.set(i, 5, 1, B.STONE_BRICKS); bp.set(i, 5, 11, B.STONE_BRICKS); bp.set(1, 5, i, B.STONE_BRICKS); bp.set(11, 5, i, B.STONE_BRICKS); }
+  // corner towers
+  for (const [x, z] of [[0, 0], [10, 0], [0, 10], [10, 10]]) {
+    bp.box(x, 1, z, x + 2, 6, z + 2, B.STONE_BRICKS);
+    bp.posts(x, z, x + 2, z + 2, 7, 7, B.STONE_BRICKS);
+    bp.set(x + 1, 7, z + 1, B.TORCH);
+  }
+  // gate with banner
+  for (let y = 1; y <= 3; y++) for (let x = 5; x <= 7; x++) bp.del(x, y, 11);
+  bp.set(6, 4, 11, B.DARK_STONE); bp.set(6, 5, 11, B.BANNER);
+  bp.set(4, 3, 12, B.LANTERN); bp.set(8, 3, 12, B.LANTERN);
+  // keep
+  bp.box(4, 1, 3, 8, 6, 7, B.STONE_BRICKS);
+  for (let y = 1; y <= 5; y++) for (let z = 4; z <= 6; z++) for (let x = 5; x <= 7; x++) bp.del(x, y, z);
+  bp.box(5, 0, 4, 7, 0, 6, B.PLANKS);
+  bp.del(6, 1, 7); bp.del(6, 2, 7);
+  bp.set(4, 4, 5, B.GLASS); bp.set(8, 4, 5, B.GLASS); bp.set(6, 4, 3, B.GLASS); bp.set(6, 4, 7, B.GLASS);
+  bp.set(6, 5, 5, B.LANTERN); bp.set(5, 1, 4, B.WORKBENCH); bp.set(7, 1, 4, B.BOOKSHELF);
+  bp.box(3, 7, 2, 9, 7, 8, B.ROOF_TILES);
+  bp.box(4, 8, 3, 8, 8, 7, B.ROOF_TILES);
+  bp.box(5, 9, 4, 7, 9, 6, B.ROOF_TILES);
+  bp.set(6, 10, 5, B.LOG); bp.set(6, 11, 5, B.BANNER);
+  // courtyard
+  bp.set(3, 1, 9, B.HAY_BALE); bp.set(9, 1, 9, B.HAY_BALE); bp.set(3, 1, 3, B.HAY_BALE); bp.set(9, 1, 3, B.LOG);
+  bp.point('door', 6, 1, 12);
+  bp.point('inside', 6, 1, 5);
+  return bp;
+}
+
+function cannonTower(v) {
+  const bp = new BP(7, 7);
+  bp.box(0, 0, 0, 6, 0, 6, B.COBBLESTONE);
+  const corner = (x, z) => (x === 0 || x === 6) && (z === 0 || z === 6);
+  for (let y = 1; y <= 5; y++) bp.ring(0, y, 0, 6, y, 6, y <= 1 ? B.DARK_STONE : B.STONE_BRICKS);
+  bp.box(0, 6, 0, 6, 6, 6, B.STONE_BRICKS);
+  for (let i = 0; i <= 6; i += 2) { bp.set(i, 7, 0, B.STONE_BRICKS); bp.set(i, 7, 6, B.STONE_BRICKS); bp.set(0, 7, i, B.STONE_BRICKS); bp.set(6, 7, i, B.STONE_BRICKS); }
+  for (let y = 0; y <= 7; y++) for (const [x, z] of [[0, 0], [6, 0], [0, 6], [6, 6]]) if (corner(x, z)) bp.del(x, y, z);
+  bp.del(3, 1, 6); bp.del(3, 2, 6);
+  bp.set(0, 3, 3, B.GLASS); bp.set(6, 3, 3, B.GLASS); bp.set(3, 3, 0, B.GLASS);
+  bp.set(3, 7, 2, B.CANNON);
+  bp.set(1, 7, 4, B.IRON_BLOCK); bp.set(5, 7, 4, B.LANTERN);
+  bp.set(3, 4, 6, B.BANNER);
+  bp.point('door', 3, 1, 6);
+  bp.point('post', 3, 7, 4);
+  return bp;
+}
+
+// ---- wonders
+function stonehenge(v) {
+  const bp = new BP(11, 11);
+  bp.box(0, 0, 0, 10, 0, 10, B.GRASS);
+  bp.box(4, 0, 4, 6, 0, 6, B.COBBLESTONE);
+  for (let z = 7; z <= 10; z++) bp.set(5, 0, z, B.PATH);
+  const pillars = [[5, 1], [8, 2], [9, 5], [8, 8], [2, 8], [1, 5], [2, 2]];
+  pillars.forEach(([x, z], i) => { bp.box(x, 1, z, x, 3, z, i % 3 === 0 ? B.MOSSY_COBBLE : B.STONE); bp.set(x, 4, z, B.DARK_STONE); });
+  // lintels between neighbouring stones
+  bp.set(6, 4, 1, B.DARK_STONE); bp.set(7, 4, 2, B.DARK_STONE); bp.set(9, 4, 6, B.DARK_STONE); bp.set(1, 4, 6, B.DARK_STONE); bp.set(3, 4, 2, B.DARK_STONE); bp.set(4, 4, 1, B.DARK_STONE);
+  // altar & fire
+  bp.box(4, 1, 5, 6, 1, 5, B.STONE_BRICKS); bp.set(5, 2, 5, B.TORCH);
+  bp.set(3, 1, 3, B.TORCH); bp.set(7, 1, 3, B.TORCH);
+  bp.point('door', 5, 1, 10);
+  bp.point('inside', 5, 1, 7);
+  return bp;
+}
+
+function ziggurat(v) {
+  const bp = new BP(13, 13);
+  bp.box(0, 0, 0, 12, 0, 12, B.SAND);
+  for (let t = 0; t < 5; t++) {
+    const a = t + 0, b = 12 - t, y0 = 1 + t * 2;
+    bp.ring(a, y0, a, b, y0 + 1, b, t % 2 ? B.SAND : B.BRICK);
+  }
+  bp.box(5, 10, 5, 7, 10, 7, B.BRICK);
+  // shrine on top
+  bp.posts(5, 5, 7, 7, 11, 12, B.BRONZE_BLOCK);
+  bp.box(5, 13, 5, 7, 13, 7, B.ROOF_TILES);
+  bp.set(6, 11, 6, B.LANTERN); bp.set(6, 14, 6, B.BANNER);
+  // front stair
+  for (let t = 0; t < 5; t++) for (let k = 0; k < 2; k++) bp.set(6, 1 + t * 2 + k, 12 - t, B.STONE_BRICKS);
+  bp.set(4, 1, 12, B.TORCH); bp.set(8, 1, 12, B.TORCH);
+  bp.point('door', 6, 1, 12);
+  bp.point('inside', 6, 1, 12);
+  return bp;
+}
+
+function colossus(v) {
+  const bp = new BP(9, 9);
+  bp.box(0, 0, 0, 8, 0, 8, B.PATH);
+  bp.box(1, 1, 1, 7, 2, 7, B.MARBLE);
+  bp.ring(0, 1, 0, 8, 1, 8, B.STONE_BRICKS);
+  for (let x = 2; x <= 6; x += 2) { bp.set(x, 1, 8, B.LANTERN); }
+  // legs
+  bp.box(3, 3, 4, 3, 7, 4, B.BRONZE_BLOCK); bp.box(5, 3, 4, 5, 7, 4, B.BRONZE_BLOCK);
+  // body
+  bp.box(3, 8, 3, 5, 12, 5, B.BRONZE_BLOCK);
+  // arms: left down with shield, right raised with a torch
+  bp.box(2, 9, 4, 2, 11, 4, B.BRONZE_BLOCK); bp.set(2, 9, 5, B.IRON_BLOCK);
+  bp.box(6, 11, 4, 6, 15, 4, B.BRONZE_BLOCK); bp.set(6, 16, 4, B.LANTERN);
+  // head with crest
+  bp.box(4, 13, 4, 4, 14, 4, B.BRONZE_BLOCK); bp.set(4, 15, 4, B.BRONZE_BLOCK);
+  bp.point('door', 4, 1, 8);
+  bp.point('inside', 4, 3, 7);
+  return bp;
+}
+
+function cathedral(v) {
+  const bp = new BP(11, 15);
+  bp.box(0, 0, 0, 10, 0, 14, B.PATH);
+  bp.box(1, 0, 1, 9, 0, 13, B.MARBLE);
+  // nave
+  bp.ring(2, 1, 2, 8, 6, 12, B.STONE_BRICKS);
+  for (const z of [4, 6, 8, 10]) for (let y = 2; y <= 5; y++) { bp.set(2, y, z, B.GLASS); bp.set(8, y, z, B.GLASS); }
+  // buttresses
+  for (const z of [3, 5, 7, 9, 11]) { bp.box(1, 1, z, 1, 4, z, B.STONE_BRICKS); bp.box(9, 1, z, 9, 4, z, B.STONE_BRICKS); }
+  bp.gableZ(1, 9, 2, 12, 7, B.ROOF_TILES, B.STONE_BRICKS, 2, 12);
+  // front towers
+  for (const x of [1, 7]) {
+    bp.box(x, 1, 11, x + 2, 11, 13, B.STONE_BRICKS);
+    bp.set(x + 1, 8, 13, B.GLASS); bp.set(x + 1, 9, 13, B.GLASS);
+    bp.box(x, 12, 11, x + 2, 12, 13, B.ROOF_TILES); bp.set(x + 1, 13, 12, B.ROOF_TILES); bp.set(x + 1, 14, 12, B.LANTERN);
+  }
+  // portal & rose window
+  for (let y = 1; y <= 3; y++) for (let x = 4; x <= 6; x++) bp.del(x, y, 12);
+  bp.set(5, 5, 12, B.GLASS); bp.set(4, 6, 12, B.GLASS); bp.set(6, 6, 12, B.GLASS); bp.set(5, 7, 12, B.GLASS);
+  // interior
+  bp.box(5, 1, 3, 5, 1, 3, B.BRONZE_BLOCK); bp.set(5, 2, 3, B.LANTERN);
+  for (const z of [5, 7, 9]) { bp.set(4, 1, z, B.PLANKS); bp.set(6, 1, z, B.PLANKS); }
+  bp.point('door', 5, 1, 14);
+  bp.point('inside', 5, 1, 8);
+  return bp;
+}
+
+function arsenal(v) {
+  const bp = new BP(11, 11);
+  bp.box(0, 0, 0, 10, 0, 10, B.GRAVEL);
+  // low star-fort walls
+  bp.ring(0, 1, 0, 10, 2, 10, B.DARK_STONE);
+  for (let i = 0; i <= 10; i += 2) { bp.set(i, 3, 0, B.DARK_STONE); bp.set(i, 3, 10, B.DARK_STONE); bp.set(0, 3, i, B.DARK_STONE); bp.set(10, 3, i, B.DARK_STONE); }
+  for (const [x, z] of [[0, 0], [10, 0], [0, 10], [10, 10]]) { bp.set(x, 3, z, B.STONE_BRICKS); bp.set(x, 4, z, B.CANNON); }
+  for (let y = 1; y <= 2; y++) for (let x = 4; x <= 6; x++) bp.del(x, y, 10);
+  bp.del(4, 3, 10); bp.del(6, 3, 10);
+  // brick powder house with copper roof
+  bp.box(3, 1, 2, 7, 4, 6, B.BRICK);
+  for (let y = 1; y <= 3; y++) for (let z = 3; z <= 5; z++) for (let x = 4; x <= 6; x++) bp.del(x, y, z);
+  bp.del(5, 1, 6); bp.del(5, 2, 6);
+  bp.set(3, 3, 4, B.GLASS); bp.set(7, 3, 4, B.GLASS);
+  bp.gableX(2, 8, 1, 7, 5, B.COPPER_ROOF, B.BRICK, 3, 7);
+  bp.set(4, 1, 3, B.IRON_BLOCK); bp.set(6, 1, 3, B.IRON_BLOCK); bp.set(5, 1, 3, B.CANNON); bp.set(5, 3, 4, B.LANTERN);
+  bp.set(2, 1, 8, B.CANNON); bp.set(8, 1, 8, B.CANNON);
+  bp.set(5, 3, 10, B.BANNER);
+  bp.point('door', 5, 1, 10);
+  bp.point('inside', 5, 1, 4);
+  return bp;
+}
+
 function rotXZ(x, z, w, d, rot) {
   switch (rot & 3) {
     case 1: return [d - 1 - z, x];
@@ -515,7 +724,47 @@ def('stone_wall', {
   cost: { stone: 5 }, hp: 450, research: 'fortification', category: 'defense', design: stoneWall, variants: 2, line: true,
 });
 
-export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'laboratory', 'forge', 'watchtower', 'barracks', 'mage_tower', 'wall', 'stone_wall'];
+// ---- civilisation ages (age = index into AGES, see systems/ages.js)
+def('granary', {
+  name: 'Амбар', desc: 'Хранилище урожая: фермы дают на 25% больше еды (не суммируется), рядом удобно сдавать еду и дерево.',
+  cost: { wood: 60, stone: 40 }, hp: 450, age: 1, category: 'economy', maxCount: 2, design: granary, storage: ['food', 'wood'],
+});
+def('market', {
+  name: 'Рынок', desc: 'Торговцы продают излишки еды, дерева и камня за золото. Золото нужно для улучшений и эпох.',
+  cost: { wood: 80, stone: 60, gold: 10 }, hp: 500, age: 1, jobs: { merchant: 2 }, category: 'economy', maxCount: 2, design: market, storage: ['gold'],
+});
+def('castle', {
+  name: 'Замок', desc: 'Каменная крепость с донжоном: +6 жителей, 4 поста стражи, очень прочные стены.',
+  cost: { stone: 400, wood: 150, iron: 40 }, hp: 3500, popBonus: 6, age: 3, jobs: { guard: 4 }, category: 'military', maxCount: 1, design: castle,
+});
+def('cannon_tower', {
+  name: 'Бастион', desc: 'Каменная башня с пушкой. Канонир бьёт ядрами по толпе зомби — урон по площади.',
+  cost: { stone: 150, iron: 40, coal: 20 }, hp: 900, age: 4, jobs: { gunner: 1 }, category: 'military', design: cannonTower,
+});
+// wonders: one per age, huge projects with village-wide effects
+def('stonehenge', {
+  name: 'Каменный круг', desc: 'Чудо каменного века. Учёные получают на 30% больше очков исследований, жители спокойнее.',
+  cost: { stone: 250, wood: 150, food: 80 }, hp: 1500, age: 0, wonder: true, category: 'wonder', maxCount: 1, design: stonehenge,
+});
+def('ziggurat', {
+  name: 'Великий зиккурат', desc: 'Чудо бронзового века. +10 к населению, фермы дают на 25% больше еды.',
+  cost: { stone: 500, wood: 200, food: 200, gold: 40 }, hp: 3000, popBonus: 10, age: 1, wonder: true, category: 'wonder', maxCount: 1, design: ziggurat,
+});
+def('colossus', {
+  name: 'Бронзовый колосс', desc: 'Чудо железного века. Стражники, лучники, маги и пушки наносят на 25% больше урона.',
+  cost: { stone: 400, iron: 120, gold: 80 }, hp: 3000, age: 2, wonder: true, category: 'wonder', maxCount: 1, design: colossus,
+});
+def('cathedral', {
+  name: 'Великий собор', desc: 'Чудо Средневековья. Жители лечатся вдвое быстрее и всегда в хорошем настроении, ратуша на 50% прочнее.',
+  cost: { stone: 800, wood: 300, gold: 150, crystal: 20 }, hp: 4000, age: 3, wonder: true, category: 'wonder', maxCount: 1, design: cathedral,
+});
+def('arsenal', {
+  name: 'Королевский арсенал', desc: 'Чудо эпохи пороха. Башни и бастионы стреляют дальше на 25% и быстрее на 20%.',
+  cost: { stone: 700, iron: 250, gold: 200, coal: 120 }, hp: 4000, age: 4, wonder: true, category: 'wonder', maxCount: 1, design: arsenal,
+});
+
+export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'laboratory', 'forge', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mage_tower', 'wall', 'stone_wall',
+  'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal'];
 
 export const RESEARCH_LABELS = {
   masonry: 'Каменная кладка', agriculture: 'Земледелие', mining: 'Горное дело', smithing: 'Кузнечное дело', archery: 'Стрельба из лука',

@@ -8,6 +8,8 @@ const LEVEL_MATERIALS = [
   [2, { [B.THATCH]: B.ROOF_TILES }],
   [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS }],
   [4, { [B.TIMBER_FRAME]: B.PLASTER, [B.LOG]: B.STONE_BRICKS, [B.SPRUCE_LOG]: B.STONE_BRICKS, [B.BIRCH_LOG]: B.STONE_BRICKS }],
+  [5, { [B.PLASTER]: B.MARBLE }],
+  [6, { [B.ROOF_TILES]: B.COPPER_ROOF, [B.STONE_BRICKS]: B.BRICK }],
 ];
 function levelId(id, level) {
   for (const [lv, map] of LEVEL_MATERIALS) if (level >= lv && map[id] !== undefined) id = map[id];
@@ -69,7 +71,7 @@ export class Building {
   get jobSlots() { const m = this.slotMap; let n = 0; for (const k in m) n += m[k]; return n; }
   get builderSlots() { return this.def.builderSlots ? this.def.builderSlots + Math.floor(((this.level || 1) - 1) / 2) : 0; }
   /** Highest level this building can reach in the current age (walls and fences don't level up). */
-  get maxLevel() { return this.def.line ? 1 : ageOf(this.game).maxLevel; }
+  get maxLevel() { return this.def.line || this.def.wonder ? 1 : ageOf(this.game).maxLevel; }
   /** Workers of a higher-level building work faster. */
   get levelWorkBonus() { return 1 + 0.15 * ((this.level || 1) - 1); }
   get job() { for (const k in this.def.jobs) return k; return null; }
@@ -91,6 +93,7 @@ export class Building {
     if (this.game.state.researchDone.has('masonry')) hp *= 1.5;
     hp *= 1 + (this.level - 1) * 0.3;
     hp *= ageHpBonus(this.game);
+    if (this.type === 'town_hall' && this.village?.hasWonder?.('cathedral')) hp *= 1.5;
     return Math.round(hp);
   }
   /** Swap block materials to match the level. edit=true also changes the blocks already standing in the world. */

@@ -84,6 +84,12 @@ def(47, 'mushroom', { label: 'Гриб', tiles: 'mushroom', shape: 'cross', rend
 def(48, 'dead_bush', { label: 'Сухой куст', tiles: 'dead_bush', shape: 'cross', render: 'cutout', solid: false, hardness: 0, replaceable: true });
 def(49, 'birch_log', { label: 'Берёзовое бревно', tiles: { top: 'birch_log_top', side: 'birch_log_side' }, hardness: 2.5, drop: { wood: 2 }, cost: { wood: 2 }, tool: 'axe' });
 def(50, 'birch_leaves', { label: 'Берёзовая листва', render: 'cutout', hardness: 0.4, tool: 'axe' });
+// civilisation-age materials
+def(51, 'brick', { label: 'Кирпич', hardness: 4.5, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
+def(52, 'marble', { label: 'Мрамор', hardness: 4, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
+def(53, 'bronze_block', { label: 'Бронзовый блок', tiles: { top: 'bronze_top', side: 'bronze_side' }, hardness: 6, cost: { iron: 2, gold: 1 }, drop: { iron: 1 }, tool: 'pick' });
+def(54, 'copper_roof', { label: 'Медная кровля', hardness: 3, cost: { stone: 1, iron: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(55, 'cannon', { label: 'Пушка', tiles: { top: 'cannon_top', side: 'cannon_side' }, hardness: 7, cost: { iron: 6 }, drop: { iron: 3 }, tool: 'pick' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
@@ -104,5 +110,5 @@ export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL
 export const PALETTE = [
   B.PLANKS, B.COBBLESTONE, B.STONE_BRICKS, B.LOG, B.TIMBER_FRAME, B.PLASTER, B.ROOF_TILES, B.THATCH,
   B.GLASS, B.TORCH, B.LANTERN, B.PALISADE, B.REINFORCED_WALL, B.DIRT, B.SAND, B.GRAVEL, B.PATH,
-  B.MOSSY_COBBLE, B.DARK_STONE, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
+  B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
 ];

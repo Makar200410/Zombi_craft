@@ -59,6 +59,7 @@ export function advanceAge(game) {
   }
   if (!game.state.spend(c.age.cost)) return false;
   game.state.age = (game.state.age | 0) + 1;
+  game.state.siegePending = game.state.age;
   const v = game.village;
   if (v) {
     for (const b of v.buildings) b.refreshMaxHp?.();
@@ -67,6 +68,7 @@ export function advanceAge(game) {
   game.audio?.play('level_up', { volume: 1 });
   game.bus.emit('toast', { text: `Новая эпоха: ${c.age.name}!`, kind: 'good' });
   game.bus.emit('toast', { text: c.age.desc, kind: 'info' });
+  game.bus.emit('toast', { text: 'Нежить почуяла вашу силу — следующей ночью будет осада!', kind: 'bad' });
   game.bus.emit('age:changed', { age: game.state.age });
   return true;
 }

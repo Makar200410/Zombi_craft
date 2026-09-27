@@ -307,7 +307,7 @@ function* farmerBrain(v) {
       if (w.getBlock(best.x, best.y + 1, best.z) === B.WHEAT_3) {
         vil.editBlock(best.x, best.y + 1, best.z, B.AIR);
         game.particles?.emit({ pos: P, box: 0.4, count: 8, colors: [0xe8c860, 0xd0a840, 0xf0e090], speed: 1.5, dir: { x: 0, y: 2, z: 0 }, gravity: 8, life: 0.7, size: 0.12 });
-        const yieldAmt = 2 * (game.state.researchDone.has('agriculture') ? 1.5 : 1);
+        const yieldAmt = 2 * (game.state.researchDone.has('agriculture') ? 1.5 : 1) * (vil.hasBuilding('granary') ? 1.25 : 1) * (vil.hasWonder('ziggurat') ? 1.25 : 1) * (v.workplace?.levelWorkBonus || 1);
         v.addCarry('food', yieldAmt);
         v.task = 'Сеет пшеницу';
         yield* v.work('hoe', 0.7);
@@ -456,7 +456,7 @@ function* researcherBrain(v) {
       if (atTable) game.particles?.emit({ pos: T, box: 0.3, count: 3, colors: [0xb070ff, 0x70c0ff, 0xffffff], additive: true, speed: 0.6, dir: { x: 0, y: 1.2, z: 0 }, gravity: -0.5, life: 1, size: 0.12 });
       if (acc >= 2.5) {
         acc = 0;
-        const pts = (atTable ? 1.2 : 1) * v.workSpeed;
+        const pts = (atTable ? 1.2 : 1) * v.workSpeed * (vil.hasWonder('stonehenge') ? 1.3 : 1);
         try { game.research?.addPoints?.(pts); } catch (e) { /* research module not ready */ }
         vil.researchPoints += pts;
       }
@@ -637,7 +637,7 @@ function* swing(v, z, bash) {
   game.audio?.play('swing', { pos: v.position, volume: 0.5 });
   const smith = game.state.researchDone.has('smithing');
   let dmg = (smith ? 14 : 10) + vil.armory.level * 2;
-  dmg *= v.workplace?.levelWorkBonus || 1;   // better-equipped garrison in upgraded buildings
+  dmg *= (v.workplace?.levelWorkBonus || 1) * (vil.hasWonder('colossus') ? 1.25 : 1);   // better-equipped garrison in upgraded buildings
   if (z.stunTimer > 0) dmg *= 1.5;    // hitting a stunned zombie
   let done = false;
   try { if (game.combat?.meleeHit) { game.combat.meleeHit(v, z, dmg, { knockback: dir.clone().multiplyScalar(4), item: smith ? 'sword_iron' : 'sword_wood' }); done = true; } } catch (e) { done = false; }
@@ -692,10 +692,13 @@ function* towerPost(v, role) {
       range = (gun ? 30 : 24) * bal; cooldown = gun ? 3 : 1.5;
       type = gun ? 'bullet' : 'arrow'; dmg = (gun ? 30 : 8) * bal; extra = {};
     }
+    if (role === 'cannon') { range = 34; cooldown = 4.2; type = 'bomb'; dmg = 48; extra = { splash: 3.5 }; }
+    dmg *= (b.levelWorkBonus || 1) * (vil.hasWonder('colossus') ? 1.25 : 1);
+    if (vil.hasWonder('arsenal')) { range *= 1.25; cooldown *= 0.8; }
     const z = vil.nearestZombie(v.eye, range, true);
-    if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : 'На посту'; v.model.setLoop(null); continue; }
+    if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : role === 'cannon' ? 'Заряжает пушку' : 'На посту'; v.model.setLoop(null); continue; }
     v.face(z.position);
-    v.task = role === 'mage' ? (type === 'fireball' ? 'Колдует огненный шар' : 'Колдует ледяную стрелу') : (type === 'bullet' ? 'Стреляет из мушкета' : 'Стреляет из лука');
+    v.task = role === 'mage' ? (type === 'fireball' ? 'Колдует огненный шар' : 'Колдует ледяную стрелу') : role === 'cannon' ? 'Стреляет из пушки' : (type === 'bullet' ? 'Стреляет из мушкета' : 'Стреляет из лука');
     if (role !== 'mage') v.model.setLoop('aim');
     if (cd <= 0) {
       cd = cooldown;
@@ -716,7 +719,43 @@ function* mageBrain(v) {
   }
 }
 
+function* gunnerBrain(v) {
+  v.updateTool();
+  while (true) {
+    const b = v.workplace;
+    if (!b || b.type !== 'cannon_tower' || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт бастион'); continue; }
+    yield* towerPost(v, 'cannon');
+  }
+}
+
+/** Merchant: tends a market stall and sells surplus goods for gold. */
+const TRADES = [['food', 80, 10], ['wood', 120, 12], ['stone', 150, 15], ['coal', 60, 8]];
+function* merchantBrain(v) {
+  const game = v.game, vil = v.village;
+  v.updateTool();
+  while (true) {
+    const m = v.workplace;
+    if (!m || m.type !== 'market' || !m.isComplete) { yield* waitForWorkplace(v, 'Ждёт рынок'); continue; }
+    const stalls = m.points.stall || [m.door];
+    const st = stalls[(v.id + (v._stallN = (v._stallN || 0) + 1)) % stalls.length];
+    v.task = 'Идёт к прилавку';
+    yield* v.walkTo(st, 1.2, { maxTime: 25 });
+    const res = game.state.resources;
+    const deal = TRADES.find(([k, keep]) => (res[k] || 0) > keep);
+    if (!deal) { v.task = 'Ждёт покупателей: нет излишков'; yield* v.wait(6); continue; }
+    v.task = 'Торгует на рынке';
+    yield* v.work('harvest', 8 / v.workSpeed, 0.8);
+    const [k, keep, n] = deal;
+    if ((res[k] || 0) <= keep) continue;
+    const gold = Math.max(1, Math.round(2 * (m.levelWorkBonus || 1)));
+    game.state.addAll({ [k]: -n, gold });
+    game.particles?.emit({ pos: { x: v.position.x, y: v.position.y + 2, z: v.position.z }, count: 6, colors: [0xffd84a, 0xfff0a6], additive: true, speed: 1.2, dir: { x: 0, y: 1.5, z: 0 }, gravity: 2, life: 0.8, size: 0.12 });
+    yield* v.wait(1 + rnd());
+  }
+}
+
 const BRAINS = {
+  merchant: merchantBrain, gunner: gunnerBrain,
   idle: idleBrain, builder: builderBrain, woodcutter: woodcutterBrain, farmer: farmerBrain, miner: minerBrain,
   blacksmith: blacksmithBrain, researcher: researcherBrain, guard: guardBrain, mage: mageBrain,
 };

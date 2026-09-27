@@ -228,15 +228,15 @@ export function noiseURL() {
 
 export const JOB_LABELS = {
   idle: 'Без дела', builder: 'Строитель', woodcutter: 'Лесоруб', farmer: 'Фермер', miner: 'Шахтёр',
-  blacksmith: 'Кузнец', researcher: 'Учёный', guard: 'Стражник', mage: 'Маг',
+  blacksmith: 'Кузнец', researcher: 'Учёный', guard: 'Стражник', mage: 'Маг', merchant: 'Торговец', gunner: 'Канонир',
 };
 export const JOB_PLURAL = {
   idle: 'Без дела', builder: 'Строители', woodcutter: 'Лесорубы', farmer: 'Фермеры', miner: 'Шахтёры',
-  blacksmith: 'Кузнецы', researcher: 'Учёные', guard: 'Стражники', mage: 'Маги',
+  blacksmith: 'Кузнецы', researcher: 'Учёные', guard: 'Стражники', mage: 'Маги', merchant: 'Торговцы', gunner: 'Канониры',
 };
-export const JOB_ORDER = ['builder', 'woodcutter', 'farmer', 'miner', 'blacksmith', 'researcher', 'guard', 'mage', 'idle'];
+export const JOB_ORDER = ['builder', 'woodcutter', 'farmer', 'miner', 'blacksmith', 'researcher', 'merchant', 'guard', 'gunner', 'mage', 'idle'];
 const JOB_ICON = { builder: ['item', 'build_hammer', 'hammer'], woodcutter: ['item', 'axe_stone', 'axe'], farmer: ['res', 'food', 'sickle'], miner: ['item', 'pickaxe_stone', 'pick'],
-  blacksmith: ['g', 'anvil'], researcher: ['res', 'research', 'flask'], guard: ['item', 'sword_iron', 'sword'], mage: ['item', 'staff_fire', 'staff'], idle: ['g', 'zzz'] };
+  blacksmith: ['g', 'anvil'], researcher: ['res', 'research', 'flask'], guard: ['item', 'sword_iron', 'sword'], mage: ['item', 'staff_fire', 'staff'], merchant: ['res', 'gold', 'star'], gunner: ['item', 'musket', 'sword'], idle: ['g', 'zzz'] };
 export function jobIcon(job) {
   const d = JOB_ICON[job] || ['g', 'people'];
   if (d[0] === 'g') return glyph(d[1]);

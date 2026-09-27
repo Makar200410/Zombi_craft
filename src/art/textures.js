@@ -66,6 +66,11 @@ const P = {
   ironD: hexes(['#101014', '#1c1c22', '#2a2a32', '#3a3a44', '#4d4d59', '#62626f', '#7a7a88']),
   glow: hexes(['#6a240a', '#a54614', '#d8721f', '#f59a31', '#ffc257', '#ffe08e', '#fff6d2']),
   cloth: hexes(['#3e0a0c', '#5c1014', '#7a171b', '#962024', '#ae2d2c', '#c43e36', '#d6544a']),
+  redbrick: hexes(['#3a140e', '#561d14', '#72281a', '#8c3420', '#a34228', '#b85232', '#c9653e', '#d77c50']),
+  lmortar: hexes(['#7d7568', '#948c7e', '#aaa294', '#bcb5a8']),
+  marble: hexes(['#8f8c88', '#a9a6a1', '#c0bdb7', '#d3d0ca', '#e2dfd9', '#eeece7', '#f8f7f3']),
+  bronze: hexes(['#3d220c', '#5c3512', '#7d4b19', '#9c6224', '#b77a31', '#cc9445', '#dcae62', '#ecca8a']),
+  patina: hexes(['#123a33', '#1a4f45', '#236456', '#2f7a67', '#3f9079', '#55a58b', '#71b99f', '#93cdb6']),
   gold: hexes(['#5e3a0c', '#8d5f14', '#bb8a22', '#dfb13a', '#f5d360', '#fff0a6']),
   arcwood: hexes(['#120c16', '#1b1320', '#251a2b', '#302236', '#3c2b42', '#49354f', '#57405d']),
   water: hexes(['#173782', '#1c4696', '#2356aa', '#2c68bb', '#3a7cc9', '#5092d5', '#6eaade', '#98c6ea', '#c6e2f5']),
@@ -622,6 +627,83 @@ GEN.stone_bricks = (p, r) => {
     p.set(x, y, P.mortar[2]);
   }
   cracks(p, r, 2, P.brick[1], 0.2, [3, 5]);
+};
+
+GEN.brick = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.6);
+  const tone = [];
+  for (let i = 0; i < 32; i++) tone.push(r.range(-0.8, 0.7));
+  p.map((x, y) => {
+    const row = y >> 2, ly = y & 3, off = row & 1 ? 4 : 0;
+    const lx = (x + off) & 7, bi = row * 4 + (((x + off) >> 3) & 3);
+    if (ly === 3 || lx === 7) return rampAt(P.lmortar, 1.6 + (n(x, y) - 0.5) * 2);
+    let v = 3.6 + tone[bi % 32] + (n(x, y) - 0.5) * 1.6;
+    if (ly === 0) v += 0.9; if (ly === 2) v -= 0.7; if (lx === 0) v += 0.4;
+    return rampDither(P.redbrick, v, x, y, 0.35);
+  });
+};
+
+GEN.marble = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const vein = tileFbm(r, S, [8, 16], 0.5);
+  p.map((x, y) => {
+    let v = 4.4 + (n(x, y) - 0.5) * 1.4;
+    const w = Math.abs(Math.sin((x * 0.35 + y * 0.18) + vein(x, y) * 7));
+    if (w < 0.08) v -= 2.2; else if (w < 0.16) v -= 1;
+    if (x === 0 || y === 0) v += 0.6; if (x === 31 || y === 31) v -= 0.8;
+    return rampDither(P.marble, v, x, y, 0.3);
+  });
+};
+
+function metalPlates(p, r, ramp) {
+  const n = tileFbm(r, S, [8, 16], 0.6);
+  p.map((x, y) => {
+    const lx = x & 15, ly = y & 15;
+    let v = 3.8 + (n(x, y) - 0.5) * 1.6;
+    if (lx === 0 || ly === 0) v += 1.4; if (lx === 15 || ly === 15) v -= 1.8;
+    return rampDither(ramp, v, x, y, 0.3);
+  });
+  for (const [x, y] of [[2, 2], [12, 2], [2, 12], [12, 12], [18, 2], [28, 2], [18, 12], [28, 12], [2, 18], [12, 18], [2, 28], [12, 28], [18, 18], [28, 18], [18, 28], [28, 28]]) {
+    p.set(x, y, ramp[7]); p.set(x + 1, y, ramp[5]); p.set(x, y + 1, ramp[5]); p.set(x + 1, y + 1, ramp[1]);
+  }
+}
+GEN.bronze_side = (p, r) => metalPlates(p, r, P.bronze);
+GEN.bronze_top = (p, r) => metalPlates(p, r, P.bronze.map(c => shift(c, 0.06)));
+
+GEN.copper_roof = (p, r) => {
+  const tone = [];
+  for (let i = 0; i < 16; i++) tone.push(r.range(-0.6, 0.6));
+  const n = tileNoise(r, S, 16);
+  p.map((x, y) => {
+    const row = y >> 3, ly = y & 7, off = row & 1 ? 4 : 0;
+    const lx = (x + off) & 7, id = row * 4 + (((x + off) >> 3) & 3);
+    let v = 3.8 + tone[id] + (n(x, y) - 0.5) * 1.4 - ly * 0.12;
+    if (ly === 7) v = 1.2; else if (ly === 6) v -= 0.8;
+    if (lx === 7) v -= 1.1; if (lx === 0) v += 0.5;
+    return rampDither(P.patina, v, x, y, 0.4);
+  });
+};
+
+GEN.cannon_side = (p, r) => {
+  // dark iron barrel seen from the side, on a wooden carriage
+  const n = tileFbm(r, S, [8, 16], 0.6);
+  p.map((x, y) => {
+    if (y >= 22) { const v = 3 + (n(x, y) - 0.5) * 2 + (y === 22 ? 1 : 0) - (y === 31 ? 1 : 0); return rampDither(P.plank, v, x, y, 0.4); }
+    const cy = 12, d = Math.abs(y - cy) / 9;
+    if (d > 1) return rampAt(P.ironD, 0.6);
+    let v = 3.6 - d * 2.6 + (y < cy ? 0.8 : -0.4) + (n(x, y) - 0.5) * 0.6;
+    if ((x & 15) < 2) v += 1.2;
+    return rampDither(P.ironD, v, x, y, 0.3);
+  });
+};
+GEN.cannon_top = (p, r) => {
+  p.map((x, y) => {
+    const d = Math.hypot(x - 15.5, y - 15.5);
+    if (d < 5) return rampAt(P.ironD, 0.4);
+    if (d < 9) return rampAt(P.ironD, 4 - (d - 5) * 0.5);
+    if (d < 14) return rampAt(P.ironD, 2.6 + (x < 16 ? 0.5 : -0.3));
+    return rampAt(P.plank, 3);
+  });
 };
 
 GEN.thatch = (p, r) => {

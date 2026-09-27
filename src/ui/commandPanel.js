@@ -6,7 +6,7 @@ import {
   BUILDING_TYPES, BUILDING_ORDER, JOB_LABELS, JOB_PLURAL, JOB_ORDER, jobIcon, STATE_LABELS, clamp,
 } from './dom.js';
 
-const CATS = [['all', 'Все'], ['economy', 'Экономика'], ['military', 'Военное'], ['magic', 'Магия'], ['defense', 'Оборона']];
+const CATS = [['all', 'Все'], ['economy', 'Экономика'], ['military', 'Военное'], ['magic', 'Магия'], ['defense', 'Оборона'], ['wonder', 'Чудеса']];
 const ZOMBIE_NAMES = { walker: 'Ходок', runner: 'Бегун', brute: 'Громила', spitter: 'Плевальщик', exploder: 'Взрывун', necromancer: 'Некромант' };
 const CONTINUOUS = new Set(['wall', 'stone_wall']);   // keep placing after each placement
 
@@ -135,11 +135,12 @@ export class CommandPanel {
   buildable(id) {
     const t = BUILDING_TYPES[id]; const st = this.game.state, v = this.game.village;
     const count = (v?.buildings || []).filter(b => b.type === id && b.state !== 'destroyed').length;
-    const lockedBy = t?.research && !st.researchDone.has(t.research) ? t.research : null;
+    const ageLock = (t?.age | 0) > (st.age | 0) ? t.age : null;
+    const lockedBy = ageLock == null && t?.research && !st.researchDone.has(t.research) ? t.research : null;
     const limited = t?.maxCount != null && isFinite(t.maxCount);
     const maxed = limited && count >= t.maxCount;
     const afford = st.canAfford(t?.cost || {});
-    return { t, count, lockedBy, maxed, afford, limited };
+    return { t, count, lockedBy, ageLock, maxed, afford, limited };
   }
   renderBuild() {
     for (const b of this.catBar.children) toggle(b, 'sel', b.dataset.cat === this.cat);
@@ -147,20 +148,22 @@ export class CommandPanel {
     const ids = BUILDING_ORDER.filter(id => BUILDING_TYPES[id] && !BUILDING_TYPES[id].auto && id !== 'town_hall' && (this.cat === 'all' || BUILDING_TYPES[id].category === this.cat));
     if (!ids.length) { this.cards.append(h('div.zc-empty', Object.keys(BUILDING_TYPES).length ? 'Нет зданий в этой категории' : 'Список зданий загружается…')); return; }
     for (const id of ids) {
-      const { t, count, lockedBy, maxed, afford, limited } = this.buildable(id);
-      const card = h('button.zc-bcard.ui-i' + (lockedBy ? '.locked' : '') + (!afford ? '.poor' : '') + (maxed ? '.maxed' : ''), {
+      const { t, count, lockedBy, ageLock, maxed, afford, limited } = this.buildable(id);
+      const card = h('button.zc-bcard.ui-i' + (lockedBy || ageLock != null ? '.locked' : '') + (!afford ? '.poor' : '') + (maxed ? '.maxed' : ''), {
         'data-cat': t.category || 'economy', title: t.desc || '', onclick: () => this.chooseBuilding(id),
       },
       h('div.zc-bcard-img', img(buildingIcon(id))),
       h('div.zc-bcard-name', t.name || id),
       (count || limited) ? h('div.zc-bcard-count', limited ? `${count}/${t.maxCount}` : '×' + count) : null,
-      lockedBy ? h('div.zc-bcard-lock', img(glyph('lock')), TECHS[lockedBy]?.name || lockedBy) : costRow(this.game.state, t.cost),
+      ageLock != null ? h('div.zc-bcard-lock', img(glyph('lock')), AGES[ageLock].name)
+        : lockedBy ? h('div.zc-bcard-lock', img(glyph('lock')), TECHS[lockedBy]?.name || lockedBy) : costRow(this.game.state, t.cost),
       t.popBonus ? h('div.zc-bcard-tag', '+' + t.popBonus + ' жит.') : null);
       this.cards.append(card);
     }
   }
   chooseBuilding(id) {
-    const { t, lockedBy, maxed, afford } = this.buildable(id);
+    const { t, lockedBy, ageLock, maxed, afford } = this.buildable(id);
+    if (ageLock != null) { this.ui.toast('Нужна эпоха: ' + AGES[ageLock].name, 'bad'); this.game.audio?.play?.('mana_empty'); return; }
     const chk = this.game.village?.canPlace?.(id);
     if (chk && !chk.ok && chk.hard) { this.ui.toast(chk.reason, 'bad'); this.game.audio?.play?.('mana_empty'); return; }
     if (lockedBy) { this.ui.toast('Нужно исследование: ' + (TECHS[lockedBy]?.name || lockedBy), 'bad'); this.game.audio?.play?.('mana_empty'); return; }

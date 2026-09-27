@@ -6,6 +6,7 @@ import { oak, birch, spruce } from '../world/terrain.js';
 import { mulberry32 } from '../core/rng.js';
 import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS } from './buildings.js';
 import { Building } from './Building.js';
+import { AGES } from '../systems/ages.js';
 import { Villager } from './Villager.js';
 import { Placement } from './placement.js';
 import { GhostLayer, Scaffold, makeRing, makeRect, disposeObj, jobLabelTexture } from './visuals.js';
@@ -217,12 +218,22 @@ export class Village {
   confirmPlacement() { return this.placement.confirm(); }
   get placing() { return this.placement.active; }
 
+  /** Completed building of this type exists (wonder / effect checks). */
+  hasBuilding(typeId) {
+    const t = this.game.time;
+    if (this._hbT !== t) { this._hbT = t; this._hb = new Map(); }
+    let r = this._hb.get(typeId);
+    if (r === undefined) { r = false; for (const b of this.buildings) if (b.type === typeId && b.state === 'complete') { r = true; break; } this._hb.set(typeId, r); }
+    return r;
+  }
+  hasWonder(typeId) { return this.hasBuilding(typeId); }
   countOf(typeId) { let n = 0; for (const b of this.buildings) if (b.type === typeId) n++; return n; }
   /** Can this type be built at all right now? {ok, reason, hard} (hard = research/limit, not just cost) */
   canPlace(typeId) {
     const def = BUILDING_TYPES[typeId];
     if (!def) return { ok: false, reason: 'Неизвестная постройка', hard: true };
     if (def.auto) return { ok: false, reason: 'Ставится автоматически', hard: true };
+    if ((def.age | 0) > (this.game.state.age | 0)) return { ok: false, reason: 'Нужна эпоха: ' + AGES[def.age].name, hard: true, age: def.age };
     if (def.research && !this.game.state.researchDone.has(def.research)) return { ok: false, reason: 'Нужно исследование: ' + (RESEARCH_LABELS[def.research] || def.research), hard: true, research: def.research };
     if (this.countOf(typeId) >= def.maxCount) return { ok: false, reason: 'Достигнут предел построек этого типа', hard: true };
     if (!this.townHall) return { ok: false, reason: 'Нет ратуши', hard: true };
@@ -373,6 +384,7 @@ export class Village {
     if (!b || b.state !== 'complete') return 'Здание не достроено';
     if (b.upgrade) return 'Уже улучшается';
     if (b.def.line) return 'Стены не улучшаются';
+    if (b.def.wonder) return 'Чудо света уже совершенно';
     if ((b.level || 1) >= b.maxLevel) return 'Максимум для этой эпохи';
     if (b.type !== 'town_hall' && this.townHall && (b.level || 1) >= this.townHall.level + 1) return 'Сначала улучшите ратушу';
     if (this.activeUpgrades >= this.upgradeSlots) return 'Все строители заняты улучшениями — наймите ещё';
@@ -451,6 +463,12 @@ export class Village {
       this.celebrate(b);
     }
     this.recalcPop();
+    if (b.def.wonder && !rebuilt) {
+      this.toast(`Чудо света «${b.def.name}» построено!`, 'good');
+      this.toast(b.def.desc.replace(/^Чудо [^.]*\. /, ''), 'info');
+      for (let i = 0; i < 3; i++) this.celebrate(b);
+      this.townHall?.refreshMaxHp();
+    }
     this.bus.emit('building:completed', { building: b, rebuilt });
     // fill job slots: villagers who already have this job but no workplace, then idle villagers
     if (b.jobSlots) {

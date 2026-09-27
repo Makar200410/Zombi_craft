@@ -125,7 +125,7 @@ export class Villager extends Entity {
   get zombiesActive() { return (this.game.waves?.activeCount || 0) > 0; }
   decideMode() {
     if (this.hidden) return this.mode || 'hide';
-    if (this.job === 'guard' || this.job === 'mage') return 'work';
+    if (this.job === 'guard' || this.job === 'mage' || this.job === 'gunner') return 'work';
     const t = this.game.time;
     const z = this.village.nearestZombie(this.position, 9);
     if (z) this.fleeUntil = t + 5;
@@ -181,13 +181,15 @@ export class Villager extends Entity {
       if ((st.resources.food || 0) >= 1) { st.add('food', -1); this.hunger = 100; this.mood = Math.min(100, this.mood + 4); }
       else { this.mood = Math.max(0, this.mood - 12); this.village.reportHunger(); }
     }
-    const targetMood = 45 + (this.hunger > 40 ? 25 : -25) + (this.home && this.home.type === 'house' ? 10 : 0) + (this.zombiesActive ? -10 : 0);
+    const vil = this.village;
+    const targetMood = 45 + (this.hunger > 40 ? 25 : -25) + (this.home && this.home.type === 'house' ? 10 : 0) + (this.zombiesActive ? -10 : 0)
+      + (vil?.hasWonder('stonehenge') ? 8 : 0) + (vil?.hasWonder('cathedral') ? 20 : 0);
     this.mood += (targetMood - this.mood) * Math.min(1, dt * 0.02);
     // regeneration (faster with alchemy)
     this._regen += dt;
-    const every = st.researchDone.has('alchemy') ? 2.5 : 8;
+    const every = (st.researchDone.has('alchemy') ? 2.5 : 8) / (vil?.hasWonder('cathedral') ? 2 : 1);
     const resting = this.task === 'Отступает к ратуше лечиться';
-    if (this._regen > (resting ? 0.5 : every)) { this._regen = 0; if (this.hp < this.maxHp && this.hunger > 20) this.heal(resting ? 2 : 1); }
+    if (this._regen > (resting ? 0.5 : every) / (resting && vil?.hasWonder('cathedral') ? 2 : 1)) { this._regen = 0; if (this.hp < this.maxHp && this.hunger > 20) this.heal(resting ? 2 : 1); }
   }
   get workSpeed() {
     return (this.hunger < 25 ? 0.6 : 1) * (this.mood > 80 ? 1.1 : 1) * (this.job === 'builder' ? (this.village?.builderSpeedBonus || 1) : 1)

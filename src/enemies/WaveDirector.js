@@ -2,6 +2,7 @@
 // dawn cleanup, rewards, daytime wanderers and save/load.
 import { Zombie } from './Zombie.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
+import { AGES } from '../systems/ages.js';
 import { countFor, weightsFor, introducedOn, BOSSES, HINTS, hpScale, dmgScale, eraOf } from './waveSchedule.js';
 import { FlowField } from './flowfield.js';
 import { EnemyProjectiles } from './fx.js';
@@ -13,6 +14,9 @@ const DIFF = {
   hard: { count: 1.9, hp: 1.65, dmg: 1.45, reward: 1.5, alive: 80 },
 };
 const GRID = 2;   // spatial hash cell size for separation queries
+
+/** Champions of each age's siege (index = the age just reached). */
+const SIEGE_BOSSES = { 1: ['brute', 'brute'], 2: ['brute', 'armored', 'armored'], 3: ['necromancer', 'brute'], 4: ['giant', 'necromancer'] };
 
 export class WaveDirector {
   constructor(game) {
@@ -92,6 +96,13 @@ export class WaveDirector {
     // scripted bosses arrive mid-wave; past the finale: a necromancer every 5 waves, giants every 10
     const bosses = BOSSES[n] || (n > 50 ? [...(n % 5 === 0 ? ['necromancer'] : []), ...(n % 10 === 0 ? ['giant', 'giant'] : [])] : []);
     bosses.forEach((t, i) => out.splice(Math.floor(out.length * (0.4 + i * 0.08)), 0, t));
+    // siege of a new age: the dead answer the village's rise with a bigger horde and the age's champions
+    const siege = this.game.state.siegePending;
+    if (siege) {
+      const extra = Math.round(out.length * 0.3);
+      for (let i = 0; i < extra; i++) out.splice((Math.random() * out.length) | 0, 0, out[(Math.random() * out.length) | 0] || 'walker');
+      (SIEGE_BOSSES[siege] || []).forEach((t, i) => out.splice(Math.floor(out.length * (0.5 + i * 0.06)), 0, t));
+    }
     return out;
   }
 
@@ -117,6 +128,11 @@ export class WaveDirector {
     // budgeted recompute (spread over frames) — the first group needs ~1.5 s to rise anyway
     if (this.flow.version) this.flow._startJob(); else this.flow.recomputeNow();
     game.audio?.play('wave_horn', { volume: 1 });
+    const siege = game.state.siegePending;
+    if (siege) {
+      game.state.siegePending = 0;
+      game.bus.emit('toast', { text: `Осада эпохи! Нежить почуяла силу «${AGES[siege].name}»: орда больше, с ней идут: ${(SIEGE_BOSSES[siege] || []).map(t => ZOMBIE_TYPES[t].name).join(', ')}`, kind: 'bad' });
+    }
     game.bus.emit('wave:start', { wave: n, count: types.length, directions: this.spawnDirections });
     game.bus.emit('toast', { text: `Волна ${n}! Нежить наступает`, kind: 'wave' });
     const era = eraOf(n);
@@ -228,7 +244,8 @@ export class WaveDirector {
     const wave = opts.wave ?? this.currentWave;
     // first nights are a grace period while the village gets on its feet (full strength from wave 7)
     const grace = Math.min(1, 0.65 + wave * 0.05);
-    const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace;
+    const evo = 1 + 0.04 * (game.state.age | 0);   // the dead evolve along with the civilisation
+    const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace * evo;
     const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave) * grace, wave });
     zb.position.set(p.x, p.y, p.z);
     zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
