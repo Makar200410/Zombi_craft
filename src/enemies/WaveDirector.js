@@ -17,7 +17,10 @@ const GRID = 2;   // spatial hash cell size for separation queries
 
 /** Champions of each age's siege (index = the age just reached). */
 const SIEGE_BOSSES = { 1: ['brute', 'brute'], 2: ['brute', 'armored', 'armored'], 3: ['necromancer', 'brute'], 4: ['giant', 'necromancer'],
-  5: ['giant', 'mutant', 'mutant'], 6: ['giant', 'giant', 'necromancer'], 7: ['giant', 'necromancer', 'irradiated', 'irradiated'], 8: ['giant', 'giant', 'necromancer', 'hacker'] };
+  5: ['giant', 'mutant', 'mutant'], 6: ['giant', 'giant', 'necromancer'], 7: ['giant', 'necromancer', 'irradiated', 'irradiated'], 8: ['giant', 'giant', 'necromancer', 'hacker'],
+  9: ['giant', 'giant', 'necromancer', 'hacker', 'hacker'] };
+/** The finale after the Singularity project: the Nano plague. */
+const FINALE_BOSSES = ['nano_titan', 'giant', 'necromancer', 'nano_titan', 'giant', 'necromancer', 'hacker', 'hacker'];
 
 export class WaveDirector {
   constructor(game) {
@@ -90,6 +93,7 @@ export class WaveDirector {
     if (age >= 6) weights.conductor = 0.09 + 0.02 * (age - 6);
     if (age >= 7) weights.irradiated = 0.1 + 0.03 * (age - 7);
     if (age >= 8) { weights.swarm = 0.35; weights.hacker = 0.06; }
+    if (age >= 9) weights.nanite = 0.25;
     const total = Object.values(weights).reduce((a, b) => a + b, 0);
     const out = [];
     // guarantee the newly introduced kinds show up
@@ -104,6 +108,11 @@ export class WaveDirector {
     const bosses = BOSSES[n] || (n > 50 ? [...(n % 5 === 0 ? ['necromancer'] : []), ...(n % 10 === 0 ? ['giant', 'giant'] : [])] : []);
     bosses.forEach((t, i) => out.splice(Math.floor(out.length * (0.4 + i * 0.08)), 0, t));
     // siege of a new age: the dead answer the village's rise with a bigger horde and the age's champions
+    if (this.game.state.finale === 1) {
+      const extra = Math.round(out.length * 0.6);
+      for (let i = 0; i < extra; i++) out.splice((Math.random() * out.length) | 0, 0, Math.random() < 0.5 ? 'nanite' : out[(Math.random() * out.length) | 0] || 'walker');
+      FINALE_BOSSES.forEach((t, i) => out.splice(Math.floor(out.length * (0.3 + i * 0.07)), 0, t));
+    }
     const siege = this.game.state.siegePending;
     if (siege) {
       const extra = Math.round(out.length * 0.3);
@@ -135,6 +144,10 @@ export class WaveDirector {
     // budgeted recompute (spread over frames) — the first group needs ~1.5 s to rise anyway
     if (this.flow.version) this.flow._startJob(); else this.flow.recomputeNow();
     game.audio?.play('wave_horn', { volume: 1 });
+    if (game.state.finale === 1) {
+      game.state.finale = 2;
+      game.bus.emit('toast', { text: 'НАНО-ЧУМА! Нежить бросила на город всё, что у неё есть. Продержитесь до рассвета — и будущее ваше!', kind: 'wave' });
+    }
     const siege = game.state.siegePending;
     if (siege) {
       game.state.siegePending = 0;
@@ -155,7 +168,7 @@ export class WaveDirector {
     if (n === era.from) game.bus.emit('toast', { text: `Эпоха «${era.name}» — волны ${era.from}–${era.from + 9 > 50 && era.from <= 50 ? 50 : era.from + 9}`, kind: 'wave' });
     const fresh = introducedOn(n);
     this._seenAge = this._seenAge || new Set();
-    for (const t of ['mutant', 'conductor', 'irradiated', 'swarm', 'hacker']) if (types.includes(t) && !this._seenAge.has(t)) { this._seenAge.add(t); fresh.push(t); }
+    for (const t of ['mutant', 'conductor', 'irradiated', 'swarm', 'hacker', 'nanite', 'nano_titan']) if (types.includes(t) && !this._seenAge.has(t)) { this._seenAge.add(t); fresh.push(t); }
     if (fresh.length) game.bus.emit('toast', { text: 'Новые враги: ' + fresh.map(t => `${ZOMBIE_TYPES[t].name} (${HINTS[t]})`).join(', '), kind: 'bad' });
     if (BOSSES[n]) game.bus.emit('toast', { text: 'Боссы этой ночи: ' + BOSSES[n].map(t => ZOMBIE_TYPES[t].name).join(', '), kind: 'bad' });
     return true;
@@ -196,6 +209,11 @@ export class WaveDirector {
     game.audio?.play('wave_cleared', { volume: 1 });
     game.bus.emit('wave:end', { wave: n, count: this.waveCount, reward: { gold, crystal } });
     game.bus.emit('toast', { text: `Волна ${n}/50 отбита! +${gold} золота` + (crystal ? `, +${crystal} кристаллов` : ''), kind: 'good' });
+    if (game.state.finale === 2) {
+      game.state.finale = 3;
+      game.bus.emit('game:singularity', { wave: n });
+      game.audio?.play('build_complete', { volume: 1 });
+    }
     if (n === 50) {
       game.bus.emit('toast', { text: 'ПОБЕДА! Деревня выстояла все 50 волн. Дальше — бесконечная ночь…', kind: 'wave' });
       game.bus.emit('game:victory', { wave: n });
@@ -262,7 +280,7 @@ export class WaveDirector {
     const wave = opts.wave ?? this.currentWave;
     // first nights are a grace period while the village gets on its feet (full strength from wave 7)
     const grace = Math.min(1, 0.65 + wave * 0.05);
-    const evo = 1 + 0.04 * (game.state.age | 0);   // the dead evolve along with the civilisation
+    const evo = (1 + 0.04 * (game.state.age | 0)) * (1 + 0.25 * (game.state.ngPlus | 0));   // the dead evolve along with the civilisation (and each New Game+)
     const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace * evo;
     const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave) * grace, wave });
     zb.position.set(p.x, p.y, p.z);

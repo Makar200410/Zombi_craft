@@ -223,6 +223,8 @@ export class Building {
   /** Damage from zombies / explosions. Removes a random block every ~15% hp lost. */
   damage(n, source) {
     if (this.state === 'destroyed' || n <= 0) return false;
+    n = this.village.industry ? this.village.industry.absorb(n, this) : n;
+    if (n <= 0) return false;
     this.hp -= n;
     this.lastDamagedAt = this.game.time;
     this._lostAcc += n;

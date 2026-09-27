@@ -243,6 +243,28 @@ export class Menus {
     s.append(card);
   }
 
+  showVictory() {
+    this.current = 'victory';
+    const g = this.game, st = g.state, s = this._screen('zc-gameover.zc-victory');
+    const stat = (icon, label, v) => h('div.zc-stat', img(icon), h('span', label), h('b', String(v ?? 0)));
+    const ng = (st.ngPlus | 0) + 1;
+    const card = h('div.zc-mm-card.zc-panel.ornate.over-card.win',
+      h('div.zc-over-title', 'СИНГУЛЯРНОСТЬ ДОСТИГНУТА'),
+      h('div.zc-over-reason', 'От каменного топора до разума, вышедшего за пределы плоти. Нано-чума отбита — будущее принадлежит вашей цивилизации.'),
+      h('div.zc-stats',
+        stat(glyph('sun'), 'Дней прожито', st.day),
+        stat(glyph('flag'), 'Волн отбито', st.stats.wavesSurvived),
+        stat(glyph('skull'), 'Убито зомби', st.stats.kills),
+        stat(glyph('hammer'), 'Зданий', (g.village?.buildings || []).filter(b => b.state === 'complete').length),
+        stat(resourceIcon('population'), 'Жителей', (g.village?.villagers || []).filter(v => !v.dead).length),
+        stat(glyph('star'), 'Новая игра+', st.ngPlus | 0)),
+      h('div.zc-row.center',
+        this.btn('Играть дальше', () => this.ui.continueAfterVictory(), 'primary big', glyph('play')),
+        this.btn('Новая игра+ ' + ng, () => this.ui.startNewGame({ difficulty: st.difficulty, ngPlus: ng }), 'ghost', glyph('sword'))),
+      h('div.zc-note', 'Новая игра+: новый мир, больше стартовых ресурсов, но нежить на 25% крепче за каждый цикл.'));
+    s.append(card);
+  }
+
   // =============================================================== loading
   showLoading(text = 'Загрузка…') {
     this.current = 'loading';

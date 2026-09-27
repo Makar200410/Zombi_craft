@@ -901,6 +901,89 @@ function globalNetwork(v) {
   return bp;
 }
 
+// ---- singularity
+function aiCore(v) {
+  const bp = new BP(7, 7);
+  bp.box(0, 0, 0, 6, 0, 6, B.POLYMER);
+  bp.ring(0, 0, 0, 6, 0, 6, B.HAZARD);
+  for (const [x, z] of [[1, 1], [5, 1], [1, 5], [5, 5]]) bp.box(x, 1, z, x, 4, z, B.SERVER);
+  bp.box(2, 1, 2, 4, 1, 4, B.POLYMER);
+  bp.box(2, 2, 2, 4, 5, 4, B.GLASS);
+  bp.box(3, 2, 3, 3, 5, 3, B.LAMP);
+  bp.box(1, 5, 1, 5, 5, 5, B.POLYMER); bp.box(2, 5, 2, 4, 5, 4, B.GLASS); bp.set(3, 5, 3, B.LAMP);
+  bp.box(2, 6, 2, 4, 6, 4, B.POLYMER); bp.set(3, 7, 3, B.LAMP);
+  bp.point('door', 3, 1, 6);
+  bp.point('top', 3, 7, 3);
+  return bp;
+}
+
+function laserTower(v) {
+  const bp = new BP(3, 3);
+  bp.box(0, 0, 0, 2, 0, 2, B.POLYMER);
+  bp.box(1, 1, 1, 1, 5, 1, B.STEEL_BLOCK);
+  for (const y of [2, 4]) { bp.set(0, y, 1, B.POLYMER); bp.set(2, y, 1, B.POLYMER); bp.set(1, y, 0, B.POLYMER); bp.set(1, y, 2, B.POLYMER); }
+  bp.box(0, 6, 0, 2, 6, 2, B.POLYMER);
+  bp.set(1, 7, 1, B.LAMP);
+  bp.point('door', 1, 1, 2);
+  bp.point('top', 1, 7, 1);
+  return bp;
+}
+
+function nanofactory(v) {
+  const bp = new BP(9, 9);
+  bp.box(0, 0, 0, 8, 0, 8, B.POLYMER);
+  bp.ring(1, 1, 1, 7, 4, 7, B.POLYMER);
+  for (let x = 2; x <= 6; x++) for (let y = 2; y <= 3; y++) { bp.set(x, y, 1, B.GLASS); bp.set(x, y, 7, B.GLASS); }
+  bp.box(1, 5, 1, 7, 5, 7, B.GLASS);
+  for (let x = 1; x <= 7; x += 3) for (let z = 1; z <= 7; z++) bp.set(x, 5, z, B.STEEL_BLOCK);
+  // assembler vats
+  for (const [x, z] of [[3, 3], [5, 3], [3, 5], [5, 5]]) { bp.set(x, 1, z, B.STEEL_BLOCK); bp.set(x, 2, z, B.LAMP); }
+  bp.set(4, 1, 4, B.SERVER); bp.set(4, 2, 4, B.SERVER);
+  bp.del(4, 1, 7); bp.del(4, 2, 7);
+  bp.point('door', 4, 1, 8);
+  bp.point('top', 4, 6, 4);
+  return bp;
+}
+
+function shieldGenerator(v) {
+  const bp = new BP(7, 7);
+  bp.box(0, 0, 0, 6, 0, 6, B.CONCRETE);
+  bp.ring(0, 0, 0, 6, 0, 6, B.HAZARD);
+  bp.box(1, 1, 1, 5, 1, 5, B.POLYMER);
+  bp.box(2, 2, 2, 4, 2, 4, B.STEEL_BLOCK);
+  for (const [x, z] of [[1, 1], [5, 1], [1, 5], [5, 5]]) { bp.box(x, 2, z, x, 5, z, B.STEEL_BLOCK); bp.set(x, 6, z, B.LAMP); }
+  bp.box(3, 3, 3, 3, 8, 3, B.STEEL_BLOCK);
+  for (const y of [4, 6, 8]) { bp.set(2, y, 3, B.GLASS); bp.set(4, y, 3, B.GLASS); bp.set(3, y, 2, B.GLASS); bp.set(3, y, 4, B.GLASS); }
+  bp.set(3, 9, 3, B.LAMP);
+  bp.point('door', 3, 1, 6);
+  bp.point('top', 3, 9, 3);
+  return bp;
+}
+
+function singularity(v) {
+  const bp = new BP(13, 13);
+  bp.box(0, 0, 0, 12, 0, 12, B.POLYMER);
+  bp.ring(0, 0, 0, 12, 0, 12, B.LAMP);
+  // outer server ring
+  bp.ring(1, 1, 1, 11, 2, 11, B.SERVER);
+  for (let i = 2; i <= 10; i += 4) { bp.del(i, 1, 11); bp.del(i, 2, 11); }
+  // pylons
+  for (const [x, z] of [[1, 1], [11, 1], [1, 11], [11, 11]]) { bp.box(x, 3, z, x, 10, z, B.STEEL_BLOCK); bp.set(x, 11, z, B.LAMP); }
+  // central spire of glass and light
+  for (let y = 1; y <= 22; y++) {
+    const r = y < 6 ? 3 : y < 12 ? 2 : y < 18 ? 1 : 0;
+    if (r) bp.ring(6 - r, y, 6 - r, 6 + r, y, 6 + r, y % 4 === 0 ? B.POLYMER : B.GLASS);
+    bp.set(6, y, 6, B.LAMP);
+  }
+  // floating rings
+  for (const [y, r] of [[8, 4], [14, 3], [19, 2]]) for (let x = 6 - r; x <= 6 + r; x++) for (let z = 6 - r; z <= 6 + r; z++) if (Math.abs(Math.hypot(x - 6, z - 6) - r) < 0.5) bp.set(x, y, z, B.LAMP);
+  bp.set(6, 23, 6, B.LAMP);
+  bp.del(6, 1, 9); bp.del(6, 2, 9);
+  bp.point('door', 6, 1, 12);
+  bp.point('inside', 6, 1, 10);
+  return bp;
+}
+
 function rotXZ(x, z, w, d, rot) {
   switch (rot & 3) {
     case 1: return [d - 1 - z, x];
@@ -1124,9 +1207,30 @@ def('global_network', {
   cost: { steel: 600, uranium: 60, gold: 600, crystal: 100 }, hp: 6000, age: 8, wonder: true, category: 'wonder', maxCount: 1, design: globalNetwork,
 });
 
+def('ai_core', {
+  name: 'ИИ-ядро', desc: 'Искусственный интеллект управляет городом: жители работают на 25% быстрее, оборона бьёт на 20% сильнее, свободные жители сами находят работу. Нужно 80 энергии.',
+  cost: { steel: 400, uranium: 40, gold: 500, crystal: 60 }, hp: 3000, age: 9, research: 'ai', category: 'magic', maxCount: 1, design: aiCore, power: 80,
+});
+def('laser_tower', {
+  name: 'Лазерная башня', desc: 'Мгновенный луч прожигает любую броню. Нужно 35 энергии.',
+  cost: { steel: 120, crystal: 20, gold: 80 }, hp: 1200, age: 9, research: 'ai', category: 'military', design: laserTower, power: 35,
+});
+def('nanofactory', {
+  name: 'Нанофабрика', desc: 'Нанороботы чинят все здания прямо под огнём и собирают сталь из камня (5 камня → 1 сталь). Нужно 60 энергии.',
+  cost: { steel: 300, uranium: 30, gold: 300 }, hp: 2500, age: 9, research: 'nanotech', category: 'economy', maxCount: 2, design: nanofactory, power: 60,
+});
+def('shield_generator', {
+  name: 'Генератор щита', desc: 'Энергетический купол над городом поглощает урон по зданиям, пока не иссякнет, и сам восстанавливается. Нужно 150 энергии.',
+  cost: { steel: 600, uranium: 80, crystal: 150, gold: 600 }, hp: 4000, age: 9, research: 'force_fields', category: 'defense', maxCount: 1, design: shieldGenerator, power: 150,
+});
+def('singularity', {
+  name: 'Проект «Сингулярность»', desc: 'Последнее чудо: разум цивилизации выходит за пределы плоти. Когда проект завершится, нежить бросит на город всё — «Нано-чуму». Отбейте её, чтобы победить.',
+  cost: { steel: 1500, uranium: 200, gold: 2000, crystal: 300 }, hp: 8000, age: 9, wonder: true, category: 'wonder', maxCount: 1, design: singularity,
+});
+
 export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'factory', 'power_plant', 'laboratory', 'forge', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mg_nest',
-  'tesla_tower', 'searchlight', 'reactor', 'bunker', 'rocket_battery', 'computer_center', 'radar', 'turret', 'drone_hub', 'mage_tower', 'wall', 'stone_wall',
-  'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal', 'crystal_palace', 'eiffel_tower', 'cosmodrome', 'global_network'];
+  'tesla_tower', 'searchlight', 'reactor', 'bunker', 'rocket_battery', 'computer_center', 'radar', 'turret', 'drone_hub', 'ai_core', 'laser_tower', 'nanofactory', 'shield_generator', 'mage_tower', 'wall', 'stone_wall',
+  'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal', 'crystal_palace', 'eiffel_tower', 'cosmodrome', 'global_network', 'singularity'];
 
 export const RESEARCH_LABELS = {
   masonry: 'Каменная кладка', agriculture: 'Земледелие', mining: 'Горное дело', smithing: 'Кузнечное дело', archery: 'Стрельба из лука',
@@ -1134,6 +1238,7 @@ export const RESEARCH_LABELS = {
   frost_magic: 'Магия льда', storm_magic: 'Магия бури', restoration: 'Восстановление', crystal_forging: 'Кристальная ковка', meteor: 'Метеоры',
   steam_power: 'Паровая машина', machine_guns: 'Пулемёты', electricity: 'Электричество', tesla: 'Токи Теслы',
   nuclear: 'Ядерная физика', rocketry: 'Ракеты', computing: 'Вычислительная техника', robotics: 'Робототехника',
+  ai: 'Искусственный интеллект', nanotech: 'Нанотехнологии', force_fields: 'Силовые поля',
 };
 
 export { rotXZ };

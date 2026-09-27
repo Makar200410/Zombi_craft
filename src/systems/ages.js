@@ -30,8 +30,9 @@ export const AGES = [
   { id: 'information', name: 'Информационная эра', maxLevel: 10, color: '#5ab0e8',
     req: { th: 9, techs: ['computing'] }, cost: { steel: 500, gold: 600, crystal: 100, uranium: 40 },
     desc: 'Компьютеры, дроны, автотурели и радар. Нежить выходит и днём. Здания до 10 уровня.' },
-  { id: 'singularity', name: 'Сингулярность', maxLevel: 10, color: '#c07aff', soon: true,
-    desc: 'ИИ-ядро, нанофабрики и щит над всей цивилизацией.' },
+  { id: 'singularity', name: 'Сингулярность', maxLevel: 10, color: '#c07aff',
+    req: { th: 10, techs: ['ai'] }, cost: { steel: 800, uranium: 120, gold: 1000, crystal: 200 },
+    desc: 'ИИ-ядро, нанофабрики, лазеры и энергощит над всей цивилизацией. Постройте Проект «Сингулярность», чтобы победить.' },
 ];
 
 export function ageOf(game) { return AGES[Math.max(0, Math.min(AGES.length - 1, game.state.age | 0))]; }

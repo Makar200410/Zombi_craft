@@ -105,6 +105,17 @@ export const ZOMBIE_TYPES = {
     height: 1.85, width: 1, radius: 0.3, aggro: 20, knock: 2, eye: 0x40a0ff, groanPitch: 1.6, loot: 0.9,
     keep: [9, 14], jam: true, hat: 'hood', hatColor: 0x1a2a3a, skinBase: 'spitter', tint: [0x3060c0, 0.4], trail: [0x60c0ff, 0x2060ff],
   },
+  // ---- singularity
+  nanite: {
+    base: 'runner', name: 'Наноплесень', hp: 22, speed: 3.6, dmg: 5, cd: 0.6, reach: 0.8, blockDps: 1.2, bldDmg: 3,
+    height: 1.2, width: 0.8, radius: 0.26, aggro: 24, knock: 1, eye: 0xc0c0ff, groanPitch: 2.2, loot: 0.3,
+    regen: 0.06, hunch: 0.8, skinBase: 'runner', tint: [0xb0b8d0, 0.6], trail: [0xd0d8ff, 0x8090c0],
+  },
+  nano_titan: {
+    base: 'brute', name: 'Нано-титан', hp: 2600, speed: 1.15, dmg: 45, cd: 1.6, reach: 2.0, blockDps: 12, bldDmg: 60,
+    height: 4.6, width: 2.4, radius: 0.7, aggro: 16, knock: 18, eye: 0x80a0ff, groanPitch: 0.3, loot: 1,
+    boss: true, armor: 0.35, regen: 0.006, immune: 'storm', skinBase: 'brute', tint: [0xa0a8c0, 0.7], glow: 0x80a0ff, trail: [0xc0d0ff, 0x6070ff],
+  },
 };
 
 export const ZOMBIE_TYPE_IDS = Object.keys(ZOMBIE_TYPES);

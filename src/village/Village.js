@@ -473,6 +473,10 @@ export class Village {
       this.toast(b.def.desc.replace(/^Чудо [^.]*\. /, ''), 'info');
       for (let i = 0; i < 3; i++) this.celebrate(b);
       this.townHall?.refreshMaxHp();
+      if (b.type === 'singularity' && !(this.game.state.finale > 0)) {
+        this.game.state.finale = 1;
+        this.toast('Проект «Сингулярность» завершён! Нежить в ярости: следующей ночью придёт Нано-чума', 'bad');
+      }
     }
     this.bus.emit('building:completed', { building: b, rebuilt });
     // fill job slots: villagers who already have this job but no workplace, then idle villagers

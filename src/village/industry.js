@@ -15,6 +15,8 @@ export class Industry {
     this._cd = new Map();
     this.drones = new Map();       // hub building -> [drone]
     this._strikeT = 10;
+    this.shield = 0; this.shieldMax = 0; this._shieldDown = 0; this._dome = null;
+    this._aiT = 0;
   }
 
   /** Energy share available to consumers (0..1). */
@@ -39,6 +41,7 @@ export class Industry {
       if (b._fuelT >= every) { b._fuelT -= every; st.add(fuel, -1); }
       supply += b.def.powerOut * Math.min(1, staff / Math.min(2, b.jobSlots || 1)) * (b.levelWorkBonus || 1);
     }
+    this._tickSingularity(dt);
     const wasShort = this.demand > 0 && this.ratio < 1;
     this.supply = Math.round(supply); this.demand = demand;
     this.ratio = demand > 0 ? Math.min(1, supply / demand) : 1;
@@ -73,19 +76,26 @@ export class Industry {
       else if (b.type === 'searchlight') this._light(b);
       else if (b.type === 'turret') this._turret(b, dt);
       else if (b.type === 'cosmodrome') this._orbital(b, dt);
+      else if (b.type === 'laser_tower') this._laser(b, dt);
     }
+    this._updateDome(dt);
     // drones of hubs that are gone
     for (const [hub, list] of this.drones) if (!v.buildings.includes(hub)) { for (const d of list) d.mesh.parent?.remove(d.mesh); this.drones.delete(hub); }
   }
 
   get rangeMul() { const v = this.village; return (v.hasWonder('arsenal') ? 1.25 : 1) * (this.radarOn ? 1.1 : 1); }
-  get dmgMul() { const v = this.village; return (v.hasWonder('colossus') ? 1.25 : 1) * (v.hasWonder('eiffel_tower') ? 1.15 : 1); }
+  get dmgMul() { const v = this.village; return (v.hasWonder('colossus') ? 1.25 : 1) * (v.hasWonder('eiffel_tower') ? 1.15 : 1) * (this.aiOn ? 1.2 : 1); }
+  get aiOn() {
+    const t = this.game.time;
+    if (this._aiAt !== t) { this._aiAt = t; const b = this.village.buildings.find(x => x.type === 'ai_core'); this._ai = !!b && this.running(b); }
+    return this._ai;
+  }
   get radarOn() { const r = this.village.buildings.find(b => b.type === 'radar'); return !!r && this.running(r); }
 
   _src(b) {
     if (!b._src) {
       const t = b.points.top?.[0] || { x: b.center.x, y: b.y + b.height, z: b.center.z };
-      const top = new THREE.Vector3(t.x, t.y + 0.5, t.z);
+      const top = new THREE.Vector3(t.x, t.y + 1.4, t.z);   // above the emitter block, so line of sight is clear
       b._src = { kind: 'tower', faction: 'village', id: -100 - b.id, name: b.def.name, eye: top, position: top, center: top, velocity: new THREE.Vector3(), dead: false, cooldowns: {} };
     }
     return b._src;
@@ -147,6 +157,67 @@ export class Industry {
     this.village.toast('Орбитальный удар!', 'info');
   }
 
+  _laser(b, dt) {
+    if (!this._ready(b, dt) || !this.running(b)) return;
+    const src = this._src(b), v = this.village;
+    const z = v.nearestZombie(src.position, 30 * this.rangeMul, true);
+    if (!z) { this._cd.set(b, 0.2); return; }
+    const dmg = 40 * (b.levelWorkBonus || 1) * this.dmgMul;
+    const fx = this.game.combat?.effects;
+    fx?.tracer(src.position, z.center, 0xff3050, 0.14, 0.18);
+    fx?.glow(z.center, 0xff4060, 0.3, 1.4, 0.2);
+    this.game.audio?.play('lightning', { pos: src.position, volume: 0.35, pitch: 1.8 });
+    z.damage(dmg, src, { kind: 'laser' });
+    this._cd.set(b, 0.6 / this.powered);
+  }
+
+  // ---- singularity tech (once per second)
+  _tickSingularity(dt) {
+    const v = this.village, st = this.game.state;
+    // nanofactories: repair every building a little, assemble steel from stone
+    for (const nf of v.buildings) {
+      if (nf.type !== 'nanofactory' || !this.running(nf)) continue;
+      for (const b of v.buildings) if (b.state === 'complete' && b.hp < b.maxHp) b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.01 * dt);
+      nf._nanoT = (nf._nanoT || 0) + dt;
+      if (nf._nanoT >= 3 && (st.resources.stone || 0) > 200) { nf._nanoT = 0; st.addAll({ stone: -5, steel: 1 }); }
+    }
+    // AI core: idle villagers find work on their own
+    if (this.aiOn) { this._aiT += dt; if (this._aiT >= 10) { this._aiT = 0; try { v.autoAssign(); } catch (e) { /* ignore */ } } }
+    // force shield
+    const gen = v.buildings.find(x => x.type === 'shield_generator' && x.state === 'complete');
+    this.shieldMax = gen ? Math.round(4000 * (gen.levelWorkBonus || 1)) : 0;
+    if (!gen) { this.shield = 0; return; }
+    if (this._shieldDown > 0) { this._shieldDown -= dt; if (this._shieldDown <= 0) v.toast('Энергощит восстановлен', 'good'); return; }
+    if (this.running(gen)) this.shield = Math.min(this.shieldMax, this.shield + 50 * this.powered * dt);
+  }
+  /** Building damage passes through the shield first. Returns the damage left over. */
+  absorb(n, b) {
+    if (this.shield <= 0 || this._shieldDown > 0 || !b || b.def.line) return n;
+    const take = Math.min(this.shield, n);
+    this.shield -= take;
+    this._domeFlash = 1;
+    if (this.shield <= 0) { this._shieldDown = 20; this.village.toast('Энергощит пробит! Восстановится через 20 с', 'bad'); }
+    return n - take;
+  }
+  _updateDome(dt) {
+    const v = this.village, th = v.townHall;
+    const on = this.shield > 0 && this._shieldDown <= 0 && !!th;
+    if (!on) { if (this._dome) this._dome.visible = false; return; }
+    if (!this._dome) {
+      const m = new THREE.MeshBasicMaterial({ color: 0x60c8ff, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false });
+      this._dome = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), m);
+      this._dome.renderOrder = 5;
+      this.game.scene.add(this._dome);
+    }
+    const d = this._dome;
+    d.visible = true;
+    const r = v.radius + 3;
+    d.position.set(th.center.x, th.y, th.center.z);
+    d.scale.set(r, r * 0.6, r);
+    this._domeFlash = Math.max(0, (this._domeFlash || 0) - dt * 3);
+    d.material.opacity = 0.05 + 0.07 * (this.shield / Math.max(1, this.shieldMax)) + 0.15 * this._domeFlash;
+  }
+
   // ---- drones
   _drones(hub, dt) {
     const v = this.village, g = this.game;
@@ -202,5 +273,9 @@ export class Industry {
     const pos = g.position.clone();
     return { mesh: g, rotors, t: Math.random() * 10, cd: Math.random(), src: { kind: 'tower', faction: 'village', id: -500 - hub.id * 10 - i, name: 'Дрон', eye: pos.clone(), position: pos.clone(), center: pos, velocity: new THREE.Vector3(), dead: false, cooldowns: {} } };
   }
-  dispose() { for (const list of this.drones.values()) for (const d of list) d.mesh.parent?.remove(d.mesh); this.drones.clear(); }
+  dispose() {
+    for (const list of this.drones.values()) for (const d of list) d.mesh.parent?.remove(d.mesh);
+    this.drones.clear();
+    if (this._dome) { this._dome.parent?.remove(this._dome); this._dome.geometry.dispose(); this._dome.material.dispose(); this._dome = null; }
+  }
 }

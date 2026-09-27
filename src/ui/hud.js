@@ -217,7 +217,11 @@ export class Hud {
     const ind = g.village?.industry;
     const showPow = !!ind && (ind.supply > 0 || ind.demand > 0);
     if (this._powVis !== showPow) { this._powVis = showPow; this.powChip.style.display = showPow ? '' : 'none'; }
-    if (showPow) { setText(this.powN, ind.supply + '/' + ind.demand); toggle(this.powChip, 'low', ind.ratio < 1); }
+    if (showPow) { setText(this.powN, ind.supply + '/' + ind.demand + (ind.shieldMax ? ' ◈' + Math.round(100 * ind.shield / ind.shieldMax) + '%' : '')); toggle(this.powChip, 'low', ind.ratio < 1); }
+    // late ages bring many resources: squeeze the bar so it never runs into the side panels
+    let chips = 1 + (showPow ? 1 : 0);
+    for (const r of RESOURCES) if (this.chips[r]._vis !== false) chips++;
+    if (this._chipN !== chips) { this._chipN = chips; toggle(this.resbar, 'dense', chips > 9); toggle(this.resbar, 'xdense', chips > 11); }
     toggle(this.popChip, 'full', cap > 0 && alive >= cap);
 
     this.updateClock(dt);

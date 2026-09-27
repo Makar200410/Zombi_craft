@@ -80,6 +80,7 @@ export class UI {
     bus.on('player:died', ({ source } = {}) => this.onDeath(source));
     bus.on('player:respawn', () => { if (this.menus.current === 'death') this.menus.hide(); toggle(this.root, 'st-dead', false); });
     bus.on('game:over', ({ reason } = {}) => this.onGameOver(reason));
+    bus.on('game:singularity', () => setTimeout(() => this.onVictory(), 2500));
     bus.on('building:completed', ({ building } = {}) => { if (this._loud()) this.toast('Построено: ' + (BUILDING_TYPES[building?.type]?.name || building?.type || ''), 'good'); });
     bus.on('building:destroyed', ({ building } = {}) => { if (this._loud()) this.toast('Разрушено: ' + (BUILDING_TYPES[building?.type]?.name || building?.type || ''), 'bad'); });
     bus.on('villager:spawned', ({ villager } = {}) => { if (this._loud()) this.toast('Новый житель: ' + (villager?.name || ''), 'info'); });
@@ -117,7 +118,7 @@ export class UI {
     for (const k of ['st-boot', 'st-menu', 'st-play']) this.root.classList.remove(k);
     this.root.classList.add('st-' + s);
   }
-  async startNewGame({ difficulty = 'normal', seed = null } = {}) {
+  async startNewGame({ difficulty = 'normal', seed = null, ngPlus = 0 } = {}) {
     const g = this.game;
     g.running = false;
     g.setPaused(false);
@@ -132,6 +133,10 @@ export class UI {
     fresh.difficulty = difficulty;
     g.state.deserialize(fresh);
     g.state.difficulty = difficulty;
+    if (ngPlus > 0) {
+      g.state.ngPlus = ngPlus;
+      g.state.addAll({ wood: 300 * ngPlus, stone: 300 * ngPlus, food: 150 * ngPlus, iron: 60 * ngPlus, gold: 100 * ngPlus });
+    }
     this.menus.hide();
     g.begin();
   }
@@ -257,6 +262,22 @@ export class UI {
     if (!this.menus.current) this.menus.showDeath(source);
     this.research.close();
     this.craft.close();
+  }
+  onVictory() {
+    const g = this.game;
+    if (g.gameOver || !g.running) return;
+    g.setPaused(true);
+    this._unlockPointer();
+    this.research.close(); this.craft.close?.();
+    this.command.closeTab(true); this.command.deselect();
+    this.menus.showVictory();
+    g.audio?.play?.('level_up', { volume: 1 });
+  }
+  continueAfterVictory() {
+    this.menus.hide();
+    this.game.setPaused(false);
+    this.toast('Бесконечный режим: нежить не кончается. Сколько ещё продержится ваша цивилизация?', 'info');
+    if (!this.game.isTouch && this.game.mode === 'explore') this._lockPointer();
   }
   onGameOver(reason) {
     const g = this.game;

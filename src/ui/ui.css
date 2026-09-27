@@ -237,6 +237,10 @@
 .zc-chip.bump-up .zc-chip-n { animation: zcBumpUp .5s ease-out; }
 .zc-chip.bump-down .zc-chip-n { animation: zcBumpDown .5s ease-out; }
 .zc-chip-n { display: inline-block; }
+.zc-resbar.dense .zc-chip { min-width: 0; padding: 0 5px; gap: 3px; font-size: 13px; }
+.zc-resbar.dense .zc-chip img { width: 18px; height: 18px; }
+.zc-resbar.xdense .zc-chip { padding: 0 3px; font-size: 12px; height: 30px; }
+.zc-resbar.xdense .zc-chip img { width: 16px; height: 16px; }
 @keyframes zcBumpUp { 0% { transform: scale(1.35); color: #b8ff8a; } 100% { transform: scale(1); } }
 @keyframes zcBumpDown { 0% { transform: scale(.85); color: #ff7a66; } 100% { transform: scale(1); } }
 .zc-delta { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); font: 700 14px var(--f-body); pointer-events: none;
@@ -699,6 +703,8 @@
 .zc-death-timer { margin-top: 22px; font-size: 16px; color: #fff; text-shadow: 0 2px 0 #000; }
 .zc-death-timer b { display: inline-block; min-width: 1.4em; font: 400 30px var(--f-disp); color: var(--gold-hi); vertical-align: middle; }
 
+.zc-victory .zc-over-title { font-size: 36px; color: #d8b4ff; text-shadow: 0 3px 0 #2a1040, 0 0 24px rgba(180, 120, 255, .6); }
+.zc-gameover.zc-victory { background: radial-gradient(ellipse at center, rgba(40, 20, 70, .7), rgba(0, 0, 0, .92)); }
 .zc-gameover { background: radial-gradient(ellipse at center, rgba(30, 4, 2, .7), rgba(0, 0, 0, .92)); }
 .over-card { width: min(520px, 100%); text-align: center; }
 .zc-over-title { font: 400 clamp(34px, 7vw, 56px)/1.05 var(--f-disp); color: #ff4a30; letter-spacing: .1em; text-shadow: 0 3px 0 #1a0000, 0 0 24px rgba(255, 40, 10, .6); }

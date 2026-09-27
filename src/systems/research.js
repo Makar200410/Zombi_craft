@@ -150,6 +150,25 @@ export const TECHS = {
     desc: 'Летающие боевые дроны патрулируют небо над городом.',
     effects: ['Открывает «Дронопорт»'],
   },
+  // ---- singularity
+  ai: {
+    name: 'Искусственный интеллект', icon: { block: 60 }, tier: 9, pos: [9, 1.2], prereqs: ['computing', 'robotics'],
+    cost: { steel: 400, uranium: 40, gold: 500, crystal: 80 }, points: 700,
+    desc: 'Машина, которая думает. Первый шаг к сингулярности.',
+    effects: ['Открывает «ИИ-ядро» и «Лазерную башню»', 'Нужен для Сингулярности'],
+  },
+  nanotech: {
+    name: 'Нанотехнологии', icon: { block: 61 }, tier: 9, pos: [9, 2.4], prereqs: ['robotics'],
+    cost: { steel: 400, uranium: 50, gold: 400 }, points: 700,
+    desc: 'Мириады крошечных машин собирают и чинят всё вокруг.',
+    effects: ['Открывает «Нанофабрику»'],
+  },
+  force_fields: {
+    name: 'Силовые поля', icon: { item: 'staff_frost' }, tier: 10, pos: [10, 1.8], prereqs: ['ai', 'nanotech'],
+    cost: { steel: 600, uranium: 80, crystal: 150, gold: 600 }, points: 900,
+    desc: 'Купол чистой энергии над городом.',
+    effects: ['Открывает «Генератор щита»'],
+  },
 };
 for (const id in TECHS) TECHS[id].id = id;
 export const TECH_ORDER = Object.keys(TECHS);
