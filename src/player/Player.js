@@ -329,9 +329,11 @@ export class Player extends Entity {
     for (let i = 0; i < 9; i++) if (input.consumePressed('Digit' + (i + 1)) || input.consumePressed('Numpad' + (i + 1))) this.selectSlot(i);
     if (input.consumePressed('Digit0')) this.selectSlot(9);
     if (input.wheel) {
+      // with the build hammer in hand the wheel picks the block (hold Shift to switch items instead)
+      const pickBlocks = this.itemId === 'build_hammer' && !input.isDown('ShiftLeft') && !input.isDown('ShiftRight');
       this._wheelAcc += input.wheel;
-      while (this._wheelAcc >= 50) { this._wheelAcc -= 50; this.selectSlot(this.selected + 1); }
-      while (this._wheelAcc <= -50) { this._wheelAcc += 50; this.selectSlot(this.selected - 1); }
+      while (this._wheelAcc >= 50) { this._wheelAcc -= 50; if (pickBlocks) this.cycleBuildBlock(1); else this.selectSlot(this.selected + 1); }
+      while (this._wheelAcc <= -50) { this._wheelAcc += 50; if (pickBlocks) this.cycleBuildBlock(-1); else this.selectSlot(this.selected - 1); }
     } else this._wheelAcc *= 0.8;
     if (input.consumePressed('KeyV') || input.consumePressed('F5')) this.toggleView();
     if (input.consumePressed('KeyR')) this.cycleBuildBlock(input.isDown('ShiftLeft') ? -1 : 1);

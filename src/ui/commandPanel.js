@@ -3,7 +3,7 @@ import { TECHS } from '../systems/research.js';
 import { AGES, ageOf, checkNextAge, advanceAge } from '../systems/ages.js';
 import {
   h, img, glyph, glyphImg, buildingIcon, costRow, clear, setText, setStyle, toggle, fmtNum,
-  BUILDING_TYPES, BUILDING_ORDER, JOB_LABELS, JOB_PLURAL, JOB_ORDER, jobIcon, STATE_LABELS, clamp,
+  BUILDING_TYPES, BUILDING_ORDER, JOB_LABELS, JOB_PLURAL, JOB_ORDER, jobIcon, STATE_LABELS, clamp, hscroll,
 } from './dom.js';
 
 const CATS = [['all', 'Все'], ['economy', 'Экономика'], ['military', 'Военное'], ['magic', 'Магия'], ['defense', 'Оборона'], ['wonder', 'Чудеса']];
@@ -48,6 +48,8 @@ export class CommandPanel {
     this.catBar = h('div.zc-cats');
     for (const [id, name] of CATS) this.catBar.append(h('button.zc-chipbtn.ui-i', { 'data-cat': id, onclick: () => { this.cat = id; this.ui.click(); this.renderBuild(); } }, name));
     this.cards = h('div.zc-cards');
+    const cs = hscroll(this.cards);
+    this._cardsScroll = cs;
     this.buildSheet = h('div.zc-sheet.zc-build-sheet.zc-panel.ui-i',
       h('div.zc-sheet-head', h('div.zc-sheet-title', img(glyph('hammer')), 'Строительство'), this.catBar, this.closeBtn(() => this.closeTab())),
       this.cards);

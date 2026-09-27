@@ -4,7 +4,7 @@ import { RECIPES, RECIPE_CATS, STATIONS } from '../systems/crafting.js';
 import { ITEMS } from '../core/items.js';
 import { h, img, glyph, glyphImg, resourceIcon, itemIcon, costRow, clear, toggle } from './dom.js';
 
-const STATION_CAT = { furnace: 'smelt', anvil: 'weapons', arcane: 'magic', workbench: 'tools' };
+const STATION_CAT = { furnace: 'smelt', anvil: 'weapons', arcane: 'magic', workbench: 'tools', factory: 'weapons' };
 
 export class CraftPanel {
   constructor(ui) {

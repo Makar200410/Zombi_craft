@@ -34,6 +34,15 @@ item('staff_storm', { name: 'Посох бури', kind: 'spell', damage: 18, co
 item('staff_life', { name: 'Посох жизни', kind: 'spell', damage: 0, heal: 25, cooldown: 2.0, manaCost: 20, range: 8, projectile: 'heal_nova', element: 'life', research: 'restoration' });
 item('tome_meteor', { name: 'Фолиант метеоров', kind: 'spell', damage: 80, cooldown: 8, manaCost: 60, range: 80, projectile: 'meteor', splash: 6, element: 'fire', research: 'meteor' });
 
+// --- weapons of the later ages (research + craft at the factory)
+item('steel_sword', { name: 'Стальной меч', kind: 'melee', damage: 13, cooldown: 0.4, range: 3.3, knockback: 6, research: 'steam_power', desc: 'Закалённая сталь: быстрый и тяжёлый удар.' });
+item('rifle', { name: 'Винтовка', kind: 'gun', damage: 48, cooldown: 1.1, range: 120, projectile: 'bullet', research: 'steam_power', desc: 'Дальнобойная и точная.' });
+item('machine_gun', { name: 'Ручной пулемёт', kind: 'gun', damage: 12, cooldown: 0.11, spread: 0.022, range: 70, projectile: 'bullet', research: 'machine_guns', desc: 'Держите кнопку — стреляет очередями.' });
+item('flamethrower', { name: 'Огнемёт', kind: 'gun', damage: 7, pellets: 3, spread: 0.08, cooldown: 0.16, range: 13, projectile: 'fireball', splash: 1.2, element: 'fire', research: 'rocketry', desc: 'Струя огня поджигает толпу вблизи.' });
+item('rocket_launcher', { name: 'Гранатомёт', kind: 'gun', damage: 110, cooldown: 2.4, range: 90, projectile: 'rocket', splash: 4.5, research: 'rocketry', desc: 'Ракета взрывается по площади.' });
+item('laser_rifle', { name: 'Лазерная винтовка', kind: 'gun', damage: 40, cooldown: 0.28, range: 120, projectile: 'laser', research: 'ai', desc: 'Луч прожигает любую броню.' });
+item('nano_blade', { name: 'Нано-клинок', kind: 'melee', damage: 30, cooldown: 0.3, range: 3.6, knockback: 7, element: 'arcane', research: 'nanotech', desc: 'Лезвие толщиной в молекулу.' });
+
 // Default hotbar layout for a new game (ids may be locked until researched).
 export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'build_hammer', 'bow', 'staff_fire', 'musket', 'staff_frost', 'staff_storm'];
 

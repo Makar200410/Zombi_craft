@@ -3,19 +3,23 @@ import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { BUILDING_TYPES } from './buildings.js';
 import { ageOf, ageHpBonus } from '../systems/ages.js';
 
-// Upgrades rebuild parts of a building in sturdier materials (applied cumulatively by level).
+// Every age (and every upgrade) rebuilds buildings in the materials of its time. The style of a building is
+// max(its level, age + 1); the maps below are applied cumulatively to the blueprint's own blocks.
+// Style 1 (stone age) is a special, more primitive take on the blueprints.
+const PRIMITIVE = { [B.ROOF_TILES]: B.THATCH, [B.STONE_BRICKS]: B.COBBLESTONE, [B.PLASTER]: B.PLANKS, [B.TIMBER_FRAME]: B.LOG, [B.MARBLE]: B.COBBLESTONE };
 const LEVEL_MATERIALS = [
   [2, { [B.THATCH]: B.ROOF_TILES }],
   [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS }],
   [4, { [B.TIMBER_FRAME]: B.PLASTER, [B.LOG]: B.STONE_BRICKS, [B.SPRUCE_LOG]: B.STONE_BRICKS, [B.BIRCH_LOG]: B.STONE_BRICKS }],
   [5, { [B.PLASTER]: B.MARBLE }],
   [6, { [B.ROOF_TILES]: B.COPPER_ROOF, [B.STONE_BRICKS]: B.BRICK }],
-  [7, { [B.BRICK]: B.CONCRETE, [B.DARK_STONE]: B.CONCRETE, [B.COBBLESTONE]: B.CONCRETE }],
+  [7, { [B.BRICK]: B.CONCRETE, [B.DARK_STONE]: B.CONCRETE, [B.COBBLESTONE]: B.CONCRETE, [B.PLANKS]: B.BRICK }],
   [8, { [B.COPPER_ROOF]: B.STEEL_BLOCK, [B.LANTERN]: B.LAMP }],
   [9, { [B.CONCRETE]: B.POLYMER, [B.PLASTER]: B.POLYMER }],
   [10, { [B.MARBLE]: B.POLYMER, [B.STONE_BRICKS]: B.POLYMER }],
 ];
 function levelId(id, level) {
+  if (level <= 1) return PRIMITIVE[id] ?? id;
   for (const [lv, map] of LEVEL_MATERIALS) if (level >= lv && map[id] !== undefined) id = map[id];
   return id;
 }
@@ -47,6 +51,7 @@ export class Building {
     this.createdAt = this.game.time;
     this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, base: b.id, dy: b.dy }));
     this.upgrade = null;         // {left, total} while an upgrade is under way
+    if (!this.def.wonder) for (const bl of this.blocks) bl.id = levelId(bl.base, Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)));
     this.built = new Uint8Array(this.blocks.length);
     this.builtCount = 0;
     this.points = {};
@@ -101,15 +106,20 @@ export class Building {
     return Math.round(hp);
   }
   /** Swap block materials to match the level. edit=true also changes the blocks already standing in the world. */
+  /** Visual style: the building's level, but never older than the current age. */
+  get style() { return Math.max(this.level || 1, Math.min(10, (this.game.state.age | 0) + 1)); }
+  /** Swap block materials to match the style. edit=true rebuilds the world blocks now, 'collect' only returns the edits. */
   applyLevelMaterials(edit) {
     const w = this.game.world, edits = [];
+    if (this.def.wonder) return edits;
+    const style = this.style;
     for (const b of this.blocks) {
-      const id = levelId(b.base ?? b.id, this.level || 1);
+      const id = levelId(b.base ?? b.id, style);
       if (id === b.id) continue;
       if (edit && w && w.getBlock(b.x, b.y, b.z) === b.id) edits.push([b.x, b.y, b.z, id]);
       b.id = id;
     }
-    if (edits.length) this.village.bulkEdit(edits);
+    if (edits.length && edit === true) this.village.bulkEdit(edits);
     return edits;
   }
   refreshMaxHp() {

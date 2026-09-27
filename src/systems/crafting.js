@@ -11,6 +11,7 @@ export const STATIONS = {
   furnace: { name: 'Печь', blocks: [B.FURNACE], buildings: ['house', 'forge'] },
   anvil: { name: 'Кузница', blocks: [B.IRON_BLOCK], buildings: ['forge'] },
   arcane: { name: 'Магический стол', blocks: [B.ARCANE_TABLE], buildings: ['laboratory', 'mage_tower'] },
+  factory: { name: 'Завод', blocks: [B.STEEL_BLOCK], buildings: ['factory', 'nanofactory'] },
 };
 
 // Items the player starts with.
@@ -35,6 +36,14 @@ export const RECIPES = [
   { id: 'c_blunderbuss', kind: 'item', cat: 'weapons', item: 'blunderbuss', station: 'anvil', in: { iron: 12, wood: 5, coal: 5 } },
   { id: 'c_grenade', kind: 'item', cat: 'weapons', item: 'grenade', station: 'anvil', in: { iron: 3, coal: 8 } },
   { id: 'c_sword_crystal', kind: 'item', cat: 'weapons', item: 'sword_crystal', station: 'anvil', in: { crystal: 8, iron: 5, gold: 3 } },
+  // ---- weapons of the later ages
+  { id: 'c_steel_sword', kind: 'item', cat: 'weapons', item: 'steel_sword', station: 'factory', in: { steel: 6, wood: 2 } },
+  { id: 'c_rifle', kind: 'item', cat: 'weapons', item: 'rifle', station: 'factory', in: { steel: 10, wood: 4, coal: 6 } },
+  { id: 'c_machine_gun', kind: 'item', cat: 'weapons', item: 'machine_gun', station: 'factory', in: { steel: 25, coal: 20, gold: 10 } },
+  { id: 'c_flamethrower', kind: 'item', cat: 'weapons', item: 'flamethrower', station: 'factory', in: { steel: 20, coal: 40, crystal: 5 } },
+  { id: 'c_rocket_launcher', kind: 'item', cat: 'weapons', item: 'rocket_launcher', station: 'factory', in: { steel: 35, coal: 30, gold: 20 } },
+  { id: 'c_laser_rifle', kind: 'item', cat: 'weapons', item: 'laser_rifle', station: 'factory', in: { steel: 40, uranium: 10, crystal: 20 } },
+  { id: 'c_nano_blade', kind: 'item', cat: 'weapons', item: 'nano_blade', station: 'factory', in: { steel: 40, uranium: 15, crystal: 30 } },
   // ---- magic
   { id: 'c_staff_fire', kind: 'item', cat: 'magic', item: 'staff_fire', station: 'arcane', in: { wood: 4, crystal: 4, gold: 2 } },
   { id: 'c_staff_frost', kind: 'item', cat: 'magic', item: 'staff_frost', station: 'arcane', in: { wood: 4, crystal: 6, iron: 2 } },

@@ -316,7 +316,68 @@ function tome(p) {
   p.set(20, 29, hex('#e8c040')); p.set(20, 30, hex('#b89020'));
 }
 
+// ---- weapons of the later ages
+const STEEL = hexes(['#1c2430', '#34445a', '#5a7088', '#8ca4bc', '#d4e4f4']);
+const GUNM = hexes(['#101216', '#1e2228', '#2e343c', '#46505c', '#6a7684']);
+function rifle(p) {
+  D(p, (a, c) => {
+    if (a >= -6 && a <= 27 && c >= -1 && c <= 0) return c === -1 ? GUNM[3] : GUNM[1];              // barrel
+    if (a >= 2 && a <= 12 && c === -3) return GUNM[4]; if (a >= 3 && a <= 11 && c === -2) return GUNM[2];   // scope
+    const cmax = 0.5 + Math.max(0, (-6 - a) / 6);
+    if (a >= -24 && a <= -3 && c >= -1 && c <= cmax) return c <= -1 ? R.wood[4] : R.wood[a <= -22 ? 1 : 3];
+    if (a >= -10 && a <= -7 && c >= 1 && c <= 3) return GUNM[2];                                     // bolt/mag
+    return null;
+  });
+}
+function machineGun(p) {
+  D(p, (a, c) => {
+    if (a >= 4 && a <= 27 && c >= -1 && c <= 0) return (a % 3 === 0) ? GUNM[4] : GUNM[2];              // cooled barrel
+    if (a >= -14 && a <= 4 && c >= -2 && c <= 1) return c === -2 ? GUNM[4] : GUNM[2];                  // receiver
+    if (a >= -6 && a <= -2 && c >= 2 && c <= 6) return hexes(['#3a3a1a', '#6a6a2a'])[c % 2];          // box mag
+    if (a >= -24 && a <= -15 && c >= -1 && c <= 1 + (-15 - a) / 5) return GUNM[1];                   // stock
+    if (a >= 18 && a <= 20 && c >= 1 && c <= 4) return GUNM[3];                                       // bipod
+    return null;
+  });
+}
+function flamethrower(p) {
+  D(p, (a, c) => {
+    if (a >= 0 && a <= 22 && c >= -1 && c <= 0) return c === -1 ? STEEL[3] : STEEL[1];                 // lance
+    if (a >= 22 && a <= 25 && c >= -2 && c <= 1) return GUNM[3];                                        // nozzle
+    if (a >= 26 && a <= 30 && Math.abs(c) <= (a - 25) * 0.7) return hexes(['#ff4010', '#ff9020', '#ffe070'])[Math.min(2, Math.abs(Math.round(c)) === 0 ? 2 : 1)];
+    if (a >= -16 && a <= -2 && c >= 1 && c <= 5) return c === 1 ? hexes(['#c83020'])[0] : hexes(['#8a1a10', '#b02818', '#d84a2a'])[Math.min(2, c - 2)];   // fuel tank
+    if (a >= -20 && a <= 0 && c >= -1 && c <= 0) return R.wood[3];
+    return null;
+  });
+}
+function rocketLauncher(p) {
+  const O = hexes(['#232a14', '#3a4424', '#5a6a3a', '#7a8a52', '#9aaa6a']);
+  D(p, (a, c) => {
+    if (a >= -22 && a <= 22 && c >= -2 && c <= 1) return c === -2 ? O[4] : c === 1 ? O[1] : O[2];      // tube
+    if (a >= 23 && a <= 27 && Math.abs(c + 0.5) <= (28 - a) * 0.5) return hexes(['#8a1a10', '#d03020', '#ff6a40'])[c < -1 ? 2 : 1];   // warhead
+    if (a >= -6 && a <= -2 && c >= 2 && c <= 4) return GUNM[2];                                        // grip
+    if (a >= 2 && a <= 8 && c === -3) return GUNM[3];                                                  // sight
+    return null;
+  });
+}
+function laserRifle(p) {
+  const W = hexes(['#8a92a0', '#b8c0cc', '#dce2ea', '#f4f7fa', '#ffffff']);
+  D(p, (a, c) => {
+    if (a >= 14 && a <= 27 && c >= -1 && c <= 0) return c === -1 ? W[3] : W[1];
+    if (a >= 26 && a <= 28 && c >= -2 && c <= 1) return hexes(['#30f0ff'])[0];                      // emitter
+    if (a >= -16 && a <= 14 && c >= -2 && c <= 1) return (c === -1 && a % 4 !== 0) ? hexes(['#40e8ff'])[0] : c === -2 ? W[4] : W[2];   // body with glowing strip
+    if (a >= -22 && a <= -16 && c >= -1 && c <= 2) return W[1];
+    if (a >= -8 && a <= -5 && c >= 2 && c <= 4) return GUNM[3];
+    return null;
+  });
+}
 const ITEM_DRAW = {
+  steel_sword: (p) => sword(p, STEEL, GUNM, R.leather, GUNM, true),
+  nano_blade: (p) => sword(p, hexes(['#1a4a6a', '#2a8ab8', '#40d0ff', '#9af0ff', '#ffffff']), GUNM, GUNM, hexes(['#30f0ff', '#30f0ff', '#30f0ff', '#9af0ff', '#ffffff']), false),
+  rifle: (p) => rifle(p),
+  machine_gun: (p) => machineGun(p),
+  flamethrower: (p) => flamethrower(p),
+  rocket_launcher: (p) => rocketLauncher(p),
+  laser_rifle: (p) => laserRifle(p),
   sword_wood: (p) => sword(p, hexes(['#4a2e14', '#7a5129', '#9a6a36', '#c8955a', '#e0b070']), R.dwood, R.leather, R.dwood, true),
   sword_iron: (p) => sword(p, R.iron, R.gold, R.leather, R.gold, true),
   sword_crystal: (p) => sword(p, R.blade, R.gold, hexes(['#1a1030', '#2e1e50', '#4a3278', '#6a4aa0', '#8a6ac8']), R.crystal, true),

@@ -10,6 +10,7 @@ import { Menus, confirmDialog } from './menus.js';
 import { CommandPanel } from './commandPanel.js';
 import { ResearchPanel } from './researchPanel.js';
 import { CraftPanel } from './craftPanel.js';
+import { InventoryPanel } from './inventoryPanel.js';
 
 const SETTINGS_KEY = 'zc_settings';
 const STOP_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'dblclick', 'wheel', 'contextmenu'];
@@ -38,10 +39,11 @@ export class UI {
     this.command = new CommandPanel(this);
     this.research = new ResearchPanel(this);
     this.craft = new CraftPanel(this);
+    this.inventory = new InventoryPanel(this);
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
     root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
-      this.research.root, this.craft.root, this.menus.root, this.dialogLayer);
+      this.research.root, this.craft.root, this.inventory.root, this.menus.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {
@@ -189,7 +191,7 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- pause / modal
-  get modalOpen() { return !!(this.research.open || this.craft.open || (this.menus.current && this.menus.current !== 'death') || this.dialogLayer.children.length); }
+  get modalOpen() { return !!(this.research.open || this.craft.open || this.inventory?.open || (this.menus.current && this.menus.current !== 'death') || this.dialogLayer.children.length); }
   /** True when the UI wants all game input (used by Input to ignore clicks/keys). */
   isBlocking() { return this.modalOpen || !this.game.running; }
   requestPause() {
@@ -236,6 +238,7 @@ export class UI {
       if (dlg) { dlg.dispatchEvent(new MouseEvent('click', { bubbles: true })); e.preventDefault(); return; }
       if (this.research.open) { this.research.close(); e.preventDefault(); return; }
       if (this.craft.open) { this.craft.close(); e.preventDefault(); return; }
+      if (this.inventory.open) { this.inventory.close(); e.preventDefault(); return; }
       if (this.menus.current === 'pause') { this.resume(); e.preventDefault(); return; }
       if (this.menus.current === 'main') { if (this.menus.card?.dataset.page !== 'home') this.menus.page('home'); return; }
       if (this.menus.current) return;
@@ -243,7 +246,8 @@ export class UI {
       if (g.running) { this.requestPause(); e.preventDefault(); }
       return;
     }
-    if (e.code === 'KeyI' && g.running && !e.repeat && !this.menus.current) { this.craft.toggle(); e.preventDefault(); return; }
+    if (e.code === 'KeyI' && g.running && !e.repeat && !this.menus.current) { this.inventory.close(); this.craft.toggle(); e.preventDefault(); return; }
+    if (e.code === 'KeyE' && g.running && !e.repeat && !this.menus.current && g.mode === 'explore') { this.craft.close(); this.inventory.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyP' && g.running && !e.repeat) {
       if (this.menus.current === 'pause') this.resume();
       else if (!this.modalOpen) this.requestPause();
@@ -261,14 +265,14 @@ export class UI {
     this._unlockPointer();
     if (!this.menus.current) this.menus.showDeath(source);
     this.research.close();
-    this.craft.close();
+    this.craft.close(); this.inventory.close();
   }
   onVictory() {
     const g = this.game;
     if (g.gameOver || !g.running) return;
     g.setPaused(true);
     this._unlockPointer();
-    this.research.close(); this.craft.close?.();
+    this.research.close(); this.craft.close?.(); this.inventory.close();
     this.command.closeTab(true); this.command.deselect();
     this.menus.showVictory();
     g.audio?.play?.('level_up', { volume: 1 });

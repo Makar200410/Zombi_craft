@@ -24,7 +24,8 @@ const NATURAL = new Set([B.GRASS, B.DIRT, B.STONE, B.SAND, B.GRAVEL, B.LEAVES, B
   B.WHEAT_0, B.WHEAT_1, B.WHEAT_2, B.WHEAT_3].filter(v => v !== undefined));
 
 const ITEM_SOUNDS = {
-  bow: 'bow_shoot', crossbow: 'crossbow_shoot', musket: 'musket_shot', blunderbuss: 'blunderbuss_shot', grenade: 'swing',
+  bow: 'bow_shoot', crossbow: 'crossbow_shoot', musket: 'musket_shot', blunderbuss: 'blunderbuss_shot',
+  rifle: 'musket_shot', machine_gun: 'musket_shot', flamethrower: 'fireball_cast', rocket_launcher: 'blunderbuss_shot', laser_rifle: 'lightning', grenade: 'swing',
   staff_fire: 'fireball_cast', staff_frost: 'frost_cast', staff_storm: 'lightning', staff_life: 'heal', tome_meteor: 'meteor_fall',
 };
 
@@ -163,7 +164,8 @@ export class Combat {
           const sd = aim.clone();
           const spread = it.spread ?? (isPlayer ? 0.004 : 0.02);
           if (spread) { sd.x += (Math.random() - 0.5) * spread * 2; sd.y += (Math.random() - 0.5) * spread * 2; sd.z += (Math.random() - 0.5) * spread * 2; sd.normalize(); }
-          this.fireProjectile('bullet', user, muzzle, sd, { damage: it.damage * dmgMul, life: Math.max(0.12, (it.range || 60) / 170) });
+          const proj = it.projectile || 'bullet';
+          this.fireProjectile(proj, user, muzzle, sd, { damage: it.damage * dmgMul, life: Math.max(0.12, (it.range || 60) / (PROJECTILES[proj]?.speed || 170)), splash: it.splash, burn: it.element === 'fire' ? 3 : undefined });
         }
         this._muzzleFx(muzzle, d, pellets > 1);
         if (snd) this._play(snd, origin, 1, 0.95 + Math.random() * 0.1);

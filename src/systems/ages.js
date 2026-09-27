@@ -68,6 +68,8 @@ export function advanceAge(game) {
   const v = game.village;
   if (v) {
     for (const b of v.buildings) b.refreshMaxHp?.();
+    const n = v.restyleAll?.() || 0;
+    if (n) game.bus.emit('toast', { text: 'Город перестраивается в стиле новой эпохи', kind: 'info' });
     if (v.townHall) v.celebrate(v.townHall);
   }
   game.audio?.play('level_up', { volume: 1 });

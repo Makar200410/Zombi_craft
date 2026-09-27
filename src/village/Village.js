@@ -406,6 +406,18 @@ export class Village {
     this.bus.emit('building:upgrading', { building: b });
     return true;
   }
+  /** A new age: the whole town is rebuilt in the materials of its time. */
+  restyleAll() {
+    const edits = [];
+    for (const b of this.buildings) {
+      if (b.state === 'destroyed') continue;
+      for (const e of b.applyLevelMaterials('collect')) edits.push(e);
+      b.computeOps();
+    }
+    if (edits.length) this.bulkEdit(edits);
+    for (const b of this.buildings) b.refreshBuilt?.();
+    return edits.length;
+  }
   /** Kept for the town hall button. */
   upgradeTownHall() { return this.startUpgrade(this.townHall); }
   finishUpgrade(b) {

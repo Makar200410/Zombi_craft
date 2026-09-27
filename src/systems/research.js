@@ -105,13 +105,13 @@ export const TECHS = {
     name: 'Паровая машина', icon: { res: 'steel' }, tier: 5, pos: [5, 1.2], prereqs: ['gunpowder', 'mechanics'],
     cost: { iron: 120, coal: 80, gold: 40 }, points: 160,
     desc: 'Пар и уголь приводят в движение станки и молоты. Начало индустриальной эры.',
-    effects: ['Открывает «Завод»: железо + уголь → сталь', 'Нужна для Индустриальной эры'],
+    effects: ['Открывает «Завод»: железо + уголь → сталь', 'Рецепты: стальной меч, винтовка', 'Нужна для Индустриальной эры'],
   },
   machine_guns: {
     name: 'Пулемёты', icon: { item: 'blunderbuss' }, tier: 5, pos: [5, 2.4], prereqs: ['ballistics', 'steam_power'],
     cost: { iron: 100, steel: 20, coal: 40 }, points: 200,
     desc: 'Скорострельное оружие, которое косит толпы нежити.',
-    effects: ['Открывает «Пулемётное гнездо»'],
+    effects: ['Открывает «Пулемётное гнездо»', 'Рецепт: ручной пулемёт'],
   },
   electricity: {
     name: 'Электричество', icon: { block: 58 }, tier: 6, pos: [6, 1.2], prereqs: ['steam_power'],
@@ -136,7 +136,7 @@ export const TECHS = {
     name: 'Ракеты', icon: { item: 'grenade' }, tier: 7, pos: [7, 2.4], prereqs: ['machine_guns', 'electricity'],
     cost: { steel: 120, coal: 150, gold: 120 }, points: 380,
     desc: 'Реактивные снаряды накрывают толпы нежити издалека.',
-    effects: ['Открывает «Ракетную батарею»'],
+    effects: ['Открывает «Ракетную батарею»', 'Рецепты: огнемёт, гранатомёт'],
   },
   computing: {
     name: 'Вычислительная техника', icon: { block: 60 }, tier: 8, pos: [8, 1.2], prereqs: ['nuclear'],
@@ -155,13 +155,13 @@ export const TECHS = {
     name: 'Искусственный интеллект', icon: { block: 60 }, tier: 9, pos: [9, 1.2], prereqs: ['computing', 'robotics'],
     cost: { steel: 400, uranium: 40, gold: 500, crystal: 80 }, points: 700,
     desc: 'Машина, которая думает. Первый шаг к сингулярности.',
-    effects: ['Открывает «ИИ-ядро» и «Лазерную башню»', 'Нужен для Сингулярности'],
+    effects: ['Открывает «ИИ-ядро» и «Лазерную башню»', 'Рецепт: лазерная винтовка', 'Нужен для Сингулярности'],
   },
   nanotech: {
     name: 'Нанотехнологии', icon: { block: 61 }, tier: 9, pos: [9, 2.4], prereqs: ['robotics'],
     cost: { steel: 400, uranium: 50, gold: 400 }, points: 700,
     desc: 'Мириады крошечных машин собирают и чинят всё вокруг.',
-    effects: ['Открывает «Нанофабрику»'],
+    effects: ['Открывает «Нанофабрику»', 'Рецепт: нано-клинок'],
   },
   force_fields: {
     name: 'Силовые поля', icon: { item: 'staff_frost' }, tier: 10, pos: [10, 1.8], prereqs: ['ai', 'nanotech'],

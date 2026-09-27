@@ -11,6 +11,8 @@ export const PROJECTILES = {
   ice_shard: { speed: 44, gravity: 0.5, life: 2.5, damage: 8, knock: 1.5, kind: 'frost', sound: 'frost_impact', light: 0x7ad0ff },
   acid:      { speed: 17, gravity: 18, life: 4, damage: 7, splash: 1.3, knock: 1, kind: 'acid', sound: 'splash' },
   bomb:      { speed: 17, gravity: 20, life: 4, damage: 35, splash: 4, knock: 8, kind: 'explosion', sound: 'explosion' },
+  rocket:    { speed: 42, gravity: 1.2, life: 3, damage: 110, splash: 4.5, knock: 10, kind: 'explosion', sound: 'explosion', light: 0xffa040 },
+  laser:     { speed: 220, gravity: 0, life: 0.7, damage: 40, knock: 1.5, kind: 'laser', sound: 'arrow_hit' },
   meteor:    { speed: 40, gravity: 6, life: 6, damage: 80, splash: 6, knock: 12, kind: 'fire', sound: 'explosion', light: 0xff5a1a },
 };
 
@@ -83,6 +85,20 @@ function buildMesh(type) {
       m.castShadow = true; g.add(m); g.userData.spin = m;
       box(0.06, 0.1, 0.06, lambert(0x6a5a40), 0, 0.22, 0);
       const spark = haloSprite(0xffc040, 0.35); spark.position.y = 0.3; g.add(spark); g.userData.spark = spark;
+      break;
+    }
+    case 'rocket': {
+      box(0.12, 0.12, 0.6, lambert(0x5a6a3a));
+      box(0.14, 0.14, 0.16, lambert(0xc03020), 0, 0, 0.36);
+      box(0.2, 0.02, 0.14, lambert(0x3a4424), 0, 0, -0.26); box(0.02, 0.2, 0.14, lambert(0x3a4424), 0, 0, -0.26);
+      const flame = haloSprite(0xffa040, 0.7); flame.position.z = -0.4; g.add(flame);
+      break;
+    }
+    case 'laser': {
+      const beam = box(0.06, 0.06, 1, basic(0xff3050, { transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+      beam.geometry = geo('streak', () => { const b = new THREE.BoxGeometry(1, 1, 1); b.translate(0, 0, -0.5); return b; });
+      beam.scale.set(0.07, 0.07, 3); g.userData.streak = beam;
+      box(0.1, 0.1, 0.1, basic(0xffd0e0));
       break;
     }
     case 'meteor': {
@@ -189,11 +205,14 @@ export class Projectiles {
     const u = p.obj.userData;
     if (u.spin) { u.spin.rotation.x += dt * 9; u.spin.rotation.y += dt * 7; }
     switch (p.type) {
-      case 'bullet': {
+      case 'bullet': case 'laser': {
         const traveled = p.pos.distanceTo(p.start);
-        u.streak.scale.z = Math.min(3.2, traveled);
+        u.streak.scale.z = Math.min(p.type === 'laser' ? 5 : 3.2, traveled);
         break;
       }
+      case 'rocket':
+        if (p.trailT <= 0) { p.trailT = lowQ ? 0.04 : 0.02; P.emit({ pos: p.pos, count: 2, colors: [0xffc050, 0xff7020], additive: true, speed: 0.8, gravity: 0, life: 0.25, size: 0.2 }); P.emit({ pos: p.pos, count: 1, colors: [0x8a8480, 0x5a5550], speed: 0.4, gravity: -0.8, life: 1.2, size: 0.45, alpha: 0.5 }); }
+        break;
       case 'fireball':
         if (p.trailT <= 0) { p.trailT = lowQ ? 0.03 : 0.016; P.emit({ pos: p.pos, count: 2, colors: [0xffc050, 0xff7020, 0xffe8a0], additive: true, speed: 0.6, box: 0.12, gravity: -2, life: 0.45, size: 0.32, drag: 0.5 }); if (Math.random() < 0.3) P.emit({ pos: p.pos, count: 1, color: 0x40342c, speed: 0.3, gravity: -1.5, life: 0.9, size: 0.35, alpha: 0.5 }); }
         break;
@@ -221,7 +240,7 @@ export class Projectiles {
     const c = this.combat, def = p.def;
     const dir = _dir.copy(p.vel).setY(0).normalize();
     switch (p.type) {
-      case 'fireball': case 'bomb': case 'meteor':
+      case 'fireball': case 'bomb': case 'meteor': case 'rocket':
         c.meleeHit(p.user, e, p.damage, { kind: def.kind, dir, knockback: def.knock * 0.4, silent: true, point: p.pos, noFx: true, burn: p.opts.burn });
         c.explode(p.pos, p.splash, p.damage * 0.6, p.user, { kind: def.kind, burn: p.opts.burn ?? (def.kind === 'fire' ? 4 : 0), exclude: e, breakBlocks: p.opts.breakBlocks, craterRadius: p.opts.craterRadius, shake: p.opts.shake, big: p.type === 'meteor' });
         break;
@@ -253,13 +272,13 @@ export class Projectiles {
         if (p.user?.faction === 'undead') c._damageBuildingBlock(hit.x, hit.y, hit.z, p.damage * 0.3, p.user);
         return;
       }
-      case 'bullet':
+      case 'bullet': case 'laser':
         P.blockHit(hit.x, hit.y, hit.z, hit.id, hit.point);
         P.emit({ pos: hit.point, count: 6, colors: [0xfff0a0, 0xffc050], additive: true, speed: 5, gravity: 12, life: 0.25, size: 0.06, dir: { x: hit.nx * 2, y: hit.ny * 2 + 1, z: hit.nz * 2 } });
         P.emit({ pos: hit.point, count: 4, color: 0x9a948a, speed: 0.8, gravity: -0.6, life: 0.9, size: 0.3, alpha: 0.5 });
         g.audio?.play('pick_hit', { pos: hit.point, volume: 0.35, pitch: 1.6 });
         break;
-      case 'fireball': case 'bomb': case 'meteor':
+      case 'fireball': case 'bomb': case 'meteor': case 'rocket':
         c.explode(p.pos, p.splash, p.damage * (p.type === 'fireball' ? 0.7 : 1), p.user, { kind: p.def.kind, burn: p.opts.burn ?? (p.def.kind === 'fire' ? 4 : 0), breakBlocks: p.opts.breakBlocks, craterRadius: p.opts.craterRadius, shake: p.opts.shake, big: p.type === 'meteor', normal: hit });
         break;
       case 'acid':

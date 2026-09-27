@@ -3,7 +3,7 @@ import { ageOf } from '../systems/ages.js';
 import { ITEMS, RESOURCES, RESOURCE_LABELS } from '../core/items.js';
 import { BLOCKS, PALETTE } from '../core/blocks.js';
 import { TECHS } from '../systems/research.js';
-import { h, img, glyph, glyphImg, resourceIcon, itemIcon, blockIcon, setText, setStyle, toggle, fmtNum, fmtTime, clamp } from './dom.js';
+import { h, img, glyph, glyphImg, resourceIcon, itemIcon, blockIcon, setText, setStyle, toggle, fmtNum, fmtTime, clamp, hscroll } from './dom.js';
 
 class Bar {
   constructor(cls, icon, label) {
@@ -52,8 +52,10 @@ export class Hud {
     this.modeBtn = h('button.zc-mode-btn.ui-i', { title: 'Переключить режим (Tab)', onclick: () => ui.toggleMode() },
       h('span.zc-mode-ico', this.modeIco), this.modeLbl);
 
-    this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.craft.toggle(); } },
+    this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.inventory.close(); ui.craft.toggle(); } },
       h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'));
+    this.invBtn = h('button.zc-mode-btn.zc-inv-btn.ui-i', { title: 'Инвентарь: оружие в ячейки (E)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.toggle(); } },
+      h('span.zc-mode-ico', img(glyph('sword'))), h('span.zc-mode-lbl', 'Инвентарь'));
 
     // --- resources
     this.chips = {};
@@ -105,10 +107,12 @@ export class Hud {
       this.palette.appendChild(btn);
     }
     this.paletteLbl = h('div.zc-palette-lbl');
-    this.bottom = h('div.zc-bottom', this.itemName, h('div.zc-palette-wrap', this.paletteLbl, this.palette), this.hotbar);
+    const ps = hscroll(this.palette);
+    const arrow = (dir) => h('button.zc-parrow.ui-i', { title: dir < 0 ? 'Назад' : 'Дальше', onclick: () => ps.by(dir * 240) }, dir < 0 ? '‹' : '›');
+    this.bottom = h('div.zc-bottom', this.itemName, h('div.zc-palette-wrap', this.paletteLbl, h('div.zc-palette-row', arrow(-1), this.palette, arrow(1))), this.hotbar);
 
     this.fps = h('div.zc-fps');
-    root.append(this.topLeft, this.modeBtn, this.craftBtn, this.resbar, this.topRight, this.crosshair, this.bottom, this.fps);
+    root.append(this.topLeft, this.modeBtn, this.craftBtn, this.invBtn, this.resbar, this.topRight, this.crosshair, this.bottom, this.fps);
 
     this._prevRes = { ...this.game.state.resources };
     this._nameT = 0; this._lastSel = -1; this._lastBuild = -1;
