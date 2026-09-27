@@ -83,6 +83,10 @@ export class WaveDirector {
     const d = this.diff;
     const count = Math.min(560, Math.round(countFor(n) * d.count));
     const weights = weightsFor(n);
+    // the dead evolve with the civilisation: new kinds by the village's age
+    const age = this.game.state.age | 0;
+    if (age >= 5) weights.mutant = 0.1 + 0.03 * (age - 5);
+    if (age >= 6) weights.conductor = 0.09 + 0.02 * (age - 6);
     const total = Object.values(weights).reduce((a, b) => a + b, 0);
     const out = [];
     // guarantee the newly introduced kinds show up
@@ -138,6 +142,8 @@ export class WaveDirector {
     const era = eraOf(n);
     if (n === era.from) game.bus.emit('toast', { text: `Эпоха «${era.name}» — волны ${era.from}–${era.from + 9 > 50 && era.from <= 50 ? 50 : era.from + 9}`, kind: 'wave' });
     const fresh = introducedOn(n);
+    this._seenAge = this._seenAge || new Set();
+    for (const t of ['mutant', 'conductor']) if (types.includes(t) && !this._seenAge.has(t)) { this._seenAge.add(t); fresh.push(t); }
     if (fresh.length) game.bus.emit('toast', { text: 'Новые враги: ' + fresh.map(t => `${ZOMBIE_TYPES[t].name} (${HINTS[t]})`).join(', '), kind: 'bad' });
     if (BOSSES[n]) game.bus.emit('toast', { text: 'Боссы этой ночи: ' + BOSSES[n].map(t => ZOMBIE_TYPES[t].name).join(', '), kind: 'bad' });
     return true;

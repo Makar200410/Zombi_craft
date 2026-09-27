@@ -100,6 +100,31 @@ export const TECHS = {
     desc: 'Расчёт траекторий превращает вышки в неприступные бастионы.',
     effects: ['Сторожевые вышки: +50% урона и дальности'],
   },
+  // ---- industrial & electric ages
+  steam_power: {
+    name: 'Паровая машина', icon: { res: 'steel' }, tier: 5, pos: [5, 1.2], prereqs: ['gunpowder', 'mechanics'],
+    cost: { iron: 120, coal: 80, gold: 40 }, points: 160,
+    desc: 'Пар и уголь приводят в движение станки и молоты. Начало индустриальной эры.',
+    effects: ['Открывает «Завод»: железо + уголь → сталь', 'Нужна для Индустриальной эры'],
+  },
+  machine_guns: {
+    name: 'Пулемёты', icon: { item: 'blunderbuss' }, tier: 5, pos: [5, 2.4], prereqs: ['ballistics', 'steam_power'],
+    cost: { iron: 100, steel: 20, coal: 40 }, points: 200,
+    desc: 'Скорострельное оружие, которое косит толпы нежити.',
+    effects: ['Открывает «Пулемётное гнездо»'],
+  },
+  electricity: {
+    name: 'Электричество', icon: { block: 58 }, tier: 6, pos: [6, 1.2], prereqs: ['steam_power'],
+    cost: { steel: 40, coal: 120, gold: 80, crystal: 10 }, points: 260,
+    desc: 'Генераторы, провода и лампы. Энергия питает оборону и заводы.',
+    effects: ['Открывает «Электростанцию» и «Прожектор»', 'Блок: электролампа', 'Нужно для Эпохи электричества'],
+  },
+  tesla: {
+    name: 'Токи Теслы', icon: { item: 'staff_storm' }, tier: 6, pos: [6, 2.4], prereqs: ['electricity', 'storm_magic'],
+    cost: { steel: 60, crystal: 25, gold: 100 }, points: 320,
+    desc: 'Магия бури, пойманная в медную катушку.',
+    effects: ['Открывает «Тесла-башню»: цепная молния по зомби'],
+  },
 };
 for (const id in TECHS) TECHS[id].id = id;
 export const TECH_ORDER = Object.keys(TECHS);

@@ -231,6 +231,8 @@
 .zc-chip + .zc-chip::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: linear-gradient(transparent, rgba(234, 198, 110, .35), transparent); }
 .zc-chip img { width: 22px; height: 22px; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .8)); }
 .zc-chip.pop { color: #ffe0b8; }
+.zc-chip.pow { color: #ffe870; }
+.zc-chip.pow.low .zc-chip-n { color: #ff7a5a; }
 .zc-chip.pop.full .zc-chip-n { color: #ffb259; }
 .zc-chip.bump-up .zc-chip-n { animation: zcBumpUp .5s ease-out; }
 .zc-chip.bump-down .zc-chip-n { animation: zcBumpDown .5s ease-out; }

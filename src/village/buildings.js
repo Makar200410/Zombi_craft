@@ -606,6 +606,153 @@ function arsenal(v) {
   return bp;
 }
 
+// ---- industrial & electric ages
+function factory(v) {
+  const bp = new BP(11, 9);
+  bp.box(0, 0, 0, 10, 0, 8, B.GRAVEL);
+  bp.box(1, 0, 1, 9, 0, 6, B.CONCRETE);
+  bp.ring(1, 1, 1, 9, 4, 6, B.BRICK);
+  for (const x of [3, 5, 7]) for (let y = 2; y <= 3; y++) { bp.set(x, y, 1, B.GLASS); bp.set(x, y, 6, B.GLASS); }
+  bp.set(1, 3, 3, B.GLASS); bp.set(9, 3, 3, B.GLASS);
+  // saw-tooth roof with skylights
+  for (let x = 1; x <= 9; x++) for (let z = 1; z <= 6; z++) bp.set(x, 5, z, (z === 2 || z === 5) ? B.GLASS : B.STEEL_BLOCK);
+  for (const z of [1, 4]) for (let x = 1; x <= 9; x++) bp.set(x, 6, z, B.STEEL_BLOCK);
+  // chimney
+  bp.box(8, 1, 7, 9, 10, 8, B.BRICK); bp.set(8, 11, 7, B.DARK_STONE); bp.set(9, 11, 8, B.DARK_STONE);
+  // big door
+  for (let y = 1; y <= 3; y++) for (let x = 4; x <= 6; x++) bp.del(x, y, 6);
+  bp.box(4, 4, 6, 6, 4, 6, B.STEEL_BLOCK);
+  // machines inside
+  bp.set(2, 1, 2, B.FURNACE); bp.set(3, 1, 2, B.IRON_BLOCK); bp.set(7, 1, 2, B.IRON_BLOCK); bp.set(8, 1, 2, B.FURNACE);
+  bp.set(2, 1, 4, B.STEEL_BLOCK); bp.set(8, 1, 4, B.IRON_BLOCK); bp.set(5, 4, 3, B.LANTERN);
+  bp.box(0, 1, 7, 1, 1, 8, B.COAL_ORE); bp.set(3, 1, 8, B.IRON_BLOCK);
+  bp.point('door', 5, 1, 7);
+  bp.point('inside', 5, 1, 3);
+  bp.point('machine', 3, 1, 3); bp.point('machine', 7, 1, 3); bp.point('machine', 5, 1, 4);
+  return bp;
+}
+
+function mgNest(v) {
+  const bp = new BP(5, 5);
+  bp.box(0, 0, 0, 4, 0, 4, B.GRAVEL);
+  bp.ring(0, 1, 0, 4, 2, 4, B.SAND);
+  bp.box(1, 1, 1, 3, 1, 3, B.PLANKS);
+  bp.box(1, 2, 1, 3, 2, 3, B.AIR);
+  bp.set(2, 2, 0, B.STEEL_BLOCK); bp.set(0, 2, 2, B.CONCRETE); bp.set(4, 2, 2, B.CONCRETE);
+  bp.del(2, 1, 4); bp.del(2, 2, 4);
+  bp.set(0, 3, 0, B.SAND); bp.set(4, 3, 0, B.SAND);
+  bp.point('door', 2, 1, 4);
+  bp.point('post', 2, 2, 2);
+  return bp;
+}
+
+function powerPlant(v) {
+  const bp = new BP(11, 9);
+  bp.box(0, 0, 0, 10, 0, 8, B.GRAVEL);
+  bp.box(1, 0, 1, 8, 0, 6, B.CONCRETE);
+  bp.ring(1, 1, 1, 8, 5, 6, B.CONCRETE);
+  for (const x of [2, 4, 5, 7]) for (let y = 2; y <= 4; y++) bp.set(x, y, 6, B.GLASS);
+  bp.box(1, 6, 1, 8, 6, 6, B.STEEL_BLOCK);
+  // twin cooling chimneys
+  for (const [x, z] of [[2, 2], [6, 3]]) { bp.box(x, 7, z, x + 1, 12, z + 1, B.BRICK); bp.set(x, 13, z, B.DARK_STONE); }
+  // generators & coal heap
+  bp.set(3, 1, 3, B.STEEL_BLOCK); bp.set(3, 2, 3, B.COPPER_ROOF); bp.set(6, 1, 3, B.STEEL_BLOCK); bp.set(6, 2, 3, B.COPPER_ROOF);
+  bp.set(4, 4, 3, B.LAMP);
+  bp.box(9, 1, 1, 10, 1, 4, B.COAL_ORE); bp.set(9, 2, 2, B.COAL_ORE);
+  // transformer yard
+  bp.set(10, 1, 7, B.STEEL_BLOCK); bp.set(10, 2, 7, B.STEEL_BLOCK); bp.set(10, 3, 7, B.LAMP);
+  for (let y = 1; y <= 3; y++) bp.del(5, y, 6);
+  bp.del(4, 2, 6); bp.del(4, 3, 6);
+  bp.point('door', 5, 1, 7);
+  bp.point('inside', 5, 1, 3);
+  bp.point('machine', 4, 1, 3); bp.point('machine', 8, 1, 2);
+  return bp;
+}
+
+function teslaTower(v) {
+  const bp = new BP(5, 5);
+  bp.box(0, 0, 0, 4, 0, 4, B.CONCRETE);
+  bp.box(1, 1, 1, 3, 1, 3, B.CONCRETE);
+  bp.box(2, 2, 2, 2, 8, 2, B.STEEL_BLOCK);
+  for (const y of [3, 5, 7]) { bp.set(1, y, 2, B.COPPER_ROOF); bp.set(3, y, 2, B.COPPER_ROOF); bp.set(2, y, 1, B.COPPER_ROOF); bp.set(2, y, 3, B.COPPER_ROOF); }
+  bp.box(1, 9, 1, 3, 9, 3, B.BRONZE_BLOCK);
+  bp.set(2, 10, 2, B.LAMP);
+  bp.point('door', 2, 1, 4);
+  bp.point('top', 2, 10, 2);
+  return bp;
+}
+
+function searchlight(v) {
+  const bp = new BP(3, 3);
+  bp.box(0, 0, 0, 2, 0, 2, B.CONCRETE);
+  bp.posts(0, 0, 2, 2, 1, 4, B.STEEL_BLOCK);
+  bp.box(0, 5, 0, 2, 5, 2, B.STEEL_BLOCK);
+  bp.set(1, 6, 1, B.LAMP);
+  bp.point('door', 1, 1, 2);
+  bp.point('top', 1, 6, 1);
+  return bp;
+}
+
+function crystalPalace(v) {
+  const bp = new BP(15, 9);
+  bp.box(0, 0, 0, 14, 0, 8, B.PATH);
+  bp.box(1, 0, 1, 13, 0, 7, B.MARBLE);
+  // glass hall with steel ribs
+  for (let x = 1; x <= 13; x++) for (let z = 1; z <= 7; z++) for (let y = 1; y <= 4; y++) {
+    const edge = x === 1 || x === 13 || z === 1 || z === 7;
+    if (!edge) continue;
+    bp.set(x, y, z, (x % 3 === 1 || z === 1 && x % 3 === 1) ? B.STEEL_BLOCK : B.GLASS);
+  }
+  // barrel vault
+  for (let x = 1; x <= 13; x++) {
+    const rib = x % 3 === 1 ? B.STEEL_BLOCK : B.GLASS;
+    bp.set(x, 5, 1, rib); bp.set(x, 5, 7, rib);
+    bp.set(x, 6, 2, rib); bp.set(x, 6, 6, rib);
+    for (let z = 3; z <= 5; z++) bp.set(x, 7, z, rib);
+  }
+  // transept dome in the middle
+  bp.box(6, 8, 3, 8, 8, 5, B.GLASS); bp.set(7, 9, 4, B.LAMP);
+  for (let y = 1; y <= 3; y++) bp.del(7, y, 7);
+  bp.set(7, 4, 7, B.STEEL_BLOCK);
+  // exhibits
+  bp.set(4, 1, 4, B.CANNON); bp.set(10, 1, 4, B.BRONZE_BLOCK); bp.set(10, 2, 4, B.LAMP); bp.set(7, 1, 3, B.MARBLE); bp.set(7, 2, 3, B.LAMP);
+  bp.point('door', 7, 1, 8);
+  bp.point('inside', 7, 1, 5);
+  return bp;
+}
+
+function eiffelTower(v) {
+  const bp = new BP(9, 9);
+  bp.box(0, 0, 0, 8, 0, 8, B.PATH);
+  const S = B.STEEL_BLOCK;
+  // four legs converging
+  const legs = [[0, 0], [7, 0], [0, 7], [7, 7]];
+  for (let y = 1; y <= 8; y++) {
+    const k = Math.min(3, Math.floor(y / 2.5));
+    for (const [lx, lz] of legs) {
+      const x = Math.min(8, lx === 0 ? lx + k : lx - k + 1), z = Math.min(8, lz === 0 ? lz + k : lz - k + 1);
+      const sx = lx === 0 ? 1 : -1, sz = lz === 0 ? 1 : -1;
+      bp.set(x, y, z, S);
+      if (y <= 6) { bp.set(x + sx, y, z, S); bp.set(x, y, z + sz, S); }
+    }
+  }
+  // arches between the legs
+  for (let x = 2; x <= 6; x++) { bp.set(x, 4, 1, S); bp.set(x, 4, 7, S); }
+  for (let z = 2; z <= 6; z++) { bp.set(1, 4, z, S); bp.set(7, 4, z, S); }
+  // first platform
+  bp.ring(1, 6, 1, 7, 6, 7, S);
+  bp.ring(2, 9, 2, 6, 9, 6, S);
+  // spire
+  for (let y = 10; y <= 16; y++) { bp.set(3, y, 3, S); bp.set(5, y, 3, S); bp.set(3, y, 5, S); bp.set(5, y, 5, S); }
+  bp.ring(3, 17, 3, 5, 17, 5, S);
+  for (let y = 18; y <= 23; y++) bp.set(4, y, 4, S);
+  bp.set(4, 24, 4, B.LAMP);
+  bp.set(4, 17, 4, B.LAMP); bp.set(4, 6, 4, B.LAMP);
+  bp.point('door', 4, 1, 8);
+  bp.point('inside', 4, 1, 4);
+  return bp;
+}
+
 function rotXZ(x, z, w, d, rot) {
   switch (rot & 3) {
     case 1: return [d - 1 - z, x];
@@ -763,13 +910,43 @@ def('arsenal', {
   cost: { stone: 700, iron: 250, gold: 200, coal: 120 }, hp: 4000, age: 4, wonder: true, category: 'wonder', maxCount: 1, design: arsenal,
 });
 
-export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'laboratory', 'forge', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mage_tower', 'wall', 'stone_wall',
-  'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal'];
+def('factory', {
+  name: 'Завод', desc: 'Инженеры плавят сталь: 3 железа + 2 угля → 2 стали. С электричеством работает в полтора раза быстрее.',
+  cost: { stone: 300, iron: 120, wood: 100, coal: 40 }, hp: 1400, age: 5, research: 'steam_power', jobs: { engineer: 3 }, category: 'economy', design: factory, power: 20,
+});
+def('mg_nest', {
+  name: 'Пулемётное гнездо', desc: 'Пулемётчик в укрытии из мешков косит зомби очередями.',
+  cost: { stone: 80, iron: 60, steel: 10 }, hp: 900, age: 5, research: 'machine_guns', jobs: { gunner: 1 }, category: 'military', design: mgNest,
+});
+def('power_plant', {
+  name: 'Электростанция', desc: 'Инженеры жгут уголь и дают 120 единиц энергии (1 уголь в 8 с). Энергия питает заводы, прожекторы и тесла-башни.',
+  cost: { steel: 60, stone: 300, iron: 100 }, hp: 1600, age: 6, research: 'electricity', jobs: { engineer: 2 }, category: 'economy', design: powerPlant, powerOut: 120,
+});
+def('tesla_tower', {
+  name: 'Тесла-башня', desc: 'Бьёт цепной молнией до 5 зомби. Нужно 30 энергии, без неё молчит.',
+  cost: { steel: 50, iron: 60, crystal: 10 }, hp: 1000, age: 6, research: 'tesla', category: 'military', design: teslaTower, power: 30,
+});
+def('searchlight', {
+  name: 'Прожектор', desc: 'Освещает округу и слепит зомби: в луче они двигаются медленнее. Нужно 10 энергии.',
+  cost: { steel: 15, iron: 20 }, hp: 500, age: 6, research: 'electricity', category: 'defense', design: searchlight, power: 10,
+});
+def('crystal_palace', {
+  name: 'Хрустальный дворец', desc: 'Чудо индустриальной эры. Все жители работают на 20% быстрее.',
+  cost: { steel: 150, stone: 600, iron: 300, gold: 250 }, hp: 5000, age: 5, wonder: true, category: 'wonder', maxCount: 1, design: crystalPalace,
+});
+def('eiffel_tower', {
+  name: 'Железная башня', desc: 'Чудо эпохи электричества. +150 энергии в сеть, вся оборона наносит на 15% больше урона.',
+  cost: { steel: 300, iron: 300, gold: 300, crystal: 40 }, hp: 5000, age: 6, wonder: true, category: 'wonder', maxCount: 1, design: eiffelTower, powerOut: 150,
+});
+
+export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'factory', 'power_plant', 'laboratory', 'forge', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mg_nest',
+  'tesla_tower', 'searchlight', 'mage_tower', 'wall', 'stone_wall', 'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal', 'crystal_palace', 'eiffel_tower'];
 
 export const RESEARCH_LABELS = {
   masonry: 'Каменная кладка', agriculture: 'Земледелие', mining: 'Горное дело', smithing: 'Кузнечное дело', archery: 'Стрельба из лука',
   mechanics: 'Механика', fortification: 'Фортификация', gunpowder: 'Порох', ballistics: 'Баллистика', alchemy: 'Алхимия', arcana: 'Тайные искусства',
   frost_magic: 'Магия льда', storm_magic: 'Магия бури', restoration: 'Восстановление', crystal_forging: 'Кристальная ковка', meteor: 'Метеоры',
+  steam_power: 'Паровая машина', machine_guns: 'Пулемёты', electricity: 'Электричество', tesla: 'Токи Теслы',
 };
 
 export { rotXZ };

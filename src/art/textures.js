@@ -684,6 +684,28 @@ GEN.copper_roof = (p, r) => {
   });
 };
 
+GEN.concrete = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  p.map((x, y) => {
+    let v = 4 + (n(x, y) - 0.5) * 1.3;
+    if (y === 15 || y === 31) v -= 1.1;              // formwork seams
+    if (y === 16 || y === 0) v += 0.4;
+    return rampDither(P.stone.map(c => shift(c, 0.22)), v, x, y, 0.5);
+  });
+  for (let i = 0; i < 10; i++) p.shade(r.int(0, 31), r.int(0, 31), -0.25);   // air pockets
+};
+GEN.steel_side = (p, r) => metalPlates(p, r, P.iron.map(c => shift(c, -0.08)));
+GEN.steel_top = (p, r) => metalPlates(p, r, P.iron);
+GEN.lamp = (p, r) => {
+  p.map((x, y) => {
+    const e = Math.min(x, y, 31 - x, 31 - y);
+    if (e < 2) return rampAt(P.ironD, e === 0 ? 1 : 3);
+    const d = Math.hypot(x - 15.5, y - 15.5) / 14;
+    return rampAt(P.glow, 6 - d * 2.2);
+  });
+  for (let i = 4; i < 28; i += 8) { for (let k = 2; k < 30; k++) { p.set(i, k, P.ironD[4]); } }
+};
+
 GEN.cannon_side = (p, r) => {
   // dark iron barrel seen from the side, on a wooden carriage
   const n = tileFbm(r, S, [8, 16], 0.6);

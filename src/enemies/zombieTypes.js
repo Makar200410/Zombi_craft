@@ -78,6 +78,17 @@ export const ZOMBIE_TYPES = {
     height: 1.8, width: 0.9, radius: 0.28, aggro: 20, knock: 3, eye: 0x9aff20, groanPitch: 1.3, loot: 0.55,
     leap: 11, skinBase: 'runner', tint: [0x6ab040, 0.3], minWave: 7,
   },
+  // ---- industrial & electric ages (appear by the village's age, not by wave number)
+  mutant: {
+    base: 'walker', name: 'Мутант', hp: 95, speed: 2.1, dmg: 13, cd: 0.9, reach: 1.1, blockDps: 3, bldDmg: 8,
+    height: 2.2, width: 1.3, radius: 0.38, aggro: 16, knock: 6, eye: 0x9aff20, groanPitch: 0.7, loot: 0.8,
+    regen: 0.025, skinBase: 'brute', tint: [0x7aa030, 0.35], trail: [0x9aff40, 0x5a9a20],
+  },
+  conductor: {
+    base: 'runner', name: 'Проводник', hp: 40, speed: 3.2, dmg: 7, cd: 0.7, reach: 0.9, blockDps: 1, bldDmg: 6,
+    height: 1.85, width: 1, radius: 0.3, aggro: 20, knock: 2, eye: 0x60ffff, groanPitch: 1.3, loot: 0.7,
+    immune: 'storm', noSlow: true, skinBase: 'runner', tint: [0x40d0ff, 0.4], trail: [0x9af0ff, 0xffffff],
+  },
 };
 
 export const ZOMBIE_TYPE_IDS = Object.keys(ZOMBIE_TYPES);

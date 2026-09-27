@@ -693,12 +693,13 @@ function* towerPost(v, role) {
       type = gun ? 'bullet' : 'arrow'; dmg = (gun ? 30 : 8) * bal; extra = {};
     }
     if (role === 'cannon') { range = 34; cooldown = 4.2; type = 'bomb'; dmg = 48; extra = { splash: 3.5 }; }
-    dmg *= (b.levelWorkBonus || 1) * (vil.hasWonder('colossus') ? 1.25 : 1);
+    if (role === 'mg') { range = 26; cooldown = 0.22; type = 'bullet'; dmg = 9; extra = {}; }
+    dmg *= (b.levelWorkBonus || 1) * (vil.hasWonder('colossus') ? 1.25 : 1) * (vil.hasWonder('eiffel_tower') ? 1.15 : 1);
     if (vil.hasWonder('arsenal')) { range *= 1.25; cooldown *= 0.8; }
     const z = vil.nearestZombie(v.eye, range, true);
-    if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : role === 'cannon' ? 'Заряжает пушку' : 'На посту'; v.model.setLoop(null); continue; }
+    if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : role === 'cannon' ? 'Заряжает пушку' : role === 'mg' ? 'Держит сектор' : 'На посту'; v.model.setLoop(null); continue; }
     v.face(z.position);
-    v.task = role === 'mage' ? (type === 'fireball' ? 'Колдует огненный шар' : 'Колдует ледяную стрелу') : role === 'cannon' ? 'Стреляет из пушки' : (type === 'bullet' ? 'Стреляет из мушкета' : 'Стреляет из лука');
+    v.task = role === 'mage' ? (type === 'fireball' ? 'Колдует огненный шар' : 'Колдует ледяную стрелу') : role === 'cannon' ? 'Стреляет из пушки' : role === 'mg' ? 'Стреляет из пулемёта' : (type === 'bullet' ? 'Стреляет из мушкета' : 'Стреляет из лука');
     if (role !== 'mage') v.model.setLoop('aim');
     if (cd <= 0) {
       cd = cooldown;
@@ -723,8 +724,8 @@ function* gunnerBrain(v) {
   v.updateTool();
   while (true) {
     const b = v.workplace;
-    if (!b || b.type !== 'cannon_tower' || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт бастион'); continue; }
-    yield* towerPost(v, 'cannon');
+    if (!b || (b.type !== 'cannon_tower' && b.type !== 'mg_nest') || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт бастион'); continue; }
+    yield* towerPost(v, b.type === 'mg_nest' ? 'mg' : 'cannon');
   }
 }
 
@@ -754,8 +755,36 @@ function* merchantBrain(v) {
   }
 }
 
+/** Engineer: runs the factory (iron + coal → steel) or keeps a power plant's boilers going. */
+function* engineerBrain(v) {
+  const game = v.game, vil = v.village;
+  v.updateTool();
+  while (true) {
+    const b = v.workplace;
+    if (!b || (b.type !== 'factory' && b.type !== 'power_plant') || !b.isComplete) { yield* waitForWorkplace(v, 'Ждёт завод'); continue; }
+    const spots = b.points.machine || [b.points.inside?.[0] || b.door];
+    const m = spots[(v.id + (v._mN = (v._mN || 0) + 1)) % spots.length];
+    v.task = b.type === 'factory' ? 'Идёт к станку' : 'Идёт к котлам';
+    yield* v.walkTo(m, 1.2, { maxTime: 25 });
+    if (b.type === 'power_plant') {
+      v.task = (game.state.resources.coal || 0) > 0 ? 'Подбрасывает уголь в топку' : 'Нет угля — котлы остывают';
+      yield* v.work('harvest', 6, 0.7, () => game.particles?.emit({ pos: { x: m.x, y: m.y + 1.2, z: m.z }, count: 2, colors: [0xff9a30, 0xffd060], additive: true, speed: 1, dir: { x: 0, y: 1.5, z: 0 }, gravity: -0.5, life: 0.6, size: 0.1 }));
+      continue;
+    }
+    const res = game.state.resources;
+    if ((res.iron || 0) < 3 || (res.coal || 0) < 2) { v.task = 'Ждёт железо и уголь'; yield* v.wait(5); continue; }
+    v.task = 'Плавит сталь';
+    const boost = 1 + 0.5 * (vil.industry?.powered || 0) * (b.def.power ? 1 : 0);
+    yield* v.work('harvest', 12 / (v.workSpeed * boost), 0.6, () => game.particles?.emit({ pos: { x: m.x, y: m.y + 1.2, z: m.z }, count: 3, colors: [0xffc060, 0xff7a20, 0xffffff], additive: true, speed: 2, gravity: 6, life: 0.4, size: 0.08 }));
+    if ((res.iron || 0) >= 3 && (res.coal || 0) >= 2) {
+      game.state.addAll({ iron: -3, coal: -2, steel: 2 });
+      game.particles?.emit({ pos: { x: m.x, y: m.y + 2, z: m.z }, count: 5, colors: [0x9cc4e0, 0xe8f6ff], additive: true, speed: 1.2, dir: { x: 0, y: 1.5, z: 0 }, gravity: 2, life: 0.8, size: 0.12 });
+    }
+  }
+}
+
 const BRAINS = {
-  merchant: merchantBrain, gunner: gunnerBrain,
+  merchant: merchantBrain, gunner: gunnerBrain, engineer: engineerBrain,
   idle: idleBrain, builder: builderBrain, woodcutter: woodcutterBrain, farmer: farmerBrain, miner: minerBrain,
   blacksmith: blacksmithBrain, researcher: researcherBrain, guard: guardBrain, mage: mageBrain,
 };

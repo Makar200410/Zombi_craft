@@ -405,6 +405,7 @@ const RES_DRAW = {
     for (const [x, y] of [[22, 6], [25, 6], [22, 4], [25, 4], [23, 3], [24, 2]]) p.set(x, y, hex('#f0c850'));
   },
   iron(p) { ingot(p, R.iron); },
+  steel(p) { ingot(p, hexes(['#1c2a3a', '#34506a', '#5a82a4', '#9cc4e0', '#e8f6ff'])); p.set(18, 11, hex('#ffffff')); p.set(19, 11, hex('#cfefff')); },
   iron_ore(p) { oreChunk(p, ['#6a4020', '#a8683a', '#d89a64', '#f2c89a']); },
   gold_ore(p) { oreChunk(p, ['#7a5008', '#c08a14', '#f0c030', '#fff0a0']); },
   gold(p) { ingot(p, R.gold); p.set(24, 5, hex('#ffffff')); p.set(23, 5, hex('#fff4b0')); p.set(25, 5, hex('#fff4b0')); p.set(24, 4, hex('#fff4b0')); p.set(24, 6, hex('#fff4b0')); },

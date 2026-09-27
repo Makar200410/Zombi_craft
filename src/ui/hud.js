@@ -67,6 +67,9 @@ export class Hud {
     this.popN = h('span.zc-chip-n', '0/0');
     this.popChip = h('div.zc-chip.pop', { title: 'Жители / лимит населения' }, img(resourceIcon('population')), this.popN);
     this.resbar.appendChild(this.popChip);
+    this.powN = h('span.zc-chip-n', '0');
+    this.powChip = h('div.zc-chip.pow', { title: 'Энергия: выработка / потребление', style: 'display:none' }, img(glyph('bolt')), this.powN);
+    this.resbar.appendChild(this.powChip);
 
     // --- top-right: minimap + clock
     this.dial = h('canvas.zc-dial', { width: 64, height: 64 });
@@ -206,11 +209,15 @@ export class Hud {
         setText(c.n, fmtNum(Math.round(c.shown)));
       }
       // raw ores only take space in the bar while you actually have some
-      if (r.endsWith('_ore')) { const show = target > 0; if (c._vis !== show) { c._vis = show; c.el.style.display = show ? '' : 'none'; } }
+      if (r.endsWith('_ore') || r === 'steel') { const show = target > 0; if (c._vis !== show) { c._vis = show; c.el.style.display = show ? '' : 'none'; } }
     }
     const alive = (g.village?.villagers || []).filter(v => !v.dead).length;
     const cap = g.village?.popCap ?? 0;
     setText(this.popN, alive + '/' + cap);
+    const ind = g.village?.industry;
+    const showPow = !!ind && (ind.supply > 0 || ind.demand > 0);
+    if (this._powVis !== showPow) { this._powVis = showPow; this.powChip.style.display = showPow ? '' : 'none'; }
+    if (showPow) { setText(this.powN, ind.supply + '/' + ind.demand); toggle(this.powChip, 'low', ind.ratio < 1); }
     toggle(this.popChip, 'full', cap > 0 && alive >= cap);
 
     this.updateClock(dt);

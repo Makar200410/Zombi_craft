@@ -61,8 +61,8 @@ export class ResearchPanel {
     this.svg.setAttribute('width', W); this.svg.setAttribute('height', H);
     this.svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     // tier labels
-    const tiers = ['I', 'II', 'III', 'IV', 'V'];
-    for (let i = 0; i < 5; i++) this.tree.appendChild(h('div.zc-rs-tier', { style: { left: (PAD + i * COLW) + 'px', width: NW + 'px' } }, 'Эпоха ' + tiers[i]));
+    const tiers = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+    for (let i = 0; i < tiers.length; i++) this.tree.appendChild(h('div.zc-rs-tier', { style: { left: (PAD + i * COLW) + 'px', width: NW + 'px' } }, 'Эпоха ' + tiers[i]));
     // links
     this.links = [];
     for (const id of TECH_ORDER) {

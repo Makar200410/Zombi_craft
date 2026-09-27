@@ -7,6 +7,7 @@ import { mulberry32 } from '../core/rng.js';
 import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS } from './buildings.js';
 import { Building } from './Building.js';
 import { AGES } from '../systems/ages.js';
+import { Industry } from './industry.js';
 import { Villager } from './Villager.js';
 import { Placement } from './placement.js';
 import { GhostLayer, Scaffold, makeRing, makeRect, disposeObj, jobLabelTexture } from './visuals.js';
@@ -29,6 +30,7 @@ export class Village {
     this.townHall = null;
     this.nextBuildingId = 1;
     this.armory = { level: 0, progress: 0 };
+    this.industry = new Industry(this);
     this.researchPoints = 0;
     this.spawnTimer = SPAWN_INTERVAL * 0.5;
     this.spawnPoint = new THREE.Vector3();
@@ -365,7 +367,7 @@ export class Village {
     if (b.type === 'town_hall') {
       const c = { wood: 80 * L, stone: 80 * L, gold: 10 * L };
       if (L >= 4) c.iron = 20 * (L - 3);
-      if (L >= 6) c.crystal = 10 * (L - 5);
+      if (L >= 6) { c.crystal = 10 * (L - 5); c.steel = 25 * (L - 5); }
       return c;
     }
     const c = {};
@@ -373,6 +375,7 @@ export class Village {
     if (L >= 2) c.iron = (c.iron || 0) + 3 * (L - 1);
     if (L >= 3) c.gold = (c.gold || 0) + 2 * (L - 2);
     if (L >= 5) c.crystal = (c.crystal || 0) + 3 * (L - 4);
+    if (L >= 6) c.steel = (c.steel || 0) + 5 * (L - 5);
     return c;
   }
   upgradeTime(b) { return (b.type === 'town_hall' ? 40 : 20) + 20 * (b.level || 1); }
@@ -1134,6 +1137,7 @@ export class Village {
     if (this._tick >= 1) { this.tick1(this._tick); this._tick = 0; }
     this._ghostT -= dt;
     if (this.ghostsDirty && this._ghostT <= 0) { this.rebuildGhosts(); this._ghostT = 0.2; }
+    this.industry.update(dt);
     this.updateSelection();
     this.updateLabels();
   }
@@ -1141,6 +1145,7 @@ export class Village {
   tick1(dt) {
     const st = this.game.state;
     this.tickUpgrades(dt);
+    this.industry.tick(dt);
     // crops grow (≈75 s from seed to ripe, faster with agriculture)
     const stage = st.researchDone.has('agriculture') ? 16 : 25;
     const w = this.game.world;

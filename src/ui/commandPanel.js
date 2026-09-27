@@ -509,6 +509,8 @@ export class CommandPanel {
       if (b.type === 'town_hall') bits.push('Строителей до ' + (this.game.village?.builderCap ?? '—'));
       if (b.popBonus) bits.push('Население +' + b.popBonus);
       if ((b.level || 1) > 1 && b.jobSlots) bits.push('Работа +' + Math.round(((b.levelWorkBonus || 1) - 1) * 100) + '%');
+      const ind = this.game.village?.industry;
+      if (ind && (b.def.power || b.def.powerOut)) bits.push('Энергия в сети ' + ind.supply + '/' + ind.demand + (b.def.power ? (ind.powered >= 1 ? ' ✓' : ind.powered > 0 ? ' — не хватает' : ' — нет питания') : ''));
       setText(I.lvl, bits.join(' · '));
     }
     if (I.up) {

@@ -226,6 +226,8 @@ export class Zombie extends Entity {
         }
       }
     }
+    if (T.regen && this.hp > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + this.maxHp * T.regen * dt);
+    if (T.noSlow) this.slowTimer = 0;
     if (T.trail && !this.far) {
       this.trailT -= dt;
       if (this.trailT <= 0) { this.trailT = 0.12; game.particles?.emit({ pos: this.center, box: 0.3, count: 1, colors: T.trail, additive: this.type === 'burning', speed: 0.4, dir: { x: 0, y: this.type === 'burning' ? 1.5 : -0.4, z: 0 }, gravity: this.type === 'burning' ? -1 : 2, life: 0.7, size: 0.16 }); }
