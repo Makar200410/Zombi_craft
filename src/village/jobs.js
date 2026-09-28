@@ -435,6 +435,45 @@ function* blacksmithBrain(v) {
   }
 }
 
+// ---------------------------------------------------------------- smelter (iron age)
+function* smelterBrain(v) {
+  const vil = v.village, game = v.game, st = game.state;
+  while (true) {
+    const f = v.workplace;
+    if (!f || f.type !== 'smelter' || !f.isComplete) { yield* waitForWorkplace(v, 'Ждёт плавильню'); continue; }
+    const spots = f.points.work || [f.door];
+    const spot = spots[Math.max(0, f.workers.indexOf(v)) % spots.length];
+    yield* v.walkTo(spot, 0.8, { maxTime: 30 });
+    const furnace = vil.findBlockNear(spot, B.FURNACE, 3) || f.center;
+    v.face({ x: furnace.x + 0.5, z: furnace.z + 0.5 });
+    const F = { x: furnace.x + 0.5, y: furnace.y + 1, z: furnace.z + 0.5 };
+    const r = st.resources;
+    const ore = (r.coal || 0) >= 1 ? ((r.iron_ore || 0) >= 3 ? 'iron' : (r.gold_ore || 0) >= 3 ? 'gold' : null) : null;
+    const sparks = () => {
+      game.particles?.emit({ pos: F, count: 6, colors: [0xff6a10, 0xffb040, 0xffe080], additive: true, speed: 1.6, dir: { x: 0, y: 2.4, z: 0 }, gravity: -0.5, life: 0.8, size: 0.14 });
+      if (rnd() < 0.3) game.audio?.play('fire_impact', { pos: F, volume: 0.25, pitch: 0.8 });
+    };
+    if (ore) {
+      v.task = ore === 'iron' ? 'Выплавляет железо' : 'Выплавляет золото';
+      yield* v.work('hammer', 7 / v.workSpeed, 0.8, sparks);
+      if (st.spend({ [ore + '_ore']: 3, coal: 1 })) {
+        const n = 4 + ((f.level || 1) >= 3 ? 1 : 0);
+        st.add(ore, n);
+        vil.bus.emit('village:gain', { pos: F, text: '+' + n, res: ore });
+      }
+      continue;
+    }
+    if ((r.coal || 0) < 12 && (r.wood || 0) >= 20) {
+      v.task = 'Выжигает древесный уголь';
+      yield* v.work('hammer', 9 / v.workSpeed, 1.1, () => game.particles?.emit({ pos: F, count: 4, colors: [0x3a3632, 0x57524c], speed: 0.6, dir: { x: 0, y: 1.6, z: 0 }, gravity: -0.4, life: 1.6, size: 0.4, alpha: 0.5 }));
+      if (st.spend({ wood: 4 })) { st.add('coal', 2); vil.bus.emit('village:gain', { pos: F, text: '+2', res: 'coal' }); }
+      continue;
+    }
+    v.task = 'Ждёт руду и уголь';
+    yield* v.wait(4);
+  }
+}
+
 // ---------------------------------------------------------------- researcher
 function* researcherBrain(v) {
   const vil = v.village, game = v.game;
@@ -792,5 +831,5 @@ function* engineerBrain(v) {
 const BRAINS = {
   merchant: merchantBrain, gunner: gunnerBrain, engineer: engineerBrain,
   idle: idleBrain, builder: builderBrain, woodcutter: woodcutterBrain, farmer: farmerBrain, miner: minerBrain,
-  blacksmith: blacksmithBrain, researcher: researcherBrain, guard: guardBrain, mage: mageBrain,
+  blacksmith: blacksmithBrain, smelter: smelterBrain, researcher: researcherBrain, guard: guardBrain, mage: mageBrain,
 };

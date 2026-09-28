@@ -11,7 +11,7 @@ export const AGES = [
     desc: 'Первые города: черепица вместо соломы, здания до 3 уровня.' },
   { id: 'iron', name: 'Железный век', maxLevel: 4, color: '#9aa4ad',
     req: { th: 3, techs: ['smithing', 'fortification'] }, cost: { stone: 300, iron: 40, food: 150 },
-    desc: 'Каменная кладка, кузницы и гарнизоны. Здания до 4 уровня.' },
+    desc: 'Каменная кладка, плавильни, кузницы и гарнизоны. Здания до 4 уровня.' },
   { id: 'medieval', name: 'Средневековье', maxLevel: 5, color: '#c9b36a',
     req: { th: 4, techs: ['mechanics', 'arcana'] }, cost: { stone: 500, iron: 100, gold: 40, crystal: 10 },
     desc: 'Крепости, магия и механика. Здания до 5 уровня.' },

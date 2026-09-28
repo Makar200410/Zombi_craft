@@ -359,6 +359,37 @@ function stoneWall(v) {
 // ---------------------------------------------------------------- rotation & caching
 // ---------------------------------------------------------------- civilisation-age designs
 
+/** Iron-age smelter: a bloomery furnace with a tall stack under a shingle shed, bellows, ore and charcoal piles. */
+function smelter(v) {
+  const bp = new BP(7, 7);
+  bp.box(0, 0, 0, 6, 0, 6, B.GRAVEL);
+  bp.box(2, 0, 4, 4, 0, 6, B.PATH);
+  // open shed on log posts
+  bp.posts(0, 0, 6, 3, 1, 3, B.LOG);
+  bp.box(0, 4, 0, 6, 4, 0, B.SHINGLES); bp.box(0, 4, 3, 6, 4, 3, B.SHINGLES);
+  bp.box(0, 5, 1, 6, 5, 2, B.SHINGLES); bp.box(0, 5, 1, 0, 5, 2, B.LOG); bp.box(6, 5, 1, 6, 5, 2, B.LOG);
+  // bloomery: stone hearth, glowing mouth facing the yard, clay shaft and a stack through the roof
+  bp.box(2, 1, 1, 4, 2, 2, B.COBBLESTONE);
+  bp.set(3, 1, 2, B.FURNACE); bp.set(3, 2, 2, B.FURNACE);
+  bp.box(2, 3, 1, 4, 3, 2, B.DARK_STONE);
+  bp.box(3, 4, 1, 3, 8, 1, B.DARK_STONE); bp.del(3, 5, 1); bp.box(3, 5, 1, 3, 5, 1, B.DARK_STONE);
+  bp.set(3, 9, 1, B.IRON_BLOCK);
+  // second, smaller furnace and the leather bellows
+  bp.set(5, 1, 1, B.FURNACE); bp.set(5, 2, 1, B.COBBLESTONE);
+  bp.set(1, 1, 2, B.HIDE); bp.set(1, 1, 1, B.LOG); bp.set(1, 2, 1, B.HIDE);
+  // ore, charcoal and firewood in the yard
+  bp.set(0, 1, 5, B.IRON_ORE); bp.set(0, 1, 6, B.IRON_ORE); bp.set(1, 1, 6, B.GOLD_ORE); bp.set(0, 2, 6, B.IRON_ORE);
+  bp.set(6, 1, 5, B.COAL_ORE); bp.set(5, 1, 6, B.COAL_ORE);
+  bp.box(6, 1, 6, 6, 2, 6, B.LOG);
+  bp.set(6, 1, 4, B.TORCH); bp.set(0, 1, 4, B.TORCH);
+  bp.set(1, 1, 3, B.IRON_BLOCK);            // anvil for the blooms
+  bp.point('door', 3, 1, 6);
+  bp.point('work', 3, 1, 3);
+  bp.point('work', 5, 1, 2);
+  bp.point('smoke', 3, 10, 1);
+  return bp;
+}
+
 function granary(v) {
   const bp = new BP(7, 9);
   bp.box(0, 0, 0, 6, 0, 8, B.PATH);
@@ -1073,6 +1104,10 @@ def('stone_wall', {
 });
 
 // ---- civilisation ages (age = index into AGES, see systems/ages.js)
+def('smelter', {
+  name: 'Плавильня', desc: 'Плавильщики выплавляют металл выгоднее кузнеца: 3 руды и уголь дают 4 слитка железа или золота. Когда угля мало, выжигают древесный уголь из дерева.',
+  cost: { stone: 70, wood: 50, iron: 10 }, hp: 550, age: 2, jobs: { smelter: 2 }, category: 'economy', maxCount: 3, design: smelter, storage: ['iron_ore', 'gold_ore', 'coal', 'iron', 'gold'],
+});
 def('granary', {
   name: 'Амбар', desc: 'Хранилище урожая: фермы дают на 25% больше еды (не суммируется), рядом удобно сдавать еду и дерево.',
   cost: { wood: 60, stone: 40 }, hp: 450, age: 1, category: 'economy', maxCount: 2, design: granary, storage: ['food', 'wood'],
@@ -1198,7 +1233,7 @@ def('singularity', {
   cost: { steel: 1500, uranium: 200, gold: 2000, crystal: 300 }, hp: 8000, age: 9, wonder: true, category: 'wonder', maxCount: 1, design: singularity,
 });
 
-export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'factory', 'power_plant', 'laboratory', 'forge', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mg_nest',
+export const BUILDING_ORDER = ['house', 'builder_hut', 'lumber_camp', 'farm', 'storehouse', 'mine', 'granary', 'market', 'factory', 'power_plant', 'laboratory', 'forge', 'smelter', 'watchtower', 'barracks', 'castle', 'cannon_tower', 'mg_nest',
   'tesla_tower', 'searchlight', 'reactor', 'bunker', 'rocket_battery', 'computer_center', 'radar', 'turret', 'drone_hub', 'ai_core', 'laser_tower', 'nanofactory', 'shield_generator', 'mage_tower', 'wall', 'stone_wall',
   'stonehenge', 'ziggurat', 'colossus', 'cathedral', 'arsenal', 'crystal_palace', 'eiffel_tower', 'cosmodrome', 'global_network', 'singularity'];
 

@@ -40,6 +40,7 @@ export const QUESTS = [
   { id: 'q_age2', age: 1, title: 'Железный век', desc: 'Перейдите в Железный век в окне ратуши.', goals: [AGE(2)], reward: { iron: 30, gold: 30 } },
   // ---- III. Iron age
   { id: 'q_towers', age: 2, title: 'Дозор', desc: 'Изучите стрельбу из лука и поставьте две сторожевые вышки с лучниками.', goals: [R('archery'), B('watchtower', 2)], reward: { wood: 100 } },
+  { id: 'q_smelter', age: 2, title: 'Железо рекой', desc: 'Постройте плавильню и поставьте туда двух плавильщиков: из 3 руды и угля выходит 4 слитка, а без угля они выжигают его из дерева.', goals: [B('smelter'), J('smelter', 2)], reward: { iron_ore: 30, coal: 20 } },
   { id: 'q_mech', age: 2, title: 'Механика', desc: 'Шестерни и блоки ускоряют стройку.', goals: [R('mechanics'), J('builder', 5)], reward: { iron: 30 } },
   { id: 'q_arcana', age: 2, title: 'Тайные знания', desc: 'Откройте магию и башню мага.', goals: [R('arcana'), B('mage_tower'), J('mage', 1)], reward: { crystal: 10, gold: 20 } },
   { id: 'q_up3', age: 2, title: 'Каменный город', desc: 'Улучшите пять зданий до 3 уровня.', goals: [{ t: 'level', n: 5, lv: 3 }], reward: { stone: 150, gold: 40 } },
@@ -212,4 +213,4 @@ export class Quests {
   get(id) { return BY_ID[id]; }
 }
 
-const JOB_NAMES = { farmer: 'Фермеры', woodcutter: 'Лесорубы', miner: 'Шахтёры', builder: 'Строители', researcher: 'Учёные', blacksmith: 'Кузнецы', guard: 'Стражники', mage: 'Маги', merchant: 'Торговцы', gunner: 'Канониры', engineer: 'Инженеры' };
+const JOB_NAMES = { farmer: 'Фермеры', woodcutter: 'Лесорубы', miner: 'Шахтёры', builder: 'Строители', researcher: 'Учёные', blacksmith: 'Кузнецы', smelter: 'Плавильщики', guard: 'Стражники', mage: 'Маги', merchant: 'Торговцы', gunner: 'Канониры', engineer: 'Инженеры' };
