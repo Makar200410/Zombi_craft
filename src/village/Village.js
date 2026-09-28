@@ -1062,7 +1062,7 @@ export class Village {
     const to = z.center.clone();
     const dist = from.distanceTo(to);
     to.addScaledVector(z.velocity, Math.min(1.2, dist / 35));
-    const snd = { arrow: 'bow_shoot', bullet: 'musket_shot', fireball: 'fireball_cast', ice_shard: 'frost_cast', bolt: 'crossbow_shoot', lightning: 'lightning' }[type];
+    const snd = extra.sound || { arrow: 'bow_shoot', bullet: this.game.state.researchDone.has('steam_power') ? 'rifle_shot' : 'musket_shot', fireball: 'fireball_cast', ice_shard: 'frost_cast', bolt: 'crossbow_shoot', lightning: 'lightning', bomb: 'cannon_shot' }[type];
     let done = false;
     try {
       if (game.combat?.fireProjectile) { game.combat.fireProjectile(type, v, from, to, { damage: dmg, owner: v, ...extra }); done = true; }

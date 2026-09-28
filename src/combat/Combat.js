@@ -25,7 +25,7 @@ const NATURAL = new Set([B.GRASS, B.DIRT, B.STONE, B.SAND, B.GRAVEL, B.LEAVES, B
 
 const ITEM_SOUNDS = {
   bow: 'bow_shoot', crossbow: 'crossbow_shoot', musket: 'musket_shot', blunderbuss: 'blunderbuss_shot',
-  rifle: 'musket_shot', machine_gun: 'musket_shot', flamethrower: 'fireball_cast', rocket_launcher: 'blunderbuss_shot', laser_rifle: 'lightning', grenade: 'swing',
+  rifle: 'rifle_shot', machine_gun: 'mg_shot', flamethrower: 'fireball_cast', rocket_launcher: 'rocket_launch', laser_rifle: 'laser_shot', grenade: 'swing',
   staff_fire: 'fireball_cast', staff_frost: 'frost_cast', staff_storm: 'lightning', staff_life: 'heal', tome_meteor: 'meteor_fall',
 };
 

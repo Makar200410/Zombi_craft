@@ -695,8 +695,8 @@ function* towerPost(v, role) {
       type = gun ? 'bullet' : 'arrow'; dmg = (gun ? 30 : 8) * bal; extra = {};
     }
     if (role === 'cannon') { range = 34; cooldown = 4.2; type = 'bomb'; dmg = 48; extra = { splash: 3.5 }; }
-    if (role === 'mg') { range = 26; cooldown = 0.22; type = 'bullet'; dmg = 9; extra = {}; }
-    if (role === 'rocket') { range = 48; cooldown = 5.5; type = 'bomb'; dmg = 90; extra = { splash: 5 }; }
+    if (role === 'mg') { range = 26; cooldown = 0.22; type = 'bullet'; dmg = 9; extra = { sound: 'mg_shot' }; }
+    if (role === 'rocket') { range = 48; cooldown = 5.5; type = 'bomb'; dmg = 90; extra = { splash: 5, sound: 'rocket_launch' }; }
     dmg *= (b.levelWorkBonus || 1) * (vil.industry?.dmgMul || 1);
     range *= vil.industry?.rangeMul || 1;
     if (vil.hasWonder('arsenal')) cooldown *= 0.8;

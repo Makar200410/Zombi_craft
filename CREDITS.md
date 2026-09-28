@@ -36,4 +36,35 @@ The Road Ahead, Epitaph, Point of No Return, Taiko 1, Mountain Idyll.
 Лицензии: CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/ ·
 CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/ · CC0 — https://creativecommons.org/publicdomain/zero/1.0/
 
-Остальные звуки игры синтезируются процедурно (src/audio/sfx.js).
+### Из 0 A.D. (© Wildfire Games, CC BY-SA 3.0, https://github.com/0ad/0ad, binaries/data/mods/public/audio)
+
+Взмахи меча (swing_*), попадания (flesh_imp_*, flesh_stab_*), лук и стрелы (bow_*, arrow_hit_*), мушкеты
+(musket_*, blunderbuss_* — понижен тон), взрыв с обломками, шипение огня (sizzle_*), гром (thunder_*),
+крики (vhurt_*, player_death), рубка (lumber_*), стройка (construct_*), жатва (harvest_*), чавканье (spit_*),
+сигналы (research_done, level_up, wave_horn, wave_cleared, build_complete), дождь (rain_loop).
+**Звуки зомби** (zgroan_*, zhurt_*, zdie_*) — производные от male_death_*: понижен тон, замедлены, добавлены
+фильтр и эхо; распространяются на условиях CC BY-SA 3.0.
+
+### Из Unciv (https://github.com/yairm210/Unciv, docs/Credits.md)
+
+| Файл | Исходник, автор | Лицензия |
+|---|---|---|
+| rifle | uzzi_full_single — Deganoth | CC BY 4.0 |
+| mg | machine gun 001 — pgi | CC0 |
+| cannon | ceremonial cannon fire — DylanSmithSound | CC BY 4.0 |
+| rocket | Missile Strike — BaDoink | CC0 |
+| meteor | Incoming Artillery Strike — EvanBoyerman (изменён) | CC BY 3.0 |
+| crossbow | Crossbow Firing — GameWithBepis | CC0 |
+| coins | Coin — TheDJoe93 | CC0 |
+| click | Soft two-fingered snap — EathanMarkson | CC0 |
+| paper | Pencil1 — stijn | CC0 |
+| heal | Short Choir — Breviceps | CC0 |
+| whoosh_fire, whoosh_frost | fast simple chop — dave.des (изменён тон, эхо) | CC0 |
+| upgrade | Level up — Marregheriti | CC0 |
+
+### Kenney Starter Kit FPS (https://github.com/KenneyNL/starter-kit-fps), CC0 / MIT © Kenney
+
+laser_1, laser_2 (blaster, blaster_repeater).
+
+Все файлы переведены в моно, обрезаны, выровнены по громкости и перекодированы в OGG Vorbis.
+Несколько коротких звуков (мана, шорох жителей) по-прежнему синтезируются процедурно (src/audio/sfx.js).

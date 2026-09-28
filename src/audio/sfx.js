@@ -6,7 +6,7 @@
 // import time, and every public method is a no-op instead of throwing when
 // WebAudio is unavailable or the context hasn't been unlocked yet.
 
-import { SAMPLES, SAMPLE_GAIN, SFX_DIR, MUSIC_DIR, PLAYLISTS } from './library.js';
+import { SAMPLES, SAMPLE_GAIN, SFX_DIR, MUSIC_DIR, PLAYLISTS, SOUND_ALIAS } from './library.js';
 
 const STORAGE_KEY = 'zc_audio';
 const MAX_VOICES = 24;
@@ -544,8 +544,8 @@ export class Audio {
   play(name, opts = {}) {
     try {
       if (!this.ctx || !this.unlocked || !this.sfxBus) return;
-      const builder = SOUND_BUILDERS[name];
-      if (!builder) {
+      const builder = SOUND_BUILDERS[name] || SOUND_BUILDERS[SOUND_ALIAS[name]];
+      if (!builder && !SAMPLES[name]) {
         if (!this.warned.has(name)) {
           this.warned.add(name);
           console.warn(`[audio] unknown sound "${name}"`);
@@ -727,16 +727,21 @@ export class Audio {
       if (!this._rain) {
         if (v <= 0.01) return;
         const ctx = this.ctx;
-        const src = ctx.createBufferSource(); src.buffer = getNoiseBuffer(ctx); src.loop = true;
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
-        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
+        const rec = this._sampleFor('rain_loop');
+        const src = ctx.createBufferSource(); src.buffer = rec || getNoiseBuffer(ctx); src.loop = true;
         const gain = ctx.createGain(); gain.gain.value = 0;
-        src.connect(hp); hp.connect(lp); lp.connect(gain); gain.connect(this.sfxBus);
+        if (rec) { src.connect(gain); this._rainRec = true; }
+        else {
+          const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+          const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
+          src.connect(hp); hp.connect(lp); lp.connect(gain); this._rainRec = false;
+        }
+        gain.connect(this.sfxBus);
         src.start();
         this._rain = { src, gain };
       }
       const g = this._rain.gain.gain, now = this.ctx.currentTime;
-      g.setTargetAtTime(Math.max(0, Math.min(1, v)) * 0.16, now, 0.4);
+      g.setTargetAtTime(Math.max(0, Math.min(1, v)) * (this._rainRec ? 0.55 : 0.16), now, 0.4);
       if (v <= 0.01 && this._rain) { const r = this._rain; this._rain = null; setTimeout(() => { try { r.src.stop(); r.gain.disconnect(); } catch (e) { /* ignore */ } }, 2500); g.setTargetAtTime(0, now, 0.3); }
     } catch (e) { /* never throw */ }
   }

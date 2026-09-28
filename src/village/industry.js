@@ -169,7 +169,7 @@ export class Industry {
     const fx = this.game.combat?.effects;
     fx?.tracer(src.position, z.center, 0xff3050, 0.14, 0.18);
     fx?.glow(z.center, 0xff4060, 0.3, 1.4, 0.2);
-    this.game.audio?.play('lightning', { pos: src.position, volume: 0.35, pitch: 1.8 });
+    this.game.audio?.play('laser_shot', { pos: src.position, volume: 0.5 });
     z.damage(dmg, src, { kind: 'laser' });
     this._cd.set(b, 0.6 / this.powered);
   }
