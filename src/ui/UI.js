@@ -12,6 +12,7 @@ import { ResearchPanel } from './researchPanel.js';
 import { CraftPanel } from './craftPanel.js';
 import { InventoryPanel } from './inventoryPanel.js';
 import { QuestPanel, QuestTracker } from './questPanel.js';
+import { Tutorial } from './tutorial.js';
 
 const SETTINGS_KEY = 'zc_settings';
 const STOP_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'dblclick', 'wheel', 'contextmenu'];
@@ -19,7 +20,7 @@ const STOP_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchs
 export class UI {
   constructor(game) {
     this.game = game;
-    this.settings = { sensitivity: 1, showFps: false };
+    this.settings = { sensitivity: 1, showFps: false, fpsCap: game.isTouch ? 60 : 0 };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) { /* ignore */ }
     game.settings = this.settings;
 
@@ -43,10 +44,11 @@ export class UI {
     this.craft = new CraftPanel(this);
     this.inventory = new InventoryPanel(this);
     this.quests = new QuestPanel(this);
+    this.tutorial = new Tutorial(this);
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
     root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
-      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.menus.root, this.dialogLayer);
+      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.tutorial.root, this.menus.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {
@@ -307,6 +309,7 @@ export class UI {
       if (g.mode === 'command') this.command.update(dt);
       this.research.update(dt);
       this.craft.update(dt);
+      this.tutorial.update(dt);
       this.dmg.update(dt);
       // low-hp vignette
       const p = g.player;

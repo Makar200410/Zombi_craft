@@ -11,7 +11,8 @@
 Эти файлы распространяются на тех же условиях CC BY-SA 3.0.
 
 Треки: Cradle of Civilization, Forging a City-State, Highland Mist, Harvest Festival, Sunrise,
-Calm Before the Storm, Hill of Sorrows, Red Dawn, Honor Bound, Tale of Warriors, Taiko 2.
+Calm Before the Storm, Hill of Sorrows, Red Dawn, Honor Bound, Tale of Warriors, Taiko 2,
+The Road Ahead, Epitaph, Point of No Return, Taiko 1, Mountain Idyll.
 Источник: https://github.com/0ad/0ad (binaries/data/mods/public/audio/music).
 
 ## Звуки — `public/audio/sfx/`

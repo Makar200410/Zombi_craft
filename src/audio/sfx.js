@@ -720,6 +720,27 @@ export class Audio {
     this._musicNextEventAt = ctx.currentTime + 1;
   }
 
+  // ---- Rain (looping filtered noise) -------------------------------------
+  setRain(v) {
+    if (!this.ctx || !this.sfxBus) return;
+    try {
+      if (!this._rain) {
+        if (v <= 0.01) return;
+        const ctx = this.ctx;
+        const src = ctx.createBufferSource(); src.buffer = getNoiseBuffer(ctx); src.loop = true;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
+        const gain = ctx.createGain(); gain.gain.value = 0;
+        src.connect(hp); hp.connect(lp); lp.connect(gain); gain.connect(this.sfxBus);
+        src.start();
+        this._rain = { src, gain };
+      }
+      const g = this._rain.gain.gain, now = this.ctx.currentTime;
+      g.setTargetAtTime(Math.max(0, Math.min(1, v)) * 0.16, now, 0.4);
+      if (v <= 0.01 && this._rain) { const r = this._rain; this._rain = null; setTimeout(() => { try { r.src.stop(); r.gain.disconnect(); } catch (e) { /* ignore */ } }, 2500); g.setTargetAtTime(0, now, 0.3); }
+    } catch (e) { /* never throw */ }
+  }
+
   // ---- Streamed orchestral soundtrack -----------------------------------
   _initSoundtrack() {
     if (typeof document === 'undefined' || this._music) return;
@@ -766,6 +787,15 @@ export class Audio {
   _computeMood() {
     try {
       if (this.game && !this.game.running) return 'menu';
+      const late = ((this.game?.state?.age | 0) >= 5) && this._music ? '2' : '';
+      const m = this._computeMoodBase();
+      return m + late;
+    } catch (e) {
+      return 'day';
+    }
+  }
+  _computeMoodBase() {
+    try {
       const waves = this.game && this.game.waves;
       if (waves && typeof waves.activeCount === 'number' && waves.activeCount > 0) return 'wave';
       const st = this.game && this.game.state;
@@ -789,6 +819,7 @@ export class Audio {
     }
     if (!this._moodGains) return;
     if (mood === 'menu') mood = 'day';
+    mood = mood.replace('2', '');
     if (mood !== this._mood) {
       this._mood = mood;
       const now = ctx.currentTime;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Quests } from '../systems/quests.js';
+import { Ambience } from '../systems/ambience.js';
 import { EventBus } from './events.js';
 import { GameState } from './state.js';
 import { World } from '../world/World.js';
@@ -69,11 +70,12 @@ export class Game {
     this.research = new Research(this);
     this.crafting = new Crafting(this);
     this.quests = new Quests(this);
+    this.ambience = new Ambience(this);
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.save];
-    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.save, this.ui]) s.init?.();
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.ambience, this.save];
+    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.ambience, this.save, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
@@ -136,6 +138,10 @@ export class Game {
 
   _loop(ts) {
     requestAnimationFrame(this._loop);
+    // optional frame cap (phones with 90–120 Hz screens otherwise render twice the frames and heat up)
+    const cap = this.settings?.fpsCap || 0;
+    if (cap && this._lastTs !== undefined && ts - this._lastTs < 1000 / cap - 2) return;
+    this._lastTs = ts;
     this._timer.update(ts);
     const raw = this._timer.getDelta();
     // up to 0.1 s per frame, split into two sub-steps when slow, so a 15-20 FPS phone doesn't run the game in slow motion
@@ -172,9 +178,11 @@ export class Game {
     if (a.t < 4) return;
     const fps = a.n / a.t;
     a.t = 0; a.n = 0;
-    if (fps >= 40) { if (++a.good >= 3) this._qLocked = true; return; }
+    // with a frame cap the thresholds scale down (30 fps by choice is not a slow device)
+    const cap = this.settings?.fpsCap || 60;
+    if (fps >= Math.min(40, cap * 0.9)) { if (++a.good >= 3) this._qLocked = true; return; }
     a.good = 0;
-    if (fps < 30) {
+    if (fps < Math.min(30, cap * 0.75)) {
       const order = ['high', 'medium', 'low'];
       const i = order.indexOf(this.quality);
       if (i >= 0 && i < 2) {

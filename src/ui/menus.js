@@ -121,6 +121,10 @@ export class Menus {
       return h('label.zc-slider', h('span.zc-slider-lbl', label), inp, out);
     };
     const vol = g.audio?.volumes || { master: 1, music: 0.6, sfx: 1 };
+    const capSeg = h('div.zc-seg');
+    const renderCap = () => { for (const b of capSeg.children) b.classList.toggle('sel', +b.dataset.c === (ui.settings.fpsCap || 0)); };
+    for (const [cv, name] of [[30, '30'], [60, '60'], [0, 'Без ограничения']]) capSeg.append(h('button.ui-i', { 'data-c': cv, onclick: () => { this.click(); ui.settings.fpsCap = cv; ui.saveSettings(); renderCap(); } }, name));
+    renderCap();
     const fpsT = h('button.zc-toggle.ui-i' + (ui.settings.showFps ? '.on' : ''), { onclick: (e) => { this.click(); ui.settings.showFps = !ui.settings.showFps; e.currentTarget.classList.toggle('on', ui.settings.showFps); ui.saveSettings(); } }, h('i'));
     c.append(
       h('div.zc-field-lbl', 'Качество графики'), q,
@@ -130,6 +134,8 @@ export class Menus {
       slider('Музыка', vol.music, 0, 1, 0.01, (v) => g.audio?.setMusicVolume?.(v)),
       slider('Эффекты', vol.sfx, 0, 1, 0.01, (v) => { g.audio?.setSfxVolume?.(v); }),
       h('div.zc-slider', h('span.zc-slider-lbl', 'Показывать FPS'), fpsT),
+      h('div.zc-field-lbl', 'Ограничение кадров'), capSeg,
+      h('div.zc-note', '30 кадров — меньше нагрев и расход батареи на телефоне.'),
       h('div.zc-row.end', this.btn('Назад', back, 'ghost')),
     );
   }

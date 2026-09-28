@@ -619,6 +619,7 @@ function factory(v) {
   for (const z of [1, 4]) for (let x = 1; x <= 9; x++) bp.set(x, 6, z, B.STEEL_BLOCK);
   // chimney
   bp.box(8, 1, 7, 9, 10, 8, B.BRICK); bp.set(8, 11, 7, B.DARK_STONE); bp.set(9, 11, 8, B.DARK_STONE);
+  bp.point('smoke', 8, 12, 7);
   // big door
   for (let y = 1; y <= 3; y++) for (let x = 4; x <= 6; x++) bp.del(x, y, 6);
   bp.box(4, 4, 6, 6, 4, 6, B.STEEL_BLOCK);
@@ -654,7 +655,7 @@ function powerPlant(v) {
   for (const x of [2, 4, 5, 7]) for (let y = 2; y <= 4; y++) bp.set(x, y, 6, B.GLASS);
   bp.box(1, 6, 1, 8, 6, 6, B.STEEL_BLOCK);
   // twin cooling chimneys
-  for (const [x, z] of [[2, 2], [6, 3]]) { bp.box(x, 7, z, x + 1, 12, z + 1, B.BRICK); bp.set(x, 13, z, B.DARK_STONE); }
+  for (const [x, z] of [[2, 2], [6, 3]]) { bp.box(x, 7, z, x + 1, 12, z + 1, B.BRICK); bp.set(x, 13, z, B.DARK_STONE); bp.point('smoke', x, 14, z); }
   // generators & coal heap
   bp.set(3, 1, 3, B.STEEL_BLOCK); bp.set(3, 2, 3, B.COPPER_ROOF); bp.set(6, 1, 3, B.STEEL_BLOCK); bp.set(6, 2, 3, B.COPPER_ROOF);
   bp.set(4, 4, 3, B.LAMP);
@@ -768,6 +769,7 @@ function reactor(v) {
   bp.set(4, 1, 4, B.LAMP);
   // cooling tower
   for (let y = 1; y <= 9; y++) { const r = y < 5 ? 1.9 - y * 0.12 : 1.4 + (y - 5) * 0.1; for (let z = 6; z <= 10; z++) for (let x = 6; x <= 10; x++) { const d = Math.hypot(x - 8, z - 8); if (d <= r + 0.4 && d > r - 0.8) bp.set(x, y, z, y > 7 ? B.HAZARD : B.CONCRETE); } }
+  bp.point('steam', 8, 10, 8);
   // entrance
   bp.del(4, 1, 7); bp.del(4, 2, 7);
   bp.set(3, 3, 7, B.HAZARD); bp.set(5, 3, 7, B.HAZARD);

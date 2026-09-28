@@ -25,11 +25,15 @@ export const SFX_DIR = 'audio/sfx/';
 
 /** Orchestral soundtrack by Omri Lahav & Wildfire Games (0 A.D.), per mood. */
 export const MUSIC_DIR = 'audio/music/';
+// Ancient ages (stone → gunpowder) and the later ages (industrial → singularity) have their own playlists.
 export const PLAYLISTS = {
   menu: ['cradle_of_civilization'],
   day: ['forging_a_city_state', 'highland_mist', 'harvest_festival', 'sunrise'],
   night: ['calm_before_the_storm', 'hill_of_sorrows'],
   wave: ['red_dawn', 'honor_bound', 'tale_of_warriors', 'taiko_2'],
+  day2: ['the_road_ahead', 'mountain_idyll', 'forging_a_city_state'],
+  night2: ['epitaph', 'calm_before_the_storm'],
+  wave2: ['point_of_no_return', 'taiko_1', 'taiko_2', 'red_dawn'],
 };
 
 export const CREDITS = [

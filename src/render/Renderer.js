@@ -160,6 +160,12 @@ export class Renderer {
     const f = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
     const c = this._c;
     for (const k of ['top', 'horizon', 'bottom', 'fog', 'sun', 'cloud']) c[k].copy(a[k]).lerp(b[k], f);
+    // rain: grey, overcast sky and a dimmer sun
+    const rain = this.weatherDim || 0;
+    if (rain > 0) {
+      const grey = this._grey || (this._grey = new THREE.Color());
+      for (const k of ['top', 'horizon', 'fog', 'cloud']) { const l = c[k].r * 0.3 + c[k].g * 0.55 + c[k].b * 0.15; grey.setRGB(l * 0.85, l * 0.88, l * 0.95); c[k].lerp(grey, rain * 0.75); }
+    }
     const amb = a.amb + (b.amb - a.amb) * f, sunI = a.sunI + (b.sunI - a.sunI) * f, moonI = a.moonI + (b.moonI - a.moonI) * f;
     const night = st.nightFactor;
     // sun travels east → west; tilt a bit so shadows are never perfectly axis aligned
@@ -169,12 +175,12 @@ export class Renderer {
     this.sun.position.copy(focus).addScaledVector(this.sunDir, 120);
     this.sun.target.position.copy(focus);
     this.sun.color.copy(c.sun);
-    this.sun.intensity = sunI * (this.sunDir.y > 0 ? 1 : 0);
+    this.sun.intensity = sunI * (this.sunDir.y > 0 ? 1 : 0) * (1 - rain * 0.45);
     this.sun.castShadow = this.game.quality !== 'low' && this.sunDir.y > 0.05;
     this.moon.position.copy(focus).addScaledVector(this.sunDir, -120);
     this.moon.target.position.copy(focus);
     this.moon.intensity = moonI;
-    this.hemi.intensity = amb;
+    this.hemi.intensity = amb * (1 - rain * 0.15);
     this.hemi.color.copy(c.horizon).lerp(new THREE.Color(0xffffff), 0.4);
     this.hemi.groundColor.set(0x6b6656).multiplyScalar(0.45 + amb * 0.55);
     this.scene.fog.color.copy(c.fog);
@@ -188,7 +194,7 @@ export class Renderer {
       fogFar = Math.max(fogFar, d + 45);
     }
     this.scene.fog.near = Math.min(30, fogFar * 0.45) - night * 10;
-    this.scene.fog.far = fogFar * (1 - night * 0.25);
+    this.scene.fog.far = fogFar * (1 - night * 0.25) * (1 - rain * 0.3);
     worldUniforms.uSkyLight.value = 1 - night * 0.7;
     worldUniforms.uBlockLightStrength.value = 1.1 + night * 0.6;
     this.renderer.toneMappingExposure = 1.0 + night * 0.25;

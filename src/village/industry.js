@@ -53,10 +53,13 @@ export class Industry {
 
   /** Is an electric building jammed by a hacker nearby? */
   jammed(b) {
-    const zs = this.village.zombies;
+    // hackers are rare: collect them once per frame instead of scanning every zombie for every building
+    const t = this.game.time;
+    if (this._hackT !== t) { this._hackT = t; this._hackers = this.village.zombies.filter(z => !z.dead && z.T.jam); }
+    const zs = this._hackers;
+    if (!zs.length) return false;
     for (let i = 0; i < zs.length; i++) {
       const z = zs[i];
-      if (z.dead || !z.T.jam) continue;
       const dx = z.position.x - b.center.x, dz = z.position.z - b.center.z;
       if (dx * dx + dz * dz < JAM_R * JAM_R) {
         if (this.game.time - (this._jamWarn ?? -1e9) > 30) { this._jamWarn = this.game.time; this.village.toast(`Хакер глушит «${b.def.name}» и электронику рядом! Убейте его`, 'bad'); }
