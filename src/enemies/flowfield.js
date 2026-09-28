@@ -26,6 +26,8 @@ for (const id of LEAF_BLOCKS) TREE[id] = 1;
 const WALL_TYPES = new Set(['wall', 'stone_wall', 'palisade', 'gate']);
 const OBST_K = 2.6;          // path cost per point of block hardness (≈ seconds of smashing vs. walking)
 const INF = 1e9;
+const MAX_DIST = 900;         // the dead spawn ~100 blocks out; no need to flood the whole (huge) world
+const CH = 16;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
 export class FlowField {
@@ -41,6 +43,17 @@ export class FlowField {
     this._job = null;
     this._lastStart = -99;
     this.minInterval = 1.2;    // seconds between recomputes triggered by block changes
+    this._spare = null;        // second dist/owner buffer, reused between jobs
+    // the world is generated lazily: fill the column table for each new chunk
+    game.bus?.on?.('chunk:generated', ({ cx, cz }) => {
+      if (!this.world || this.world !== game.world) return;
+      this._chunkColumns(cx, cz);
+      this.dirty = true;
+    });
+  }
+  _chunkColumns(cx, cz) {
+    const S = this.size;
+    for (let z = cz * CH; z < Math.min(S, cz * CH + CH); z++) for (let x = cx * CH; x < Math.min(S, cx * CH + CH); x++) this._column(x, z);
   }
 
   // ---------- column table ----------
@@ -52,12 +65,17 @@ export class FlowField {
     this.size = w.size;
     const n = w.size * w.size;
     this.stand = new Int16Array(n);
-    this.obst = new Float32Array(n);
+    this.obst = new Float32Array(n).fill(INF);   // columns of chunks that don't exist yet are impassable
     this.water = new Uint8Array(n);
     this.dist = new Float32Array(n).fill(INF);
     this.goalOwner = new Int16Array(n).fill(-1);
+    this._spare = null;
     this._job = null;
-    for (let z = 0; z < w.size; z++) for (let x = 0; x < w.size; x++) this._column(x, z);
+    const N = w.chunksX || Math.ceil(w.size / CH);
+    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) {
+      if (w.generated && !w.generated[cz * N + cx]) continue;
+      this._chunkColumns(cx, cz);
+    }
     this.dirty = true;
     return true;
   }
@@ -145,12 +163,12 @@ export class FlowField {
   _startJob() {
     const S = this.size, n = S * S;
     const { goals, owners, blds } = this._collectGoals();
-    const job = {
-      dist: new Float32Array(n).fill(INF),
-      owner: new Int16Array(n).fill(-1),
-      blds,
-      hk: new Float32Array(Math.max(1024, n * 2)), hv: new Int32Array(Math.max(1024, n * 2)), hn: 0,
-    };
+    // reuse the buffer that isn't currently published (no 30 MB of garbage per recompute on big worlds)
+    let buf = this._spare;
+    if (!buf || buf.dist.length !== n || buf.dist === this.dist) buf = { dist: new Float32Array(n), owner: new Int16Array(n) };
+    buf.dist.fill(INF); buf.owner.fill(-1);
+    const heap = this._heap && this._heap.hk.length >= 65536 ? this._heap : { hk: new Float32Array(65536), hv: new Int32Array(65536) };
+    const job = { dist: buf.dist, owner: buf.owner, blds, hk: heap.hk, hv: heap.hv, hn: 0 };
     for (let k = 0; k < goals.length; k++) {
       const g = goals[k];
       if (job.dist[g] === 0) continue;
@@ -228,10 +246,13 @@ export class FlowField {
         }
         if (water[c]) step += water[c] === 2 ? 5 : 2;
         const nd = dist[c] + step;
+        if (nd > MAX_DIST) continue;
         if (nd < dist[n]) { dist[n] = nd; owner[n] = owner[c]; this._push(job, n, nd); }
       }
     }
     if (job.hn > 0) return false;
+    this._spare = this.dist ? { dist: this.dist, owner: this.goalOwner } : null;
+    this._heap = { hk: job.hk, hv: job.hv };
     this.dist = job.dist; this.goalOwner = job.owner; this.goalBuildings = job.blds;
     this._job = null;
     this.version++;

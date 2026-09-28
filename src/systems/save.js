@@ -157,10 +157,8 @@ export class SaveSystem {
       const w = g.world;
       progress(0.96, 'Восстанавливаем постройки…');
       const changes = decodeChanges(o.changes);
-      const blocks = w.blocks;
-      for (const [i, id] of changes) if (i >= 0 && i < blocks.length) blocks[i] = id;
+      w.applyChanges(changes);            // edits in chunks that aren't generated yet wait for their chunk
       w.computeAllLight();
-      for (let cz = 0; cz < w.chunksX; cz++) for (let cx = 0; cx < w.chunksX; cx++) w.dirty.add(cx + ',' + cz);
       g.chunkRenderer?.buildAll?.();
       w.changes = changes;
       g.bus.emit('world:loaded', { world: w });

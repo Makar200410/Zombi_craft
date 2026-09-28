@@ -73,6 +73,13 @@ export class ChunkRenderer {
   }
   update() {
     if ((this._cullT = (this._cullT || 0) + 1) % 15 === 0) this.cullDistant();
+    // the big world is generated lazily: make terrain ahead of the player / camera within the fog + margin
+    const w = this.world, g = this.game;
+    if (w.pumpGeneration) {
+      const fogFar = g.scene.fog ? g.scene.fog.far : 120;
+      const p = g.mode === 'command' ? g.camera.position : (g.player?.position || g.camera.position);
+      w.pumpGeneration(p.x, p.z, fogFar + 24, g.quality === 'low' ? 2.5 : 4);
+    }
     const dirty = this.world.dirty;
     if (!dirty.size) return;
     const cam = this.game.camera.position;

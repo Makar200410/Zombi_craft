@@ -181,7 +181,10 @@ export class Village {
       w.damage.delete(i);
       chunks.add(Math.floor(x / 16) + ',' + Math.floor(z / 16));
     }
-    w.computeAllLight();
+    // relight only around the edits (the world is far too big to relight everything)
+    let bx0 = Infinity, bz0 = Infinity, bx1 = -Infinity, bz1 = -Infinity;
+    for (const [x, , z] of list) { if (x < bx0) bx0 = x; if (z < bz0) bz0 = z; if (x > bx1) bx1 = x; if (z > bz1) bz1 = z; }
+    if (w.relightBox) w.relightBox(bx0 - 15, bz0 - 15, bx1 + 15, bz1 + 15); else w.computeAllLight();
     // let other systems (minimap, flow field, save changes) know
     this._self = true;
     try { for (const [x, y, z, id] of list) this.bus.emit('block:changed', { x, y, z, id, prev: B.AIR, bulk: true }); } finally { this._self = false; }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { B, BLOCKS } from '../core/blocks.js';
-import { generateTerrain, SEA_LEVEL } from './terrain.js';
+import { TerrainGen, SEA_LEVEL } from './terrain.js';
 import { findPath } from './pathfinding.js';
 
 export const CHUNK = 16;
@@ -32,6 +32,11 @@ export class World {
     this.light = new Uint8Array(size * size * HEIGHT);   // hi nibble sky, lo nibble block light
     this.top = new Int16Array(size * size);               // highest light-blocking block per column (-1 none)
     this.dirty = new Set();                                // chunk keys needing remesh
+    this.generated = new Uint8Array(this.chunksX * this.chunksX);   // chunks whose terrain exists
+    this.heights = new Int16Array(size * size);
+    this.biome = new Uint8Array(size * size);
+    this.pending = new Map();                              // chunk key -> [[idx, id]] saved edits waiting for their chunk
+    this.gen = null;
     this.damage = new Map();                               // idx -> {dmg, t}
     this._tmpV = new THREE.Vector3();
   }
@@ -39,16 +44,75 @@ export class World {
   index(x, y, z) { return x + this.size * (z + this.size * y); }
   inBounds(x, y, z) { return x >= 0 && z >= 0 && y >= 0 && x < this.size && z < this.size && y < HEIGHT; }
 
-  generate() {
-    generateTerrain(this);
+  /**
+   * Generates the region around the village (radius in blocks); the rest of the world is generated lazily
+   * (pumpGeneration) as the player gets near, so a 10× larger world loads as fast as the old one.
+   */
+  generate(radius = 150) {
+    this.gen = new TerrainGen(this);
+    const c = this.size / 2, cc = Math.floor(c / CHUNK), R = Math.ceil(radius / CHUNK) + 1;
+    for (let cz = cc - R; cz <= cc + R; cz++) for (let cx = cc - R; cx <= cc + R; cx++) {
+      if (cx < 0 || cz < 0 || cx >= this.chunksX || cz >= this.chunksX) continue;
+      if (Math.hypot(cx * CHUNK + 8 - c, cz * CHUNK + 8 - c) > radius + 12) continue;
+      this.ensureChunk(cx, cz, false);
+    }
     this.computeAllLight();
-    for (let cz = 0; cz < this.chunksX; cz++) for (let cx = 0; cx < this.chunksX; cx++) this.dirty.add(cx + ',' + cz);
   }
 
-  load(blocksArray) {
-    this.blocks.set(blocksArray);
-    this.computeAllLight();
-    for (let cz = 0; cz < this.chunksX; cz++) for (let cx = 0; cx < this.chunksX; cx++) this.dirty.add(cx + ',' + cz);
+  isGenerated(x, z) {
+    const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+    return cx >= 0 && cz >= 0 && cx < this.chunksX && cz < this.chunksX && this.generated[cz * this.chunksX + cx] === 1;
+  }
+  /** Generates a chunk if needed. relight=false during bulk generation (caller lights the region). */
+  ensureChunk(cx, cz, relight = true) {
+    if (cx < 0 || cz < 0 || cx >= this.chunksX || cz >= this.chunksX) return false;
+    const k = cz * this.chunksX + cx;
+    if (this.generated[k]) return false;
+    if (!this.gen) this.gen = new TerrainGen(this);
+    this.gen.generateChunk(cx, cz);
+    this.generated[k] = 1;
+    const key = cx + ',' + cz;
+    const pend = this.pending.get(key);
+    if (pend) { for (const [i, id] of pend) this.blocks[i] = id; this.pending.delete(key); }
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx, nz = cz + dz;
+      if (nx >= 0 && nz >= 0 && nx < this.chunksX && nz < this.chunksX && this.generated[nz * this.chunksX + nx]) this.dirty.add(nx + ',' + nz);
+    }
+    if (relight) this.relightBox(cx * CHUNK - 15, cz * CHUNK - 15, cx * CHUNK + CHUNK + 14, cz * CHUNK + CHUNK + 14);
+    this.game?.bus?.emit('chunk:generated', { cx, cz });
+    return true;
+  }
+  /** Generates missing chunks around (x,z), nearest first, within a time budget (ms). Returns count made. */
+  pumpGeneration(x, z, radius, budgetMs = 4) {
+    const t0 = performance.now();
+    const pcx = Math.floor(x / CHUNK), pcz = Math.floor(z / CHUNK);
+    // always make the ground right under the player synchronously
+    let made = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (this.ensureChunk(pcx + dx, pcz + dz)) made++;
+    const R = Math.ceil(radius / CHUNK);
+    if (!this._ring || this._ringR !== R) {
+      this._ringR = R; this._ring = [];
+      for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) if (dx * dx + dz * dz <= R * R) this._ring.push([dx, dz, dx * dx + dz * dz]);
+      this._ring.sort((a, b) => a[2] - b[2]);
+    }
+    for (const [dx, dz] of this._ring) {
+      if (performance.now() - t0 > budgetMs) break;
+      if (this.ensureChunk(pcx + dx, pcz + dz)) made++;
+    }
+    return made;
+  }
+  /** Saved block edits: applied now where the chunk exists, otherwise when it gets generated. */
+  applyChanges(changes) {
+    for (const [i, id] of changes) {
+      if (i < 0 || i >= this.blocks.length) continue;
+      const x = i % this.size, z = Math.floor(i / this.size) % this.size;
+      if (this.isGenerated(x, z)) this.blocks[i] = id;
+      else {
+        const key = Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK);
+        let list = this.pending.get(key); if (!list) this.pending.set(key, list = []);
+        list.push([i, id]);
+      }
+    }
   }
 
   getBlock(x, y, z) {
@@ -194,43 +258,60 @@ export class World {
   findPath(from, to, opts) { return findPath(this, from, to, opts); }
 
   // ---------- lighting ----------
+  /** Light every generated chunk (bounding box of the generated area). */
   computeAllLight() {
-    const { size } = this;
-    this.light.fill(0);
-    const queue = [];
-    for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
-      let y = HEIGHT - 1;
-      for (; y >= 0; y--) {
-        const i = x + size * (z + size * y);
-        if (LIGHT_BLOCKING[this.blocks[i]]) break;
-        this.light[i] = 0xF0;
-      }
-      this.top[z * size + x] = y;
+    let x0 = Infinity, z0 = Infinity, x1 = -1, z1 = -1;
+    const N = this.chunksX;
+    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) if (this.generated[cz * N + cx]) {
+      if (cx < x0) x0 = cx; if (cz < z0) z0 = cz; if (cx > x1) x1 = cx; if (cz > z1) z1 = cz;
     }
-    // seed horizontal spread from sunlit cells that border darker cells
-    for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
+    if (x1 < 0) return;
+    this.relightBox(x0 * CHUNK, z0 * CHUNK, x1 * CHUNK + CHUNK - 1, z1 * CHUNK + CHUNK - 1);
+  }
+  /** Recompute sky + block light inside a box of columns (seeded from the lit cells around it); remesh it. */
+  relightBox(x0, z0, x1, z1) {
+    const { size, light, blocks } = this;
+    x0 = Math.max(0, x0); z0 = Math.max(0, z0); x1 = Math.min(size - 1, x1); z1 = Math.min(size - 1, z1);
+    if (x1 < x0 || z1 < z0) return;
+    const sq = [], bq = [];
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      let t = HEIGHT - 1;
+      for (; t >= 0; t--) if (LIGHT_BLOCKING[blocks[x + size * (z + size * t)]]) break;
+      this.top[z * size + x] = t;
+    }
+    for (let y = 0; y < HEIGHT; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const i = x + size * (z + size * y);
+      const sky = y > this.top[z * size + x] ? 15 : 0;
+      const e = EMIT[blocks[i]];
+      light[i] = (sky << 4) | e;
+      if (e) bq.push(x, y, z);
+    }
+    // sky light only needs to spread sideways from columns next to taller neighbours
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       const t = this.top[z * size + x];
       let maxN = t;
-      if (x > 0) maxN = Math.max(maxN, this.top[z * size + x - 1]);
-      if (x < size - 1) maxN = Math.max(maxN, this.top[z * size + x + 1]);
-      if (z > 0) maxN = Math.max(maxN, this.top[(z - 1) * size + x]);
-      if (z < size - 1) maxN = Math.max(maxN, this.top[(z + 1) * size + x]);
-      for (let y = t + 1; y <= maxN + 1 && y < HEIGHT; y++) queue.push(x, y, z);
+      if (x > x0) maxN = Math.max(maxN, this.top[z * size + x - 1]);
+      if (x < x1) maxN = Math.max(maxN, this.top[z * size + x + 1]);
+      if (z > z0) maxN = Math.max(maxN, this.top[(z - 1) * size + x]);
+      if (z < z1) maxN = Math.max(maxN, this.top[(z + 1) * size + x]);
+      for (let y = t + 1; y <= maxN + 1 && y < HEIGHT; y++) sq.push(x, y, z);
     }
-    this._spread(queue, 4, null);
-    const bq = [];
-    const blocks = this.blocks;
-    for (let i = 0; i < blocks.length; i++) {
-      const id = blocks[i];
-      if (id === 0 || id === 3 || id === 2 || id === 1) continue;   // air/stone/dirt/grass fast path
-      const e = EMIT[id];
-      if (e) {
-        this.light[i] = (this.light[i] & 0xF0) | e;
-        const x = i % size, z = Math.floor(i / size) % size, y = Math.floor(i / (size * size));
-        bq.push(x, y, z);
-      }
+    const seedBorder = (x, y, z) => {
+      if (x < 0 || z < 0 || x >= size || z >= size) return;
+      const l = light[x + size * (z + size * y)];
+      if ((l >> 4) > 1) sq.push(x, y, z);
+      if ((l & 15) > 1) bq.push(x, y, z);
+    };
+    for (let y = 0; y < HEIGHT; y++) {
+      for (let z = z0; z <= z1; z++) { seedBorder(x0 - 1, y, z); seedBorder(x1 + 1, y, z); }
+      for (let x = x0; x <= x1; x++) { seedBorder(x, y, z0 - 1); seedBorder(x, y, z1 + 1); }
     }
-    this._spread(bq, 0, null);
+    const box = [x0, 0, z0, x1, HEIGHT - 1, z1];
+    this._spread(sq, 4, box);
+    this._spread(bq, 0, box);
+    const N = this.chunksX;
+    for (let cz = Math.floor(z0 / CHUNK); cz <= Math.floor(z1 / CHUNK); cz++) for (let cx = Math.floor(x0 / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++)
+      if (this.generated[cz * N + cx]) this.dirty.add(cx + ',' + cz);
   }
   /** BFS spread. shift 4 = sky light (hi nibble), 0 = block light. box optional clamp [x0,y0,z0,x1,y1,z1]. */
   _spread(queue, shift, box) {

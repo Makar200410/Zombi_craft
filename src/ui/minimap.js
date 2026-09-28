@@ -35,6 +35,7 @@ export class Minimap {
     bus.on('world:ready', () => this.rebuild());
     bus.on('world:loaded', () => this.rebuild());
     bus.on('block:changed', ({ x, z }) => { if (this.world) this.dirtyCols.add(x + z * this.world.size); });
+    bus.on('chunk:generated', ({ cx, cz }) => { if (this.world && this.world === this.game.world) this._chunk(cx, cz); });
   }
 
   rebuild() {
@@ -46,10 +47,23 @@ export class Minimap {
     this.img = this.tctx.createImageData(S, S);
     this.heights = new Int16Array(S * S);
     this.u32 = new Uint32Array(this.img.data.buffer);
-    for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) this.heights[x + z * S] = this._colHeight(x, z);
-    for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) this._shade(x, z);
+    this.u32.fill(0xff1c140e);            // unexplored land (the big world is generated as you go)
+    const N = w.chunksX || Math.ceil(S / 16);
+    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) if (!w.generated || w.generated[cz * N + cx]) this._chunk(cx, cz, true);
     this.tctx.putImageData(this.img, 0, 0);
+    this._rect = null;
     this.dirtyCols.clear();
+  }
+  /** (Re)draw one 16×16 chunk of the terrain image. */
+  _chunk(cx, cz, noRect) {
+    const S = this.world.size, x0 = cx * 16, z0 = cz * 16, x1 = Math.min(S, x0 + 16), z1 = Math.min(S, z0 + 16);
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) this.heights[x + z * S] = this._colHeight(x, z);
+    for (let z = z0; z < Math.min(S, z1 + 1); z++) for (let x = x0; x < Math.min(S, x1 + 1); x++) this._shade(x, z);
+    if (!noRect) { this._grow(x0, z0); this._grow(x1, z1); this._imgDirty = true; }
+  }
+  _grow(x, z) {
+    const r = this._rect || (this._rect = { x0: x, z0: z, x1: x, z1: z });
+    if (x < r.x0) r.x0 = x; if (z < r.z0) r.z0 = z; if (x > r.x1) r.x1 = x; if (z > r.z1) r.z1 = z;
   }
   _colHeight(x, z) {
     const w = this.world, S = w.size, bl = w.blocks, H = w.height;
@@ -104,13 +118,19 @@ export class Minimap {
         this._shade(x, z);
         if (x + 1 < S) this._shade(x + 1, z);
         if (z + 1 < S) this._shade(x, z + 1);
+        this._grow(x, z); this._grow(Math.min(S - 1, x + 1), Math.min(S - 1, z + 1));
         if (++n > 400) break;
       }
       this._imgDirty = true;
     }
     if (this._t < 0.1) return;
     this._t = 0;
-    if (this._imgDirty) { this.tctx.putImageData(this.img, 0, 0); this._imgDirty = false; }
+    if (this._imgDirty) {
+      const r = this._rect;
+      if (r) this.tctx.putImageData(this.img, 0, 0, r.x0, r.z0, r.x1 - r.x0 + 1, r.z1 - r.z0 + 1);
+      else this.tctx.putImageData(this.img, 0, 0);
+      this._rect = null; this._imgDirty = false;
+    }
     this.draw();
   }
 

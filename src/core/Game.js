@@ -79,7 +79,7 @@ export class Game {
   }
 
   /** (Re)generates the world for a seed. Call before begin(). */
-  async setup({ seed = (Math.random() * 1e9) | 0, size = 384 } = {}, progress = () => {}) {
+  async setup({ seed = (Math.random() * 1e9) | 0, size = 1216 } = {}, progress = () => {}) {
     progress(0.15, 'Генерация мира…');
     await tick();
     if (this.chunkRenderer) { this.scene.remove(this.chunkRenderer.group); this.chunkRenderer.group.traverse(o => o.geometry?.dispose()); }
