@@ -3,7 +3,7 @@
 import { Zombie } from './Zombie.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
 import { AGES } from '../systems/ages.js';
-import { countFor, weightsFor, introducedOn, BOSSES, HINTS, hpScale, dmgScale, eraOf } from './waveSchedule.js';
+import { countFor, weightsFor, introducedOn, BOSSES, HINTS, hpScale, dmgScale, eraOf, LAST_WAVE } from './waveSchedule.js';
 import { FlowField } from './flowfield.js';
 import { EnemyProjectiles } from './fx.js';
 
@@ -105,7 +105,7 @@ export class WaveDirector {
     }
     for (let i = out.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [out[i], out[j]] = [out[j], out[i]]; }
     // scripted bosses arrive mid-wave; past the finale: a necromancer every 5 waves, giants every 10
-    const bosses = BOSSES[n] || (n > 50 ? [...(n % 5 === 0 ? ['necromancer'] : []), ...(n % 10 === 0 ? ['giant', 'giant'] : [])] : []);
+    const bosses = BOSSES[n] || (n > LAST_WAVE ? [...(n % 5 === 0 ? ['necromancer'] : []), ...(n % 10 === 0 ? ['giant', 'giant'] : [])] : []);
     bosses.forEach((t, i) => out.splice(Math.floor(out.length * (0.4 + i * 0.08)), 0, t));
     // siege of a new age: the dead answer the village's rise with a bigger horde and the age's champions
     if (this.game.state.finale === 1) {
@@ -165,7 +165,7 @@ export class WaveDirector {
     game.bus.emit('wave:start', { wave: n, count: types.length, directions: this.spawnDirections });
     game.bus.emit('toast', { text: `Волна ${n}! Нежить наступает`, kind: 'wave' });
     const era = eraOf(n);
-    if (n === era.from) game.bus.emit('toast', { text: `Эпоха «${era.name}» — волны ${era.from}–${era.from + 9 > 50 && era.from <= 50 ? 50 : era.from + 9}`, kind: 'wave' });
+    if (n === era.from) game.bus.emit('toast', { text: era.from > LAST_WAVE ? `«${era.name}»: волны без конца` : `Эпоха нежити «${era.name}» — волны ${era.from}–${era.from + 9}`, kind: 'wave' });
     const fresh = introducedOn(n);
     this._seenAge = this._seenAge || new Set();
     for (const t of ['mutant', 'conductor', 'irradiated', 'swarm', 'hacker', 'nanite', 'nano_titan']) if (types.includes(t) && !this._seenAge.has(t)) { this._seenAge.add(t); fresh.push(t); }
@@ -208,14 +208,14 @@ export class WaveDirector {
     this.bonus = false;
     game.audio?.play('wave_cleared', { volume: 1 });
     game.bus.emit('wave:end', { wave: n, count: this.waveCount, reward: { gold, crystal } });
-    game.bus.emit('toast', { text: `Волна ${n}/50 отбита! +${gold} золота` + (crystal ? `, +${crystal} кристаллов` : ''), kind: 'good' });
+    game.bus.emit('toast', { text: (n <= LAST_WAVE ? `Волна ${n}/${LAST_WAVE} отбита!` : `Волна ${n} отбита!`) + ` +${gold} золота` + (crystal ? `, +${crystal} кристаллов` : ''), kind: 'good' });
     if (game.state.finale === 2) {
       game.state.finale = 3;
       game.bus.emit('game:singularity', { wave: n });
       game.audio?.play('build_complete', { volume: 1 });
     }
-    if (n === 50) {
-      game.bus.emit('toast', { text: 'ПОБЕДА! Деревня выстояла все 50 волн. Дальше — бесконечная ночь…', kind: 'wave' });
+    if (n === LAST_WAVE) {
+      game.bus.emit('toast', { text: `ПОБЕДА! Деревня выстояла все ${LAST_WAVE} волн. Дальше — бесконечная ночь…`, kind: 'wave' });
       game.bus.emit('game:victory', { wave: n });
       game.audio?.play('build_complete', { volume: 1 });
     }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { B, BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { TerrainGen, SEA_LEVEL } from './terrain.js';
 import { findPath } from './pathfinding.js';
 
@@ -231,10 +231,10 @@ export class World {
     let tMY = (dir.y > 0 ? (y + 1 - origin.y) : (origin.y - y)) * tDY;
     let tMZ = (dir.z > 0 ? (z + 1 - origin.z) : (origin.z - z)) * tDZ;
     let nx = 0, ny = 0, nz = 0, t = 0;
-    const solidOnly = !!opts.solidOnly;
+    const solidOnly = !!opts.solidOnly, seeLeaves = !opts.throughLeaves;
     for (let i = 0; i < 400; i++) {
       const id = this.getBlock(x, y, z);
-      if (id !== B.AIR && (!solidOnly || SOLID[id]) && (id !== B.WATER || opts.includeWater)) {
+      if (id !== B.AIR && (!solidOnly || SOLID[id]) && (id !== B.WATER || opts.includeWater) && (seeLeaves || !LEAF_BLOCKS.has(id))) {
         const p = new THREE.Vector3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
         return { x, y, z, id, nx, ny, nz, px: x + nx, py: y + ny, pz: z + nz, dist: t, point: p };
       }
@@ -246,12 +246,12 @@ export class World {
     }
     return null;
   }
-  /** True if the straight segment a→b is free of solid blocks (line of sight). */
+  /** True if the straight segment a→b is free of solid blocks (line of sight). Leaves don't block: everyone walks through them. */
   lineOfSight(a, b) {
     const d = this._tmpV.set(b.x - a.x, b.y - a.y, b.z - a.z);
     const len = d.length(); if (len < 0.01) return true;
     d.divideScalar(len);
-    const hit = this.raycast(a, d, len, { solidOnly: true });
+    const hit = this.raycast(a, d, len, { solidOnly: true, throughLeaves: true });
     return !hit;
   }
 

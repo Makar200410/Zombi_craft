@@ -172,7 +172,7 @@ export class Projectiles {
         _dir.copy(step).divideScalar(len);
         const faction = p.faction;
         const hitE = g.entities.raycast(p.prev, _dir, len + 0.05, e => e !== p.user && e.faction !== faction && e.kind !== 'projectile' && !e.dead);
-        const hitB = w ? w.raycast(p.prev, _dir, len, { solidOnly: true }) : null;
+        const hitB = w ? w.raycast(p.prev, _dir, len, { solidOnly: true, throughLeaves: true }) : null;   // arrows fly through foliage
         if (hitE && (!hitB || hitE.dist <= hitB.dist)) {
           p.pos.copy(p.prev).addScaledVector(_dir, hitE.dist);
           this._hitEntity(p, hitE.entity);

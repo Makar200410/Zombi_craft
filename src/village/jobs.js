@@ -497,8 +497,8 @@ function* guardBrain(v) {
     const z = vil.guardTarget(v);
     if (z) { yield* meleeFight(v, z); continue; }
     // patrol
-    const night = game.state.isNight;
-    v.task = night ? 'Стоит на страже' : 'Патрулирует';
+    const night = game.state.isNight || game.state.secondsToDusk < 20;      // take positions before dusk
+    v.task = night ? (game.waves?.spawnDirections?.length ? 'Держит рубеж против волны' : 'Стоит на страже') : 'Патрулирует';
     const p = night ? vil.guardPost(v) : vil.patrolPoint(v);
     if (p) {
       const walk = v.walkTo(p, 1.5, { maxTime: 25, teleport: false, speed: v.walkSpeed * 0.9 });
@@ -520,7 +520,7 @@ function* guardBrain(v) {
 function* meleeFight(v, z) {
   const game = v.game, vil = v.village;
   let repath = 0, cd = 0.2, req = null, path = null, pi = 0, retarget = 0.8, shootCd = 0, bashCd = 2 + rnd() * 2, lastClose = 0;
-  const leash = vil.radius + 22;
+  const leash = vil.radius + 30;
   const hasBow = () => game.state.researchDone.has('archery');
   const setBow = (on) => { const want = on ? 'bow' : null; if (v.heldOverride !== want) { v.heldOverride = want; v.updateTool(); } };
   v.fightTarget = z;
@@ -538,7 +538,7 @@ function* meleeFight(v, z) {
     const px = v.position.x, pz = v.position.z;
     const d = Math.hypot(z.position.x - px, z.position.z - pz);
     if (vil.townHall && vil.townHall.distanceTo(v.position) > leash) break;
-    if (d > 28) break;
+    if (d > vil.guardVision + 6) break;
     // situational awareness
     let close = 0, cx = 0, cz = 0, exploder = null;
     for (const o of vil.zombies) {
@@ -579,7 +579,7 @@ function* meleeFight(v, z) {
       continue;
     }
     // 3) ranged: a bow for targets that are still far away
-    if (hasBow() && d > 7 && d < 22 && game.world.lineOfSight(v.eye, z.center)) {
+    if (hasBow() && d > 7 && d < 26 && game.world.lineOfSight(v.eye, z.center)) {
       v.stopMove(); v.face(z.position); setBow(true);
       v.model.blocking = false;
       v.task = 'Стреляет из лука';

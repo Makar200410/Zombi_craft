@@ -847,18 +847,29 @@ export class Village {
    * Pick the most urgent zombie for a guard: protect villagers under attack, take out spitters and
    * necromancers, finish wounded ones, avoid exploders, and spread guards over different targets.
    */
+  /** How far guards see: they keep watch over the whole village and further with archery / watchtowers. */
+  get guardVision() {
+    const st = this.game.state;
+    return 42 + (st.researchDone.has('archery') ? 8 : 0) + Math.min(12, this.villagersByJob('guard').length) + (this.industry?.radarOn ? 10 : 0);
+  }
   guardTarget(v, current = null) {
     const th = this.townHall;
     const claims = new Map();
     for (const o of this.villagers) if (o !== v && o.fightTarget && !o.dead) claims.set(o.fightTarget, (claims.get(o.fightTarget) || 0) + 1);
+    const vision = this.guardVision;
     let best = null, bs = Infinity;
     for (const z of this.zombies) {
       if (z.dead) continue;
       const d = v.position.distanceTo(z.position);
-      if (d > 30) continue;
-      const nearVillage = th ? th.center.distanceTo(z.position) < this.radius + 10 : true;
-      if (d > 18 && !nearVillage) continue;
-      let s = d;
+      const thd = th ? th.center.distanceTo(z.position) : 0;
+      const nearVillage = th ? thd < this.radius + 18 : true;
+      // the alarm: anything attacking the village is known to every guard, the rest only within sight
+      const attacking = nearVillage && (z.bTarget || (z.target && z.target.faction === 'village'));
+      if (d > (attacking ? vision + 25 : vision)) continue;
+      if (d > vision * 0.6 && !nearVillage) continue;       // don't wander off after stragglers in the woods
+      let s = d * 0.8 + thd * 0.25;                          // the closer to the town hall, the more urgent
+      if (attacking) s -= 6;
+      if (z.bTarget === th) s -= 6;
       const t = z.target;
       if (t && t !== v && t.faction === 'village') s -= t.kind === 'player' ? 3 : 8;   // someone needs help
       if (z.breakCell) s -= 4;                                                          // breaking our walls
@@ -867,7 +878,8 @@ export class Village {
       if (z.type === 'exploder') s += 9;                                               // let archers handle those
       if (z.type === 'brute') s += 2;
       s -= (1 - z.hp / z.maxHp) * 5;                                                   // finish the wounded
-      s += (claims.get(z) || 0) * 7;                                                   // don't all chase the same one
+      const big = z.boss || z.type === 'giant' || z.type === 'brute' || z.type === 'necromancer' || z.type === 'nano_titan';
+      s += (claims.get(z) || 0) * (big ? 2 : 7);                                       // spread out, but gang up on the big ones
       if (z === current) s -= 3;                                                       // don't flip-flop
       if (s < bs) { bs = s; best = z; }
     }
@@ -876,8 +888,17 @@ export class Village {
   guardPost(v) {
     const th = this.townHall;
     if (!th) return null;
-    const guards = this.villagersByJob('guard');
+    const guards = this.villagersByJob('guard').filter(g => g.workplace?.type !== 'watchtower');
     const i = Math.max(0, guards.indexOf(v));
+    // during a wave: split the guards between the directions the dead come from (one stays at the town hall)
+    const dirs = this.game.waves?.spawnDirections || [];
+    if (dirs.length && guards.length) {
+      if (guards.length >= 3 && i === guards.length - 1) return this.randomWalkable(th.door, 2) || th.door;
+      const d = dirs[i % dirs.length];
+      const ang = Math.atan2(d.z - th.center.z, d.x - th.center.x) + ((Math.floor(i / dirs.length) % 3) - 1) * 0.35;
+      const r = Math.max(10, Math.min(this.radius * 0.8, 30));
+      return this.randomWalkable({ x: th.center.x + Math.cos(ang) * r, y: th.y + 1, z: th.center.z + Math.sin(ang) * r }, 3) || th.door;
+    }
     const a = (i / Math.max(1, guards.length)) * Math.PI * 2 + 0.6;
     const r = Math.min(this.radius - 2, 12);
     return this.randomWalkable({ x: th.center.x + Math.cos(a) * r, y: th.y + 1, z: th.center.z + Math.sin(a) * r }, 2) || th.door;
