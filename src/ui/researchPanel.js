@@ -185,7 +185,7 @@ export class ResearchPanel {
       if (l.cls !== cls) { l.cls = cls; l.path.setAttribute('class', 'ln ' + cls); l.glow.setAttribute('class', 'glow ' + cls); }
     }
     // header
-    setText(this.pointsEl, (r.points || 0).toFixed(1) + ' оч.');
+    setText(this.pointsEl, (r.points || 0).toFixed(1) + ' / ' + (r.cap || 0) + ' оч.');
     setText(this.rateEl, '+' + (r.rate || 0.05).toFixed(2) + ' в сек.');
     const lab = r.labInfo ? r.labInfo() : { labs: 0, researchers: 0 };
     let hint = '';

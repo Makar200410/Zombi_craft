@@ -173,7 +173,7 @@ export const TECHS = {
 for (const id in TECHS) TECHS[id].id = id;
 export const TECH_ORDER = Object.keys(TECHS);
 
-const PASSIVE_RATE = 0.05;   // points / second, always
+const PASSIVE_RATE = 0.02;   // points / second, always
 
 export class Research {
   constructor(game) {
@@ -240,14 +240,16 @@ export class Research {
     this.points += this.invested * 0.5;
     this.current = null; this.invested = 0;
   }
+  /** Unspent points are capped: researchers can't stockpile a whole age ahead (60 + 60 per age). */
+  get cap() { return 60 + 60 * (this.state.age | 0); }
   addPoints(n) {
     if (!(n > 0)) return;
-    this.points += n;
+    this.points = Math.min(this.cap, this.points + n);
     this._acc += n;
   }
 
   update(dt) {
-    this.points += PASSIVE_RATE * dt;
+    this.points = Math.min(this.cap, this.points + PASSIVE_RATE * dt);
     this._acc += PASSIVE_RATE * dt;
     this._accT += dt;
     if (this._accT >= 3) { this.rate = this.rate * 0.4 + (this._acc / this._accT) * 0.6; this._acc = 0; this._accT = 0; }

@@ -395,7 +395,7 @@ export class Village {
     if (b.upgrade) return 'Уже улучшается';
     if (b.def.line) return 'Стены не улучшаются';
     if (b.def.wonder) return 'Чудо света уже совершенно';
-    if ((b.level || 1) >= b.maxLevel) return 'Максимум для этой эпохи';
+    if ((b.level || 1) >= b.maxLevel) return (b.level || 1) >= 10 ? 'Высший уровень' : `Уровень ${b.level} — максимум этой эпохи. Перейдите в следующую эпоху, чтобы улучшать дальше`;
     if (b.type !== 'town_hall' && this.townHall && (b.level || 1) >= this.townHall.level + 1) return 'Сначала улучшите ратушу';
     if (this.activeUpgrades >= this.upgradeSlots) return 'Все строители заняты улучшениями — наймите ещё';
     return null;
@@ -1110,7 +1110,7 @@ export class Village {
     if (a !== B.AIR && BLOCKS[a].solid) return;
     const leaf = LEAF_OF[s.log] || B.LEAVES;
     this.editBlock(s.x, s.y, s.z, leaf);      // a young bush that grows into a tree
-    this.saplings.push({ x: s.x, y: s.y, z: s.z, log: s.log, leaf, growAt: this.game.time + 60 + this.rng() * 60 });
+    this.saplings.push({ x: s.x, y: s.y, z: s.z, log: s.log, leaf, growAt: this.game.time + 40 + this.rng() * 40 });
     this.game.particles?.emit({ pos: { x: s.x + 0.5, y: s.y + 0.6, z: s.z + 0.5 }, count: 8, colors: [0x6fd05a, 0x9fe070], speed: 1, gravity: 1, life: 0.8, size: 0.12 });
   }
   growSaplings() {

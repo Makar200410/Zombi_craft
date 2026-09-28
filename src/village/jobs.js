@@ -191,7 +191,7 @@ function* woodcutterBrain(v) {
     const base = (v.workplace && v.workplace.isComplete) ? v.workplace : vil.townHall;
     if (!base) { yield* idleStep(v); continue; }
     if (v.workplace && !v.workplace.isComplete && v.workplace.state !== 'destroyed' && !vil.townHall) { yield* waitForWorkplace(v); continue; }
-    if (v.carryTotal >= 6) { yield* deposit(v); continue; }
+    if (v.carryTotal >= 14) { yield* deposit(v); continue; }
     // replant felled trees; when the woods thin out, plant new ones (checked now and then)
     let sap = vil.takeReplantSpot(base, v);
     if (!sap && v.workplace === base && (v._forestT = (v._forestT || 0) - 1) <= 0) { v._forestT = 4; sap = vil.forestSpot(base); }
@@ -225,14 +225,14 @@ function* woodcutterBrain(v) {
     v.task = 'Рубит ' + (TREE_NAMES[tree.id] || 'дерево');
     v.face({ x: tree.x + 0.5, z: tree.z + 0.5 });
     const hitP = { x: tree.x + 0.5, y: tree.y + 0.8, z: tree.z + 0.5 };
-    yield* v.work('chop', 3.3 / v.workSpeed, 0.55, () => {
+    yield* v.work('chop', 2.3 / v.workSpeed, 0.5, () => {
       game.audio?.play('chop', { pos: hitP, volume: 0.6, pitch: 0.9 + rnd() * 0.2 });
       game.particles?.blockHit(tree.x, tree.y, tree.z, tree.id, hitP);
     });
     if (game.world.getBlock(tree.x, tree.y, tree.z) !== tree.id) { v.release(rel); continue; }
     v.task = 'Валит ' + (TREE_NAMES[tree.id] || 'дерево');
     const logs = yield* fellTree(v, tree);
-    v.addCarry('wood', logs * 2);
+    v.addCarry('wood', logs * 4);
     vil.onTreeFelled(tree);
     v.release(rel);
   }
@@ -505,7 +505,7 @@ function* researcherBrain(v) {
       if (acc >= 2.5) {
         acc = 0;
         const pc = lab.type === 'computer_center' ? 1 + 1.5 * (vil.industry?.running(lab) ? vil.industry.powered : 0) : 1;
-        const pts = (atTable ? 1.2 : 1) * v.workSpeed * pc * (vil.hasWonder('stonehenge') ? 1.3 : 1) * (vil.hasWonder('global_network') ? 1.5 : 1);
+        const pts = 0.5 * (atTable ? 1.2 : 1) * v.workSpeed * pc * (vil.hasWonder('stonehenge') ? 1.3 : 1) * (vil.hasWonder('global_network') ? 1.5 : 1);
         try { game.research?.addPoints?.(pts); } catch (e) { /* research module not ready */ }
         vil.researchPoints += pts;
       }

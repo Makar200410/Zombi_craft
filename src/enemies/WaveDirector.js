@@ -9,9 +9,10 @@ import { EnemyProjectiles } from './fx.js';
 
 const DIFF = {
   // "alive" = max undead on the field at once (phones on low quality get ~55% of it)
-  easy: { count: 0.9, hp: 1.0, dmg: 0.9, reward: 0.9, alive: 45 },
-  normal: { count: 1.4, hp: 1.3, dmg: 1.2, reward: 1.2, alive: 60 },
-  hard: { count: 1.9, hp: 1.65, dmg: 1.45, reward: 1.5, alive: 80 },
+  // twice the undead of old and ~1.5x tougher (health x1.3, damage x1.2): guards can't hold every wave alone
+  easy: { count: 1.7, hp: 1.2, dmg: 1.0, reward: 1.0, alive: 55 },
+  normal: { count: 2.6, hp: 1.55, dmg: 1.35, reward: 1.35, alive: 75 },
+  hard: { count: 3.6, hp: 2.0, dmg: 1.65, reward: 1.7, alive: 100 },
 };
 const GRID = 2;   // spatial hash cell size for separation queries
 
@@ -85,7 +86,8 @@ export class WaveDirector {
   /** Composition of wave n: array of type ids (boss last). */
   compose(n) {
     const d = this.diff;
-    const count = Math.min(560, Math.round(countFor(n) * d.count));
+    // the first nights are gentler while the village is tiny
+    const count = Math.min(700, Math.round(countFor(n) * d.count * (n <= 6 ? 0.5 + n * 0.083 : 1)));
     const weights = weightsFor(n);
     // the dead evolve with the civilisation: new kinds by the village's age
     const age = this.game.state.age | 0;
