@@ -4,7 +4,7 @@ import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { SEA_LEVEL } from '../world/terrain.js';
 import { oak, birch, spruce } from '../world/terrain.js';
 import { mulberry32 } from '../core/rng.js';
-import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS } from './buildings.js';
+import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS, setEraTier } from './buildings.js';
 import { Building } from './Building.js';
 import { AGES } from '../systems/ages.js';
 import { Industry } from './industry.js';
@@ -78,6 +78,8 @@ export class Village {
   }
 
   reset() {
+    this.morphs = [];
+    setEraTier((this.game.state.age | 0) + 1);
     for (const v of this.villagers) { this.game.entities.remove(v); }
     this.villagers = [];
     for (const s of this.scaffolds.values()) s.dispose();
@@ -411,23 +413,93 @@ export class Village {
   }
   /** A new age: the whole town is rebuilt in the materials of its time. */
   restyleAll() {
+    setEraTier((this.game.state.age | 0) + 1);
     const edits = [];
+    let n = 0;
     for (const b of this.buildings) {
       if (b.state === 'destroyed') continue;
+      if (b.def.tiered) { if (this.retier(b)) n++; continue; }
       for (const e of b.applyLevelMaterials('collect')) edits.push(e);
       b.computeOps();
     }
     if (edits.length) this.bulkEdit(edits);
-    for (const b of this.buildings) b.refreshBuilt?.();
-    return edits.length;
+    for (const b of this.buildings) if (!b.def.tiered) b.refreshBuilt?.();
+    return edits.length + n;
+  }
+
+  // ================================================================ era rebuilds
+  /**
+   * An era building grows into the design of its style (age / level): swap its blueprint and let the town
+   * rebuild it block by block over a few seconds (old parts come down from the top, new ones rise from the ground).
+   */
+  retier(b, force = false) {
+    if (!b.def.tiered || b.state === 'destroyed') return false;
+    const t = b.style;
+    if (t === b.tier && !force) return false;
+    const w = this.game.world;
+    for (const bl of b.blocks) { const k = w.index(bl.x, bl.y, bl.z); if (this.cellIndex.get(k)?.b === b) this.cellIndex.delete(k); }
+    const oldH = b.relayout(t);
+    b.blocks.forEach((bl, i) => this.cellIndex.set(w.index(bl.x, bl.y, bl.z), { b, i }));
+    b.computeOps(oldH);
+    b.refreshMaxHp();
+    if (b.state === 'complete' || b.state === 'constructing') this.startMorph(b);
+    if (b === this.townHall) this._thFor = null;
+    this.ghostsDirty = true;
+    return true;
+  }
+  /** Queue the building's outstanding construction ops to be carried out automatically. */
+  startMorph(b) {
+    if (b.state !== 'complete') return;
+    this.morphs = this.morphs.filter(m => m.b !== b);
+    this.morphs.push({ b, i: 0, acc: 0, fx: 0 });
+  }
+  updateMorphs(dt) {
+    if (!this.morphs?.length) return;
+    const w = this.game.world, P = this.game.particles;
+    let budget = this.game.quality === 'low' ? 24 : 40;       // world edits per frame over all buildings
+    const per = Math.max(2, Math.ceil(budget / this.morphs.length));
+    for (let m = this.morphs.length - 1; m >= 0; m--) {
+      const mo = this.morphs[m], b = mo.b;
+      if (!this.byId.has(b.id) || b.state === 'destroyed') { this.morphs.splice(m, 1); continue; }
+      mo.acc += dt * 70;                    // ~70 blocks per second per building
+      let n = Math.min(per, Math.floor(mo.acc));
+      mo.acc -= n;
+      while (n > 0 && mo.i < b.ops.length) {
+        const op = b.ops[mo.i++];
+        if (w.getBlock(op.x, op.y, op.z) === op.id) continue;
+        this.editBlock(op.x, op.y, op.z, op.id);
+        n--; budget--;
+        if (++mo.fx % 6 === 0) P?.emit({ pos: { x: op.x + 0.5, y: op.y + 0.5, z: op.z + 0.5 }, count: 3, colors: [0xd8cfc0, 0xa89c88, 0xfff2c0], speed: 1.2, life: 0.7, size: 0.22, alpha: 0.6, gravity: 1 });
+        if (mo.fx % 24 === 0) this.game.audio?.play('hammer', { pos: { x: op.x, y: op.y, z: op.z }, volume: 0.35 });
+      }
+      if (mo.i >= b.ops.length) {
+        this.morphs.splice(m, 1);
+        b.refreshBuilt();
+        b.opCursor = 0;
+        b.needsRepair = b.builtCount < b.blocks.length;
+        this.unstickAround(b);
+        this.game.audio?.play('build_complete', { pos: b.center, volume: 0.6 });
+        this.bus.emit('building:restyled', { building: b });
+      }
+      if (budget <= 0) break;
+    }
+  }
+  /** After a rebuild: nobody may end up inside the new walls. */
+  unstickAround(b) {
+    const w = this.game.world;
+    const inside = (e) => w.isSolid(e.position.x, e.position.y + 0.1, e.position.z) || w.isSolid(e.position.x, e.position.y + 1.1, e.position.z);
+    // anyone at all (villagers wander in and out while the town rebuilds)
+    for (const v of this.villagers) if (!v.dead && inside(v)) v.teleportNear?.(b.contains(v.position.x, v.position.z, 1) ? b.door : v.position);
+    const p = this.game.player;
+    if (p && b.contains(p.position.x, p.position.z, 1) && inside(p)) { let y = Math.floor(p.position.y); while (y < w.height - 2 && (w.isSolid(p.position.x, y, p.position.z) || w.isSolid(p.position.x, y + 1, p.position.z))) y++; p.position.y = y; }
   }
   /** Kept for the town hall button. */
   upgradeTownHall() { return this.startUpgrade(this.townHall); }
   finishUpgrade(b) {
     b.upgrade = null;
     b.level = (b.level || 1) + 1;
-    b.applyLevelMaterials(true);
-    b.computeOps();
+    if (b.def.tiered) this.retier(b);
+    else { b.applyLevelMaterials(true); b.computeOps(); }
     b.refreshMaxHp(); b.hp = b.maxHp;
     this.recalcPop();
     this.toast(`«${b.def.name}» улучшено до ${b.level} уровня!`, 'good');
@@ -1037,7 +1109,12 @@ export class Village {
     this._thCd = (this._thCd || 0) - dt;
     if (this._thCd > 0) return;
     this._thCd = 0.4;
-    if (this._thFor !== th) { this._thFor = th; this._thTop = new THREE.Vector3(th.x + th.w / 2, th.y + Math.min(12, th.def.height || 10) + 1, th.z + th.d / 2); this._thShooter = null; }
+    if (this._thFor !== th) {
+      this._thFor = th;
+      const tp = th.points.top?.[0];
+      this._thTop = tp ? new THREE.Vector3(tp.x, tp.y + 1, tp.z) : new THREE.Vector3(th.x + th.w / 2, th.y + Math.min(12, th.height || 10) + 1, th.z + th.d / 2);
+      this._thShooter = null;
+    }
     const top = this._thTop;
     const range = (this.game.state.researchDone.has('ballistics') ? 32 : 24) * (this.game.weather?.rangeMul ?? 1);
     let best = null, bd = range * range;
@@ -1159,6 +1236,7 @@ export class Village {
     this._ghostT -= dt;
     if (this.ghostsDirty && this._ghostT <= 0) { this.rebuildGhosts(); this._ghostT = 0.2; }
     this.industry.update(dt);
+    this.updateMorphs(dt);
     this.updateSelection();
     this.updateLabels();
   }
@@ -1239,6 +1317,7 @@ export class Village {
   deserialize(o) {
     if (!o || !o.buildings) return;
     this.reset();
+    setEraTier((this.game.state.age | 0) + 1);
     this.armory = { level: 0, progress: 0, ...(o.armory || {}) };
     this.spawnTimer = o.spawnTimer ?? SPAWN_INTERVAL;
     if (o.spawnPoint) this.spawnPoint.set(o.spawnPoint[0], o.spawnPoint[1], o.spawnPoint[2]);
@@ -1247,15 +1326,24 @@ export class Village {
       const b = new Building(this, s.type, s.x, s.y, s.z, s.rot, s.variant || 0, s.id);
       b.level = s.level || 1;
       b.upgrade = s.upgrade && s.upgrade.left > 0 ? { left: s.upgrade.left, total: s.upgrade.total || s.upgrade.left } : null;
+      // era buildings: the design that stands in the world (older saves had the medieval design + material swaps)
+      let oldH = 0, morph = false;
+      if (b.def.tiered) {
+        const saved = s.tier || 0;
+        if (saved) { if (saved !== b.tier) b.relayout(saved); }
+        else { oldH = b.def.layout(b.rot, b.variant, 4).height; b.relayout(b.style); morph = true; }
+      }
       b.applyLevelMaterials(false);
       this.addBuilding(b);
-      b.computeOps();
+      b.computeOps(oldH);
       b.state = s.state || 'complete';
       b.maxHp = b.computeMaxHp();
       b.hp = Math.min(b.maxHp, s.hp ?? b.maxHp);
       b.quarryDone = !!s.quarryDone;
       if (b.state === 'complete') b.needsRepair = b.builtCount < b.blocks.length;
       if (b.state === 'planned' || b.state === 'constructing') this.scaffolds.set(b.id, new Scaffold(this.game, b));
+      if (morph && b.state === 'complete') this.startMorph(b);
+      else if (b.def.tiered && b.state === 'complete' && b.tier !== b.style) this.retier(b);
     }
     this.nextBuildingId = Math.max(this.nextBuildingId, o.nextBuildingId || 1);
     for (const s of o.villagers || []) {

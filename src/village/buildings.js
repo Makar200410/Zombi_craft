@@ -5,48 +5,8 @@
 // blueprint(rot, variant) -> [{dx,dy,dz,id}] ; layout(rot, variant) -> {w, d, height, points, plots, quarry}
 import { B } from '../core/blocks.js';
 
-class BP {
-  constructor(w, d) { this.w = w; this.d = d; this.cells = new Map(); this.pts = {}; this.plots = []; this.quarry = null; }
-  k(x, y, z) { return x + ',' + y + ',' + z; }
-  set(x, y, z, id) {
-    if (x < 0 || z < 0 || x >= this.w || z >= this.d || y < 0) return this;
-    if (id === B.AIR) this.cells.delete(this.k(x, y, z)); else this.cells.set(this.k(x, y, z), { dx: x, dy: y, dz: z, id });
-    return this;
-  }
-  get(x, y, z) { const c = this.cells.get(this.k(x, y, z)); return c ? c.id : B.AIR; }
-  del(x, y, z) { this.cells.delete(this.k(x, y, z)); return this; }
-  box(x0, y0, z0, x1, y1, z1, id) {
-    for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z++) for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) this.set(x, y, z, id);
-    return this;
-  }
-  /** perimeter walls of a rectangle */
-  ring(x0, y0, z0, x1, y1, z1, id) {
-    for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++)
-      if (x === x0 || x === x1 || z === z0 || z === z1) this.set(x, y, z, id);
-    return this;
-  }
-  posts(x0, z0, x1, z1, y0, y1, id) { for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) this.box(x, y0, z, x, y1, z, id); return this; }
-  /** Stepped gable roof with its ridge along X. Gable end walls (triangles) filled at x = ex0 / ex1 with endId. */
-  gableX(x0, x1, z0, z1, y0, id, endId, ex0, ex1, ridgeId) {
-    for (let k = 0; z0 + k <= z1 - k; k++) {
-      const y = y0 + k, za = z0 + k, zb = z1 - k;
-      const rid = za === zb || za + 1 === zb;
-      for (let x = x0; x <= x1; x++) { this.set(x, y, za, rid && ridgeId ? ridgeId : id); this.set(x, y, zb, rid && ridgeId ? ridgeId : id); }
-      if (k >= 1 && endId) for (let z = za + 1; z <= zb - 1; z++) { this.set(ex0, y, z, endId); this.set(ex1, y, z, endId); }
-    }
-    return this;
-  }
-  gableZ(x0, x1, z0, z1, y0, id, endId, ez0, ez1, ridgeId) {
-    for (let k = 0; x0 + k <= x1 - k; k++) {
-      const y = y0 + k, xa = x0 + k, xb = x1 - k;
-      const rid = xa === xb || xa + 1 === xb;
-      for (let z = z0; z <= z1; z++) { this.set(xa, y, z, rid && ridgeId ? ridgeId : id); this.set(xb, y, z, rid && ridgeId ? ridgeId : id); }
-      if (k >= 1 && endId) for (let x = xa + 1; x <= xb - 1; x++) { this.set(x, y, ez0, endId); this.set(x, y, ez1, endId); }
-    }
-    return this;
-  }
-  point(name, x, y, z) { (this.pts[name] || (this.pts[name] = [])).push({ dx: x, dy: y, dz: z }); return this; }
-}
+import { BP } from './bp.js';
+import { tiered } from './architecture.js';
 
 // ---------------------------------------------------------------- designs
 
@@ -996,11 +956,16 @@ function rotXZ(x, z, w, d, rot) {
 }
 
 const cache = new Map();
-function compile(type, rot, variant) {
-  const key = type.id + ':' + (rot & 3) + ':' + variant;
+// Era tier used for previews / icons when no tier is given (the village sets it to the current age + 1).
+let eraTier = 1;
+export function setEraTier(t) { eraTier = Math.max(1, Math.min(10, t | 0)); }
+export function getEraTier() { return eraTier; }
+function compile(type, rot, variant, tier) {
+  if (!type.tiered) tier = 0;
+  const key = type.id + ':' + (rot & 3) + ':' + variant + ':' + tier;
   let c = cache.get(key);
   if (c) return c;
-  const bp = type.design(variant);
+  const bp = type.tiered ? type.design(variant, tier) : type.design(variant);
   const { w, d } = bp;
   const blocks = [];
   let height = 0;
@@ -1010,7 +975,7 @@ function compile(type, rot, variant) {
     height = Math.max(height, cell.dy + 1);
   }
   // build order: bottom-up; solid structure before decoration (torches, glass, plants, water) of that layer
-  const deco = (id) => id === B.TORCH || id === B.GLASS || id === B.FLOWER_RED || id === B.FLOWER_YELLOW || id === B.MUSHROOM || id === B.LANTERN || id === B.BANNER || id === B.WATER;
+  const deco = (id) => id === B.TORCH || id === B.GLASS || id === B.WINDOW || id === B.GLASS_BLUE || id === B.ENERGY_GLASS || id === B.LED || id === B.NEON || id === B.LAMP || id === B.FLOWER_RED || id === B.FLOWER_YELLOW || id === B.MUSHROOM || id === B.LANTERN || id === B.BANNER || id === B.WATER;
   blocks.sort((a, b) => a.dy - b.dy || (deco(a.id) - deco(b.id)) || a.dz - b.dz || a.dx - b.dx);
   const points = {};
   for (const name in bp.pts) points[name] = bp.pts[name].map(p => { const [x, z] = rotXZ(p.dx, p.dz, w, d, rot); return { dx: x, dy: p.dy, dz: z }; });
@@ -1038,9 +1003,12 @@ function def(id, o) {
     id, research: null, jobs: {}, popBonus: 0, hp: 300, category: 'economy', maxCount: Infinity, variants: 1, storage: [],
     ...o,
   };
-  t.blueprint = (rot = 0, variant = 0) => compile(t, rot, variant % t.variants).blocks;
-  t.layout = (rot = 0, variant = 0) => compile(t, rot, variant % t.variants);
-  const l = t.layout(0);
+  // era designs: the type grows and changes materials with every age (see architecture.js)
+  const era = tiered(id, t.design);
+  if (era) { t.tiered = true; t.design = era; }
+  t.blueprint = (rot = 0, variant = 0, tier = eraTier) => compile(t, rot, variant % t.variants, tier).blocks;
+  t.layout = (rot = 0, variant = 0, tier = eraTier) => compile(t, rot, variant % t.variants, tier);
+  const l = t.layout(0, 0, 4);
   t.size = [l.w, l.d];
   t.height = l.height;
   BUILDING_TYPES[id] = t;

@@ -895,7 +895,7 @@ function avgColor(name) {
 const scaleCol = (c, k) => c.map(v => clamp(Math.round(v * k), 0, 255));
 function voxelIcon(p, typeId) {
   const t = BUILDING_TYPES[typeId]; if (!t) return BUILD_DRAW.house(p);
-  const L = t.layout(0);
+  const L = t.layout(0, 0, 4);      // icons show the classic (medieval) design
   const blocks = L.blocks.filter(b => b.dy >= 1 || L.blocks.length < 60);
   // fit the projected bounds of the actual blocks into the 48 px icon
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;

@@ -96,6 +96,24 @@ def(59, 'hazard', { label: 'Сигнальная полоса', hardness: 6, cos
 def(60, 'server', { label: 'Серверная стойка', tiles: { top: 'steel_top', side: 'server' }, hardness: 4, light: 6, cost: { steel: 2, gold: 1 }, drop: { steel: 1 }, tool: 'pick' });
 def(61, 'polymer', { label: 'Полимерная панель', hardness: 7, cost: { steel: 1, stone: 2 }, drop: { stone: 1 }, tool: 'pick' });
 def(55, 'cannon', { label: 'Пушка', tiles: { top: 'cannon_top', side: 'cannon_side' }, hardness: 7, cost: { iron: 6 }, drop: { iron: 3 }, tool: 'pick' });
+// era building materials: every age builds from its own blocks
+def(62, 'wattle', { label: 'Плетень с глиной', hardness: 1.6, cost: { wood: 1 }, drop: { wood: 1 }, tool: 'axe' });
+def(63, 'hide', { label: 'Шкуры', hardness: 0.8, cost: { food: 1 }, tool: 'axe' });
+def(64, 'mudbrick', { label: 'Сырцовый кирпич', hardness: 2.5, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(65, 'sandstone', { label: 'Песчаник', tiles: { top: 'sandstone_top', side: 'sandstone' }, hardness: 3, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(66, 'shingles', { label: 'Деревянная дранка', hardness: 1.6, cost: { wood: 1 }, drop: { wood: 1 }, tool: 'axe' });
+def(67, 'stucco', { label: 'Охровая штукатурка', hardness: 3, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(68, 'slate', { label: 'Сланцевая кровля', hardness: 3.5, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(69, 'cast_iron', { label: 'Чугунная ферма', hardness: 7, cost: { iron: 1 }, drop: { iron: 1 }, tool: 'pick' });
+def(70, 'corrugated', { label: 'Гофролист', hardness: 4, cost: { iron: 1 }, drop: { iron: 1 }, tool: 'pick' });
+def(71, 'window', { label: 'Оконная рама', render: 'transparent', hardness: 0.8, cost: { stone: 1, iron: 1 } });
+def(72, 'prefab', { label: 'Бетонная панель', hardness: 7, cost: { stone: 3 }, drop: { stone: 1 }, tool: 'pick' });
+def(73, 'aluminum', { label: 'Алюминиевая панель', hardness: 6, cost: { steel: 1 }, drop: { steel: 1 }, tool: 'pick' });
+def(74, 'glass_blue', { label: 'Тонированное стекло', render: 'transparent', hardness: 1.2, cost: { stone: 1, steel: 1 } });
+def(75, 'led', { label: 'Светодиодная панель', hardness: 1.5, light: 13, cost: { steel: 1, gold: 1 }, drop: { steel: 1 } });
+def(76, 'neon', { label: 'Неон', hardness: 1.5, light: 12, cost: { steel: 1, crystal: 1 }, drop: { steel: 1 } });
+def(77, 'energy_glass', { label: 'Энергостекло', render: 'transparent', hardness: 3, light: 10, cost: { crystal: 1, steel: 1 } });
+def(78, 'nano', { label: 'Нанокомпозит', hardness: 10, cost: { steel: 2, crystal: 1 }, drop: { steel: 1 }, tool: 'pick' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
@@ -116,5 +134,6 @@ export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL
 export const PALETTE = [
   B.PLANKS, B.COBBLESTONE, B.STONE_BRICKS, B.LOG, B.TIMBER_FRAME, B.PLASTER, B.ROOF_TILES, B.THATCH,
   B.GLASS, B.TORCH, B.LANTERN, B.PALISADE, B.REINFORCED_WALL, B.DIRT, B.SAND, B.GRAVEL, B.PATH,
-  B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.HAZARD, B.SERVER, B.POLYMER, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
+  B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.HAZARD, B.SERVER, B.POLYMER,
+  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
 ];

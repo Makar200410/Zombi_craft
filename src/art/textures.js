@@ -75,6 +75,18 @@ const P = {
   arcwood: hexes(['#120c16', '#1b1320', '#251a2b', '#302236', '#3c2b42', '#49354f', '#57405d']),
   water: hexes(['#173782', '#1c4696', '#2356aa', '#2c68bb', '#3a7cc9', '#5092d5', '#6eaade', '#98c6ea', '#c6e2f5']),
   wgreen: hexes(['#1d3a10', '#2b5317', '#3b6c1e', '#4f8727', '#67a131', '#82b83f']),
+  clay: hexes(['#3a2a1a', '#523b24', '#6b4e30', '#83623d', '#9a764b', '#ae895b', '#c09c6d', '#d0b083']),
+  hide: hexes(['#2e1a0e', '#452815', '#5d371d', '#764727', '#8e5832', '#a56a3f', '#ba7e50', '#cc9463']),
+  mud: hexes(['#3d2717', '#58391f', '#724b29', '#8b5e34', '#a17141', '#b48450', '#c69862', '#d5ad78']),
+  sandst: hexes(['#6a4722', '#86602e', '#a1783b', '#b98f4b', '#cda35e', '#dcb673', '#e8c98b', '#f2dba7']),
+  shingle: hexes(['#221c17', '#33291f', '#463829', '#584734', '#6b5840', '#7e6a4f', '#917d60', '#a39174']),
+  ochre: hexes(['#7a5426', '#94692f', '#ad7f3b', '#c3964b', '#d5aa5f', '#e2bd75', '#ecd08f', '#f4e2ad']),
+  slate: hexes(['#13161d', '#1c2029', '#262b36', '#313744', '#3d4453', '#4a5263', '#586174', '#687286']),
+  galv: hexes(['#3d4247', '#50565c', '#646b71', '#798086', '#8e959b', '#a3a9ae', '#b8bdc1', '#cdd1d4']),
+  rust: hexes(['#3a1a0c', '#5a2810', '#7a3a16', '#95501f', '#ab672c']),
+  prefab: hexes(['#6d6a63', '#817e76', '#96928a', '#aaa69d', '#bcb8ae', '#ccc8be', '#dad6cc', '#e6e3da']),
+  alu: hexes(['#5f6873', '#77818c', '#8f99a4', '#a7b0ba', '#bdc5cd', '#d0d7de', '#e1e6eb', '#f0f3f6']),
+  nano: hexes(['#07060c', '#0d0b16', '#141120', '#1c182b', '#252036', '#2f2942', '#3a334f']),
   wgold: hexes(['#5e3e10', '#7f5816', '#a5771f', '#c8972c', '#e0b43d', '#efcb58', '#f9e083', '#fff2b4']),
 };
 
@@ -738,6 +750,205 @@ GEN.polymer = (p, r) => {
     return rampDither(P.snow.map(c => shift(c, -0.05)), v, x, y, 0.3);
   });
   for (let x = 4; x < 28; x++) p.set(x, 8, P.water[5]);
+};
+
+// ================================================================== ERA BUILDING MATERIALS
+GEN.wattle = (p, r) => {
+  // woven hazel rods daubed with clay: horizontal weave between vertical stakes, clay patches on top
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const cl = tileFbm(r, S, [4, 8], 0.55);
+  p.map((x, y) => {
+    const stake = (x & 7) === 0;
+    const row = y >> 2, ly = y & 3;
+    const over = ((x >> 3) + row) & 1;
+    let v;
+    if (stake) v = 2.2 + (n(x, y) - 0.5);
+    else { v = 3.4 + (ly === 1 ? 0.8 : ly === 3 ? -1 : 0) + (over ? 0.4 : -0.4) + (n(x, y) - 0.5) * 1.2; }
+    const c = rampDither(P.bark.concat([P.wood[3]]), v, x, y, 0.3);
+    if (cl(x, y) > 0.52) return rampDither(P.clay, 3.6 + (cl(x, y) - 0.52) * 7 + (n(x, y) - 0.5) * 1.5, x, y, 0.5);
+    return c;
+  });
+  cracks(p, r, 2, P.clay[1], 0.15, [3, 6]);
+};
+GEN.hide = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  p.map((x, y) => {
+    let v = 3.6 + (n(x, y) - 0.5) * 2.4;
+    const seam = x === 15 || x === 16;
+    if (seam) v -= 1.6;
+    if ((x === 14 || x === 17) && (y % 4 === 1)) v = 6.5;              // leather lacing
+    return rampDither(P.hide, v, x, y, 0.5);
+  });
+  for (let i = 0; i < 14; i++) p.shade(r.int(0, 31), r.int(0, 31), r.chance(0.5) ? 0.15 : -0.2);
+};
+GEN.mudbrick = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const tone = []; for (let i = 0; i < 16; i++) tone.push(r.range(-0.6, 0.6));
+  p.map((x, y) => {
+    const row = y >> 3, ly = y & 7, off = row & 1 ? 8 : 0;
+    const lx = (x + off) & 15, bi = row * 2 + (((x + off) >> 4) & 1);
+    if (ly === 7 || lx === 15) return rampAt(P.clay, 1.8 + (n(x, y) - 0.5) * 1.6);
+    let v = 3.8 + tone[bi] + (n(x, y) - 0.5) * 2;
+    if (ly === 0) v += 0.8; if (ly === 6) v -= 0.8; if (lx === 0) v += 0.5;
+    return rampDither(P.mud, v, x, y, 0.6);
+  });
+  for (let i = 0; i < 16; i++) { const x = r.int(0, 31), y = r.int(0, 31); p.set(x, y, P.straw[5]); }   // straw bits
+};
+GEN.sandstone = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.55);
+  p.map((x, y) => {
+    const band = Math.sin(y * 0.55 + n(x, y) * 3) * 0.6;
+    let v = 4 + band + (n(x, y) - 0.5) * 1.4;
+    if (y < 3) v += 0.9; if (y > 28) v -= 1.1; if (y === 15) v -= 1.2;
+    return rampDither(P.sandst, v, x, y, 0.5);
+  });
+};
+GEN.sandstone_top = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.55);
+  p.map((x, y) => { let v = 4.5 + (n(x, y) - 0.5) * 1.6; if (x === 0 || y === 0) v += 0.5; if (x === 31 || y === 31) v -= 0.9; return rampDither(P.sandst, v, x, y, 0.5); });
+};
+GEN.shingles = (p, r) => {
+  const tone = []; for (let i = 0; i < 64; i++) tone.push(r.range(-0.9, 0.8));
+  const n = tileNoise(r, S, 16);
+  p.map((x, y) => {
+    const row = y >> 2, ly = y & 3, off = row & 1 ? 3 : 0;
+    const lx = ((x + off) % 6 + 6) % 6, id = row * 6 + Math.floor((x + off) / 6);
+    let v = 3.7 + tone[id % 64] + (n(x, y) - 0.5) * 1.2 - ly * 0.15;
+    if (ly === 3) v = 1.1; if (lx === 5) v -= 1.2; if (lx === 0) v += 0.4;
+    return rampDither(P.shingle, v, x, y, 0.4);
+  });
+};
+GEN.stucco = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const h = field(S, S, (x, y) => n(x, y));
+  p.map((x, y) => {
+    let v = 4.3 + (h.at(x, y) - 0.5) * 1.8 + emboss(h, x, y, 3);
+    if (y >= 28) v = 5.6 - (y - 28) * 0.9;            // moulded cornice band at the bottom edge
+    if (y === 27) v = 2.2;
+    return rampDither(P.ochre, v, x, y, 0.6);
+  });
+};
+GEN.slate = (p, r) => {
+  const tone = []; for (let i = 0; i < 32; i++) tone.push(r.range(-0.7, 0.8));
+  const n = tileNoise(r, S, 16);
+  p.map((x, y) => {
+    const row = y >> 3, ly = y & 7, off = row & 1 ? 4 : 0;
+    const lx = (x + off) & 7, id = row * 4 + (((x + off) >> 3) & 3);
+    let v = 3.6 + tone[id] + (n(x, y) - 0.5) * 0.9 - ly * 0.1;
+    // rounded fish-scale bottoms
+    const round = Math.abs(lx - 3.5) > 2.6 && ly === 6;
+    if (ly === 7 || round) v = 0.8; if (lx === 7) v -= 1; if (lx === 0) v += 0.6;
+    return rampDither(P.slate, v, x, y, 0.3);
+  });
+};
+GEN.cast_iron = (p, r) => {
+  // riveted girder with an X-brace, dark painted iron
+  const n = tileFbm(r, S, [8, 16], 0.6);
+  p.map((x, y) => {
+    const frame = x < 3 || x > 28 || y < 3 || y > 28;
+    const d1 = Math.abs(x - y), d2 = Math.abs(x + y - 31);
+    const brace = d1 <= 1 || d2 <= 1;
+    let v;
+    if (frame) v = 3.6 + (x < 1 || y < 1 ? 1.3 : 0) - (x > 30 || y > 30 ? 1.3 : 0);
+    else if (brace) v = 3.1 + (d1 === 0 || d2 === 0 ? 0.6 : -0.4);
+    else return rampAt(P.ironD, 0.6 + (n(x, y) - 0.5) * 0.6);
+    return rampDither(P.ironD, v + (n(x, y) - 0.5), x, y, 0.3);
+  });
+  for (const k of [5, 13, 18, 26]) for (const [x, y] of [[1, k], [30, k], [k, 1], [k, 30]]) { p.set(x, y, P.iron[4]); p.set(x + 1, y + 1, P.ironD[0]); }
+};
+GEN.corrugated = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const rs = tileFbm(r, S, [4, 8], 0.6);
+  p.map((x, y) => {
+    const w = Math.cos((x / 4) * Math.PI);
+    let v = 3.8 + w * 1.4 + (n(x, y) - 0.5) * 0.8;
+    if (y === 15 || y === 31) v -= 1.2;
+    if (rs(x, y) > 0.68) return rampDither(P.rust, 2.4 + w + (rs(x, y) - 0.68) * 6, x, y, 0.6);
+    return rampDither(P.galv, v, x, y, 0.3);
+  });
+};
+GEN.window = (p, r) => {
+  // industrial multi-pane window: dark iron glazing bars, slightly tinted panes
+  p.map((x, y) => {
+    const e = Math.min(x, y, 31 - x, 31 - y);
+    const bar = e < 2 || (x >= 15 && x <= 16) || (y >= 10 && y <= 11) || (y >= 21 && y <= 22);
+    if (bar) return [...(e === 0 || x === 15 || y === 10 || y === 21 ? hex('#4a4e57') : hex('#23262d')), 255];
+    const sheen = (x + y) % 16 < 3;
+    return [...hex(sheen ? '#e8f6ff' : '#b7d4e2'), sheen ? 90 : 55];
+  });
+};
+GEN.prefab = (p, r) => {
+  // precast concrete panel: fine gravel texture, recessed joints, small glazed tiles band
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  p.map((x, y) => {
+    let v = 4.3 + (n(x, y) - 0.5) * 1.2;
+    if (x === 0 || y === 0) v += 0.7; if (x === 31 || y === 31) v = 1.2; if (x === 30 || y === 30) v -= 1;
+    if (y >= 23 && y <= 26) { const t = ((x >> 1) + (y >> 1)) & 1; return rampAt(P.water.map(c => shift(c, 0.15)), t ? 5 : 4); }
+    return rampDither(P.prefab, v, x, y, 0.6);
+  });
+  for (let i = 0; i < 40; i++) p.shade(r.int(1, 30), r.int(1, 30), r.chance(0.5) ? 0.1 : -0.15);
+};
+GEN.aluminum = (p, r) => {
+  const bn = tileNoise2(r, S, S, 32, 2);
+  p.map((x, y) => {
+    let v = 4.6 + (bn(x, y) - 0.5) * 1.2;                         // brushed streaks
+    const lx = x & 15;
+    if (lx === 0) v += 1.1; if (lx === 15) v -= 1.6;
+    if (y === 0) v += 0.8; if (y === 31) v -= 1.4;
+    return rampDither(P.alu, v, x, y, 0.2);
+  });
+  for (const [x, y] of [[2, 2], [13, 2], [18, 2], [29, 2], [2, 29], [13, 29], [18, 29], [29, 29]]) p.set(x, y, P.alu[1]);
+};
+GEN.glass_blue = (p, r) => {
+  p.map((x, y) => {
+    const e = Math.min(x, y, 31 - x, 31 - y);
+    if (e === 0) return [...hex('#c8d4de'), 255];
+    if (e === 1) return [...hex('#7d8b99'), 255];
+    const refl = (y + (x >> 1)) % 24 < 5;
+    return [...hex(refl ? '#9fd4ff' : '#2f6fb0'), refl ? 150 : 120];
+  });
+};
+GEN.led = (p, r) => {
+  p.map((x, y) => {
+    if (y < 3 || y > 28) return rampAt(P.alu, y < 3 ? 5 : 2);
+    if (y >= 12 && y <= 19) { const d = Math.abs(y - 15.5) / 4; return mix(hex('#ffffff'), hex('#8fe8ff'), d); }
+    return rampAt(P.nano, 2 + ((x & 3) === 0 ? 1 : 0));
+  });
+};
+GEN.neon = (p, r) => {
+  p.map((x, y) => {
+    const d1 = Math.abs(y - 9.5), d2 = Math.abs(y - 22.5);
+    if (d1 < 2.5) return mix(hex('#ffffff'), hex('#ff4fd8'), d1 / 2.5);
+    if (d2 < 2.5) return mix(hex('#ffffff'), hex('#36e7ff'), d2 / 2.5);
+    const g = Math.max(0, 1 - Math.min(d1, d2) / 7);
+    return mix(rampAt(P.nano, 2), Math.min(d1, d2) === d1 ? hex('#6a1a60') : hex('#10506a'), g);
+  });
+};
+GEN.energy_glass = (p, r) => {
+  // hexagonal force-glass lattice glowing cyan
+  p.map((x, y) => {
+    const e = Math.min(x, y, 31 - x, 31 - y);
+    if (e === 0) return [...hex('#9ff8ff'), 255];
+    const hy = y / 8, hx = x / 9.2 + ((Math.floor(hy) & 1) ? 0.5 : 0);
+    const fx = hx - Math.floor(hx) - 0.5, fy = hy - Math.floor(hy) - 0.5;
+    const edge = Math.max(Math.abs(fx) * 1.15 + Math.abs(fy) * 0.55, Math.abs(fy)) > 0.44;
+    return edge ? [...hex('#7af6ff'), 230] : [...hex('#1ec8e8'), 95];
+  });
+};
+GEN.nano = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.6);
+  p.map((x, y) => {
+    let v = 3 + (n(x, y) - 0.5) * 1.4;
+    if ((x & 15) === 0 || (y & 15) === 0) v += 1.4;
+    return rampDither(P.nano, v, x, y, 0.3);
+  });
+  // circuit traces
+  for (let k = 0; k < 5; k++) {
+    let x = r.int(2, 29), y = r.int(2, 29);
+    const col = r.chance(0.5) ? hex('#b06cff') : hex('#5ad8ff');
+    for (let i = 0; i < r.int(6, 12); i++) { p.set(x, y, col); if (r.chance(0.5)) x += r.sign(); else y += r.sign(); }
+    p.set(x, y, hex('#ffffff'));
+  }
 };
 
 GEN.cannon_side = (p, r) => {

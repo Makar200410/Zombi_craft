@@ -6,17 +6,18 @@ import { ageOf, ageHpBonus } from '../systems/ages.js';
 // Every age (and every upgrade) rebuilds buildings in the materials of its time. The style of a building is
 // max(its level, age + 1); the maps below are applied cumulatively to the blueprint's own blocks.
 // Style 1 (stone age) is a special, more primitive take on the blueprints.
-const PRIMITIVE = { [B.ROOF_TILES]: B.THATCH, [B.STONE_BRICKS]: B.COBBLESTONE, [B.PLASTER]: B.PLANKS, [B.TIMBER_FRAME]: B.LOG, [B.MARBLE]: B.COBBLESTONE };
+// (Most common buildings have real era designs instead — see architecture.js; these maps restyle the rest.)
+const PRIMITIVE = { [B.ROOF_TILES]: B.THATCH, [B.STONE_BRICKS]: B.COBBLESTONE, [B.PLASTER]: B.WATTLE, [B.TIMBER_FRAME]: B.WATTLE, [B.MARBLE]: B.COBBLESTONE };
 const LEVEL_MATERIALS = [
-  [2, { [B.THATCH]: B.ROOF_TILES }],
-  [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS }],
-  [4, { [B.TIMBER_FRAME]: B.PLASTER, [B.LOG]: B.STONE_BRICKS, [B.SPRUCE_LOG]: B.STONE_BRICKS, [B.BIRCH_LOG]: B.STONE_BRICKS }],
-  [5, { [B.PLASTER]: B.MARBLE }],
-  [6, { [B.ROOF_TILES]: B.COPPER_ROOF, [B.STONE_BRICKS]: B.BRICK }],
-  [7, { [B.BRICK]: B.CONCRETE, [B.DARK_STONE]: B.CONCRETE, [B.COBBLESTONE]: B.CONCRETE, [B.PLANKS]: B.BRICK }],
-  [8, { [B.COPPER_ROOF]: B.STEEL_BLOCK, [B.LANTERN]: B.LAMP }],
-  [9, { [B.CONCRETE]: B.POLYMER, [B.PLASTER]: B.POLYMER }],
-  [10, { [B.MARBLE]: B.POLYMER, [B.STONE_BRICKS]: B.POLYMER }],
+  [2, { [B.THATCH]: B.ROOF_TILES, [B.PLASTER]: B.MUDBRICK }],
+  [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS, [B.MUDBRICK]: B.PLASTER }],
+  [4, { [B.LOG]: B.SPRUCE_LOG, [B.BIRCH_LOG]: B.SPRUCE_LOG }],
+  [5, { [B.PLASTER]: B.STUCCO, [B.TIMBER_FRAME]: B.STUCCO, [B.ROOF_TILES]: B.SLATE }],
+  [6, { [B.STONE_BRICKS]: B.BRICK, [B.STUCCO]: B.BRICK, [B.SLATE]: B.CORRUGATED, [B.GLASS]: B.WINDOW, [B.SPRUCE_LOG]: B.CAST_IRON, [B.COBBLESTONE]: B.DARK_STONE }],
+  [7, { [B.BRICK]: B.CONCRETE, [B.CORRUGATED]: B.COPPER_ROOF, [B.LANTERN]: B.LAMP, [B.PLANKS]: B.CONCRETE, [B.CAST_IRON]: B.STEEL_BLOCK }],
+  [8, { [B.CONCRETE]: B.PREFAB, [B.COPPER_ROOF]: B.STEEL_BLOCK, [B.MARBLE]: B.PREFAB, [B.DARK_STONE]: B.CONCRETE }],
+  [9, { [B.PREFAB]: B.ALUMINUM, [B.WINDOW]: B.GLASS_BLUE, [B.GLASS]: B.GLASS_BLUE, [B.LAMP]: B.LED, [B.STEEL_BLOCK]: B.ALUMINUM }],
+  [10, { [B.ALUMINUM]: B.POLYMER, [B.GLASS_BLUE]: B.ENERGY_GLASS, [B.LED]: B.NEON, [B.CONCRETE]: B.NANO, [B.STONE_BRICKS]: B.NANO }],
 ];
 function levelId(id, level) {
   if (level <= 1) return PRIMITIVE[id] ?? id;
@@ -41,7 +42,9 @@ export class Building {
     this.name = this.def.name;
     this.x = x; this.y = y; this.z = z;
     this.rot = rot & 3; this.variant = variant;
-    const L = this.def.layout(this.rot, variant);
+    // era buildings are designed per tier (age); the others get their materials swapped
+    this.tier = this.def.tiered ? Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)) : 0;
+    const L = this.def.layout(this.rot, variant, this.tier);
     this.layout = L;
     this.w = L.w; this.d = L.d; this.height = L.height;
     this.state = 'planned';
@@ -51,7 +54,7 @@ export class Building {
     this.createdAt = this.game.time;
     this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, base: b.id, dy: b.dy }));
     this.upgrade = null;         // {left, total} while an upgrade is under way
-    if (!this.def.wonder) for (const bl of this.blocks) bl.id = levelId(bl.base, Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)));
+    if (!this.def.wonder && !this.def.tiered) for (const bl of this.blocks) bl.id = levelId(bl.base, Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)));
     this.built = new Uint8Array(this.blocks.length);
     this.builtCount = 0;
     this.points = {};
@@ -111,7 +114,7 @@ export class Building {
   /** Swap block materials to match the style. edit=true rebuilds the world blocks now, 'collect' only returns the edits. */
   applyLevelMaterials(edit) {
     const w = this.game.world, edits = [];
-    if (this.def.wonder) return edits;
+    if (this.def.wonder || this.def.tiered) return edits;
     const style = this.style;
     for (const b of this.blocks) {
       const id = levelId(b.base ?? b.id, style);
@@ -121,6 +124,25 @@ export class Building {
     }
     if (edits.length && edit === true) this.village.bulkEdit(edits);
     return edits;
+  }
+  /**
+   * Switches an era building to the design of another tier (no world edits: the village morphs the blocks).
+   * Returns the height of the old design so leftovers above the new one can be cleared.
+   */
+  relayout(tier) {
+    const oldH = this.height;
+    const L = this.def.layout(this.rot, this.variant, tier);
+    const x = this.x, y = this.y, z = this.z;
+    this.tier = tier;
+    this.layout = L;
+    this.height = L.height;
+    this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, base: b.id, dy: b.dy }));
+    this.built = new Uint8Array(this.blocks.length);
+    this.builtCount = 0;
+    this.points = {};
+    for (const k in L.points) this.points[k] = L.points[k].map(p => ({ x: x + p.dx + 0.5, y: y + p.dy, z: z + p.dz + 0.5 }));
+    this.plots = L.plots.map(p => ({ x: x + p.dx, y: y + p.dy, z: z + p.dz }));
+    return oldH;
   }
   refreshMaxHp() {
     const f = this.hp / this.maxHp;
@@ -137,21 +159,22 @@ export class Building {
 
   // ---------------------------------------------------------------- construction ops
   /** (Re)computes the construction op list from the current world. */
-  computeOps() {
+  computeOps(clearHeight = 0) {
     const w = this.game.world;
     const ops = [];
     const bpAt = new Map();
     this.blocks.forEach((b, i) => bpAt.set(w.index(b.x, b.y, b.z), i));
     const quarryCols = new Set();
     if (this.quarry) for (const c of this.quarry.cells) quarryCols.add(c.x + ',' + c.z);
-    const top = this.y + Math.max(this.height + 1, 13);
+    const top = this.y + Math.max(this.height + 1, 13, clearHeight + 1);
+    const clearTop = this.y + Math.max(this.height, clearHeight) + 1;
     const clears = [], fills = [];
     for (let z = this.z; z < this.z + this.d; z++) for (let x = this.x; x < this.x + this.w; x++) {
       for (let yy = top; yy > this.y; yy--) {
         const id = w.getBlock(x, yy, z);
         if (id === B.AIR) continue;
         if (bpAt.has(w.index(x, yy, z))) continue;
-        if (yy > this.y + this.height + 1 && !LOG_BLOCKS.has(id) && !LEAF_BLOCKS.has(id)) continue;
+        if (yy > clearTop && !LOG_BLOCKS.has(id) && !LEAF_BLOCKS.has(id)) continue;
         clears.push({ x, y: yy, z, id: B.AIR, kind: CLEAR });
       }
       if (quarryCols.has(x + ',' + z)) continue;
@@ -290,6 +313,6 @@ export class Building {
   }
 
   serialize() {
-    return { id: this.id, type: this.type, x: this.x, y: this.y, z: this.z, rot: this.rot, variant: this.variant, state: this.state, hp: this.hp, level: this.level, quarryDone: this.quarryDone, upgrade: this.upgrade };
+    return { id: this.id, type: this.type, x: this.x, y: this.y, z: this.z, rot: this.rot, variant: this.variant, state: this.state, hp: this.hp, level: this.level, tier: this.tier, quarryDone: this.quarryDone, upgrade: this.upgrade };
   }
 }
