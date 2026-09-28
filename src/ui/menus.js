@@ -1,5 +1,6 @@
 // Full-screen menus: main menu, new game, settings, how-to-play, pause, death, game over, confirm, loading.
 import { h, img, glyph, glyphImg, resourceIcon, itemIcon, clear } from './dom.js';
+import { CREDITS } from '../audio/library.js';
 
 const DIFFS = [
   { id: 'easy', name: 'Лёгкая', desc: 'Меньше зомби, больше времени на стройку.', icon: 'shield' },
@@ -154,8 +155,9 @@ export class Menus {
       pc: () => [keys([
         ['W A S D', 'Движение'], ['Пробел', 'Прыжок'], ['Shift', 'Бег'], ['Мышь', 'Обзор'],
         ['ЛКМ', 'Атака / добыча блока'], ['ПКМ', 'Поставить блок / особое действие'], ['1–9, колесо', 'Выбор предмета'],
-        ['V', 'Вид от 1-го / 3-го лица'], ['Tab', 'Режим командования'], ['I', 'Крафт и переплавка'], ['ПКМ по верстаку / печи', 'Открыть крафт'], ['Esc / P', 'Пауза'],
+        ['V', 'Вид от 1-го / 3-го лица'], ['Tab', 'Режим командования'], ['I', 'Крафт и переплавка'], ['E', 'Инвентарь: оружие в ячейки'], ['Колесо с молотом', 'Выбор блока (Shift + колесо — предмет)'], ['ПКМ по верстаку / печи', 'Открыть крафт'], ['Esc / P', 'Пауза'],
       ])],
+      credits: () => [h('p', 'Спасибо авторам свободной музыки и звуков:'), h('ul.zc-tips', CREDITS.map(t => h('li', t)))],
       touch: () => [keys([
         ['Джойстик слева', 'Движение'], ['Свайп справа', 'Обзор'], ['Кнопки справа', 'Атака, прыжок, действие'],
         ['Касание слота', 'Выбор предмета'], ['Кнопка «Командовать»', 'Вид сверху на деревню'], ['Кнопка «Крафт»', 'Создание предметов и переплавка'], ['Кнопка «действие» на верстаке / печи', 'Открыть крафт'], ['❚❚ вверху', 'Пауза'],
@@ -168,7 +170,7 @@ export class Menus {
         ]),
       ],
     };
-    const names = [['goal', 'Цель'], ['pc', 'ПК'], ['touch', 'Телефон'], ['command', 'Деревня']];
+    const names = [['goal', 'Цель'], ['pc', 'ПК'], ['touch', 'Телефон'], ['command', 'Деревня'], ['credits', 'Авторы']];
     const show = (id) => { clear(body).append(...pages[id]()); for (const b of tabs.children) b.classList.toggle('sel', b.dataset.id === id); };
     for (const [id, n] of names) tabs.append(h('button.ui-i', { 'data-id': id, onclick: () => { this.click(); show(id); } }, n));
     c.append(tabs, body, h('div.zc-row.end', this.btn('Назад', back, 'ghost')));

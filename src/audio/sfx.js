@@ -6,6 +6,8 @@
 // import time, and every public method is a no-op instead of throwing when
 // WebAudio is unavailable or the context hasn't been unlocked yet.
 
+import { SAMPLES, SAMPLE_GAIN, SFX_DIR, MUSIC_DIR, PLAYLISTS } from './library.js';
+
 const STORAGE_KEY = 'zc_audio';
 const MAX_VOICES = 24;
 const MAX_DIST = 60;
@@ -442,8 +444,33 @@ export class Audio {
     this._moodGains = null;
     this._musicNextEventAt = 0;
 
+    // Recorded samples (lazy) and the streamed soundtrack.
+    this._buffers = new Map();      // file -> AudioBuffer | null (loading) | false (failed)
+    this._music = null;             // {el: [a, b], cur, mood, track, fade}
+    this.musicFiles = true;         // false once the soundtrack failed → generative music only
+
     this._unlockHandler = null;
     this._registerUnlockListeners();
+  }
+
+  // ---- Recorded samples -------------------------------------------------
+  _loadSample(file) {
+    if (this._buffers.has(file) || !this.ctx) return;
+    this._buffers.set(file, null);
+    fetch(SFX_DIR + file + '.ogg')
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then((ab) => new Promise((res, rej) => { const p = this.ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); }))
+      .then((buf) => this._buffers.set(file, buf))
+      .catch(() => this._buffers.set(file, false));
+  }
+  _preloadSamples() { for (const k in SAMPLES) for (const f of SAMPLES[k]) this._loadSample(f); }
+  /** A decoded variant of a recorded sound, or null (then the procedural one plays). */
+  _sampleFor(name) {
+    const files = SAMPLES[name];
+    if (!files) return null;
+    const ready = [];
+    for (const f of files) { const b = this._buffers.get(f); if (b) ready.push(b); else if (b === undefined) this._loadSample(f); }
+    return ready.length ? ready[(Math.random() * ready.length) | 0] : null;
   }
 
   // Called once after all game systems are constructed. Intentionally does
@@ -482,6 +509,8 @@ export class Audio {
       this.ctx = new AC();
       this._buildGraph();
       this.unlocked = true;
+      this._preloadSamples();
+      this._initSoundtrack();
       if (this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {});
       }
@@ -571,6 +600,17 @@ export class Audio {
       }
 
       let duration = 0.3;
+      const sample = this._sampleFor(name);
+      if (sample) {
+        const src = ctx.createBufferSource();
+        src.buffer = sample;
+        src.playbackRate.value = jitteredPitch;
+        output.gain.value = vol * (SAMPLE_GAIN[name] ?? 0.8);
+        src.connect(output);
+        src.start(now);
+        this.voices.push({ output, panner, endTime: now + sample.duration / jitteredPitch + 0.1 });
+        return;
+      }
       try {
         const d = builder(ctx, output, { pitch: jitteredPitch, now });
         if (typeof d === 'number' && Number.isFinite(d) && d > 0) duration = d;
@@ -680,8 +720,52 @@ export class Audio {
     this._musicNextEventAt = ctx.currentTime + 1;
   }
 
+  // ---- Streamed orchestral soundtrack -----------------------------------
+  _initSoundtrack() {
+    if (typeof document === 'undefined' || this._music) return;
+    const mk = () => {
+      const a = document.createElement('audio');
+      a.preload = 'auto'; a.volume = 0;
+      a.addEventListener('ended', () => { if (this._music && this._music.el[this._music.cur] === a) this._startTrack(this._music.mood); });
+      a.addEventListener('error', () => {
+        if (!this._music || !a.getAttribute('src')) return;
+        if (++this._music.errors >= 3) this.musicFiles = false;
+        else if (this._music.el[this._music.cur] === a) this._startTrack(this._music.mood);
+      });
+      return a;
+    };
+    this._music = { el: [mk(), mk()], fade: [0, 0], cur: 0, mood: null, last: {}, errors: 0 };
+  }
+  _startTrack(mood) {
+    const m = this._music; if (!m) return;
+    const list = PLAYLISTS[mood] || PLAYLISTS.day;
+    let track = list[(Math.random() * list.length) | 0];
+    if (list.length > 1 && track === m.last[mood]) track = list[(list.indexOf(track) + 1) % list.length];
+    m.last[mood] = track;
+    const next = 1 - m.cur, a = m.el[next];
+    try {
+      a.src = MUSIC_DIR + track + '.ogg';
+      a.currentTime = 0;
+      const p = a.play(); if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* ignore */ }
+    m.cur = next; m.mood = mood;
+  }
+  _updateSoundtrack(dt, mood) {
+    const m = this._music;
+    if (mood !== m.mood) this._startTrack(mood);
+    const vol = clamp01(this.volumes.master * this.volumes.music * 0.8);
+    for (let i = 0; i < 2; i++) {
+      const target = i === m.cur ? 1 : 0;
+      m.fade[i] += Math.max(-1, Math.min(1, target - m.fade[i])) * Math.min(1, dt / 2.5) * (target ? 1 : 1.6);
+      if (Math.abs(target - m.fade[i]) < 0.01) m.fade[i] = target;
+      const a = m.el[i];
+      try { a.volume = clamp01(m.fade[i] * vol); if (!target && m.fade[i] === 0 && !a.paused) a.pause(); } catch (e) { /* ignore */ }
+    }
+  }
+
   _computeMood() {
     try {
+      if (this.game && !this.game.running) return 'menu';
       const waves = this.game && this.game.waves;
       if (waves && typeof waves.activeCount === 'number' && waves.activeCount > 0) return 'wave';
       const st = this.game && this.game.state;
@@ -692,11 +776,19 @@ export class Audio {
     }
   }
 
-  _updateMusic() {
+  _updateMusic(dt = 0.016) {
     const ctx = this.ctx;
-    if (!ctx || !this._moodGains) return;
-
-    const mood = this._computeMood();
+    if (!ctx) return;
+    let mood = this._computeMood();
+    // the recorded soundtrack takes over; the generative music is the fallback if the files can't play
+    if (this._music && this.musicFiles) {
+      this._updateSoundtrack(dt, mood);
+      if (this._moodGains) for (const k in this._moodGains) this._moodGains[k].gain.value = 0;
+      this._mood = null;
+      return;
+    }
+    if (!this._moodGains) return;
+    if (mood === 'menu') mood = 'day';
     if (mood !== this._mood) {
       this._mood = mood;
       const now = ctx.currentTime;
