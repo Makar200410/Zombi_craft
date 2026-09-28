@@ -951,6 +951,29 @@ GEN.nano = (p, r) => {
   }
 };
 
+GEN.ladder = (p, r) => {
+  // two rails and five rungs, everything else transparent
+  p.map(() => [0, 0, 0, 0]);
+  const wood = (x, y, v) => p.set(x, y, rampDither(P.plank, v, x, y, 0.3));
+  for (let y = 0; y < 32; y++) for (const x0 of [3, 26]) for (let k = 0; k < 3; k++) wood(x0 + k, y, 3.2 + (k === 0 ? 1 : k === 2 ? -1 : 0));
+  for (let ry = 3; ry < 32; ry += 6) for (let x = 6; x < 26; x++) { wood(x, ry, 4.4); wood(x, ry + 1, 2.6); }
+};
+GEN.bed_top = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.5);
+  p.map((x, y) => {
+    if (x < 2 || x > 29) return rampAt(P.plank, 3 + (x < 2 ? 0.5 : -0.5));
+    if (y < 10) return rampDither(P.snow, 4.6 + (n(x, y) - 0.5) + (y === 9 ? -1.5 : 0), x, y, 0.3);     // pillow
+    const fold = y === 10 || y === 11;
+    return rampDither(P.cloth, 4 + (n(x, y) - 0.5) * 1.4 + (fold ? 1.2 : 0) + ((x + y) % 8 === 0 ? 0.6 : 0), x, y, 0.3);
+  });
+};
+GEN.bed_side = (p, r) => {
+  p.map((x, y) => {
+    if (y > 22) return rampAt(P.plank, (x === 1 || x === 30) && y > 26 ? 2 : 3.4 + (y === 23 ? 1 : 0));
+    if (y > 12) return rampAt(P.cloth, 3.6 + (y === 13 ? 1 : 0) - (y === 22 ? 1 : 0));
+    return [0, 0, 0, 0];
+  });
+};
 GEN.cannon_side = (p, r) => {
   // dark iron barrel seen from the side, on a wooden carriage
   const n = tileFbm(r, S, [8, 16], 0.6);

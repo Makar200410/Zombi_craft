@@ -227,10 +227,12 @@ function house(v, t) {
     const storeys = pick([0, 1, 1, 1, 2, 2, 3, 4, 5, 6, 7], t);
     let top = block(bp, e, 1, 1, 5, 5, 1, storeys, { door: { x: 3, z: 5 } });
     if (t === 2) {
-      // flat roof terrace with a small upper room
+      // flat roof terrace with a small upper room, reached by a ladder through a hatch
       roof(bp, e, 1, 1, 5, 5, top);
-      bp.box(2, top + 1, 1, 4, top + 2, 3, e.wall); bp.box(2, top + 3, 1, 4, top + 3, 3, e.roof);
+      bp.ring(2, top + 1, 1, 4, top + 2, 3, e.wall); bp.box(2, top + 3, 1, 4, top + 3, 3, e.roof);
       bp.set(3, top + 2, 3, AIR); bp.set(3, top + 1, 3, AIR);
+      bp.box(4, 1, 4, 4, top, 4, B.LADDER);
+      bp.set(3, top + 1, 2, B.HAY_BALE);
       bp.set(1, 1, 6, B.HAY_BALE); bp.set(5, 1, 6, e.base); bp.set(5, 2, 6, B.TORCH);
       top += 3;
     } else if (t === 3) {
@@ -250,13 +252,41 @@ function house(v, t) {
       if (t >= 6) lampPost(bp, e, 6, 6, 2 + (t >= 8 ? 1 : 0));
       if (t === 7) { bp.set(0, 1, 6, B.LEAVES); bp.set(1, 1, 6, B.FLOWER_RED); }
     }
-    // a little furniture
-    bp.set(2, 1, 2, t >= 9 ? B.SERVER : B.WORKBENCH);
-    if (t <= 3) bp.set(4, 1, 2, B.HAY_BALE);
+    interior(bp, e, t, storeys);
   }
   bp.point('door', 3, 1, 6);
   bp.point('inside', 3, 1, 3);
   return bp;
+}
+
+/**
+ * House interior: a floor for every storey, a ladder in the back corner up through all of them, and furniture of
+ * the age on each floor (kitchen / workshop downstairs, bedrooms upstairs, a lamp in every room).
+ */
+function interior(bp, e, t, storeys) {
+  const cube = isCube(e.light);
+  const shelf = t >= 9 ? B.SERVER : t >= 8 ? B.IRON_BLOCK : B.BOOKSHELF;
+  // ground floor
+  bp.set(2, 1, 2, t >= 9 ? B.SERVER : B.WORKBENCH);
+  if (t >= 3) bp.set(4, 1, 2, t <= 7 ? B.FURNACE : B.IRON_BLOCK);          // hearth / stove under the chimney
+  bp.set(2, 1, 4, storeys > 1 ? shelf : B.BED);
+  if (!cube && t <= 3) bp.set(3, 1, 2, B.TORCH);
+  // ceiling lamps (set into the floor above / hanging under the roof)
+  if (cube) for (let s = 0; s < storeys; s++) bp.set(3, 1 + s * SH + 2, 3, e.light);
+  if (storeys < 2) return;
+  const ladderX = 4, ladderZ = 3;
+  for (let s = 1; s < storeys; s++) {
+    const yb = 1 + s * SH, fy = yb - 1;
+    bp.box(2, fy, 2, 4, fy, 4, e.floor);
+    if (cube) bp.set(3, fy, 3, e.light);
+    // bedroom (or study on every third floor)
+    bp.set(2, yb, 4, B.BED);
+    bp.set(2, yb, 2, s % 3 === 2 ? B.WORKBENCH : shelf);
+    if (t >= 5 && s % 2 === 0) bp.set(4, yb, 4, B.LEAVES);                // a potted plant
+  }
+  // the ladder: from the ground to the top floor, through a hatch in every floor
+  bp.box(ladderX, 1, ladderZ, ladderX, 1 + (storeys - 1) * SH, ladderZ, B.LADDER);
+  if (t >= 3) bp.set(4, 1, 2, t <= 7 ? B.FURNACE : B.IRON_BLOCK);
 }
 
 function townHall(v, t) {

@@ -1006,7 +1006,7 @@ function compile(type, rot, variant, tier) {
     height = Math.max(height, cell.dy + 1);
   }
   // build order: bottom-up; solid structure before decoration (torches, glass, plants, water) of that layer
-  const deco = (id) => id === B.TORCH || id === B.GLASS || id === B.WINDOW || id === B.GLASS_BLUE || id === B.ENERGY_GLASS || id === B.LED || id === B.NEON || id === B.LAMP || id === B.FLOWER_RED || id === B.FLOWER_YELLOW || id === B.MUSHROOM || id === B.LANTERN || id === B.BANNER || id === B.WATER;
+  const deco = (id) => id === B.TORCH || id === B.LADDER || id === B.BED || id === B.GLASS || id === B.WINDOW || id === B.GLASS_BLUE || id === B.ENERGY_GLASS || id === B.LED || id === B.NEON || id === B.LAMP || id === B.FLOWER_RED || id === B.FLOWER_YELLOW || id === B.MUSHROOM || id === B.LANTERN || id === B.BANNER || id === B.WATER;
   blocks.sort((a, b) => a.dy - b.dy || (deco(a.id) - deco(b.id)) || a.dz - b.dz || a.dx - b.dx);
   const points = {};
   for (const name in bp.pts) points[name] = bp.pts[name].map(p => { const [x, z] = rotXZ(p.dx, p.dz, w, d, rot); return { dx: x, dy: p.dy, dz: z }; });

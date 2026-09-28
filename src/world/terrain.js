@@ -116,13 +116,13 @@ export class TerrainGen {
       }
     };
     ore(B.COAL_ORE, 260, 5, 40, 9);
-    ore(B.IRON_ORE, 200, 3, 32, 6);
+    ore(B.IRON_ORE, 110, 3, 30, 5);           // iron is a real resource: fewer, smaller veins
     ore(B.GOLD_ORE, 70, 2, 18, 5);
     ore(B.CRYSTAL_ORE, 45, 2, 14, 4);
     // surface outcrops in the hills so early iron/coal is visible
     if (rnd() < 40 * this.perChunk * 1.5) {
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);
-      if (inChunk(x, z) && biome[z * size + x] === 2) blocks[idx(x, heights[z * size + x], z)] = rnd() < 0.6 ? B.COAL_ORE : B.IRON_ORE;
+      if (inChunk(x, z) && biome[z * size + x] === 2) blocks[idx(x, heights[z * size + x], z)] = rnd() < 0.8 ? B.COAL_ORE : B.IRON_ORE;
     }
     // vegetation
     for (let z = Math.max(3, z0); z < Math.min(size - 3, z1); z++) for (let x = Math.max(3, x0); x < Math.min(size - 3, x1); x++) {
@@ -171,7 +171,7 @@ export class TerrainGen {
         if (y >= height - 2) continue;
         for (let yy = y; yy < y + 6 && yy < height; yy++) { const k = idx(x, yy, z); const id = blocks[k]; if (id === B.LOG || id === B.LEAVES || id === B.BIRCH_LOG || id === B.BIRCH_LEAVES || id === B.SPRUCE_LOG || id === B.SPRUCE_LEAVES || id === B.TALL_GRASS) blocks[k] = B.AIR; }
         const roll = hash2(x + dy * 17, z, seed + 57);
-        blocks[idx(x, y, z)] = roll < 0.45 ? bo.main : roll < 0.6 ? (bo.main === B.IRON_ORE ? B.COAL_ORE : B.IRON_ORE) : (roll < 0.85 ? B.STONE : B.MOSSY_COBBLE);
+        blocks[idx(x, y, z)] = roll < 0.3 ? bo.main : roll < 0.38 ? (bo.main === B.IRON_ORE ? B.COAL_ORE : B.IRON_ORE) : (roll < 0.8 ? B.STONE : B.MOSSY_COBBLE);
       }
     }
   }

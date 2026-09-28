@@ -493,6 +493,29 @@ export class Village {
     const p = this.game.player;
     if (p && b.contains(p.position.x, p.position.z, 1) && inside(p)) { let y = Math.floor(p.position.y); while (y < w.height - 2 && (w.isSolid(p.position.x, y, p.position.z) || w.isSolid(p.position.x, y + 1, p.position.z))) y++; p.position.y = y; }
   }
+  /**
+   * A new age brings every building up to the age's base level (age + 1) for free, so the level in the panel
+   * matches what the building looks like; a running upgrade that is now pointless is refunded.
+   */
+  raiseLevelsForAge(age, silent = false) {
+    const target = Math.max(1, Math.min(10, (age | 0) + 1));
+    let n = 0;
+    for (const b of this.buildings) {
+      if (b.state === 'destroyed' || b.def.line || b.def.wonder) continue;
+      const lv = b.level || 1;
+      if (lv >= target) continue;
+      if (b.upgrade) { this.game.state.refund(this.upgradeCost(b)); b.upgrade = null; }
+      b.level = target;
+      n++;
+      if (b.jobSlots) this.autoAssign?.(b);
+    }
+    if (n && !silent) {
+      this.recalcPop();
+      this.toast(`Новая эпоха: ${n} зданий поднялись до ${target} уровня`, 'good');
+      this.bus.emit('buildings:aged', { level: target });
+    }
+    return n;
+  }
   /** Kept for the town hall button. */
   upgradeTownHall() { return this.startUpgrade(this.townHall); }
   finishUpgrade(b) {
@@ -1018,9 +1041,54 @@ export class Village {
     leaves.sort((a, b) => b.y - a.y);
     return { logs, leaves };
   }
-  onTreeFelled(tree) {
+  onTreeFelled(tree, o = {}) {
     for (const c of this.treeCache.values()) c.list = c.list.filter(t => t !== tree);
-    if (this.rng() < 0.7) this.replantSpots.push({ x: tree.x, y: tree.y, z: tree.z, log: tree.id, taken: false, t: this.game.time });
+    // every tree felled near the village gets replanted by the woodcutters
+    const th = this.townHall;
+    if (o.byPlayer && (!th || Math.hypot(tree.x - th.center.x, tree.z - th.center.z) > this.radius + 70)) return;
+    if (!LOG_BLOCKS.has(tree.id)) tree = { ...tree, id: B.LOG };
+    this.replantSpots.push({ x: tree.x, y: tree.y, z: tree.z, log: tree.id, taken: false, t: this.game.time });
+  }
+  /**
+   * Forestry: when the woods around a lumber camp thin out, woodcutters plant new trees on free grass
+   * 8–30 blocks away (never on paths, fields or building plots).
+   */
+  forestSpot(base) {
+    if (this.saplings.length > 40) return null;
+    const w = this.game.world;
+    const near = this.findTreesCount?.(base.center, 30) ?? 99;
+    if (near >= 14) return null;
+    const pending = this.saplings.filter(s => Math.hypot(s.x - base.center.x, s.z - base.center.z) < 32).length;
+    if (near + pending >= 14) return null;
+    for (let i = 0; i < 20; i++) {
+      const a = this.rng() * Math.PI * 2, r = 8 + this.rng() * 22;
+      const x = Math.floor(base.center.x + Math.cos(a) * r), z = Math.floor(base.center.z + Math.sin(a) * r);
+      const gy = w.surfaceY(x, z);
+      if (w.getBlock(x, gy, z) !== B.GRASS || w.getBlock(x, gy + 1, z) !== B.AIR && BLOCKS[w.getBlock(x, gy + 1, z)].solid) continue;
+      if (this.buildingAt(x, gy + 1, z) || this.foot?.[z * w.size + x]) continue;
+      // keep room around the sapling and away from other trees
+      let clear = true;
+      for (let dz = -2; dz <= 2 && clear; dz++) for (let dx = -2; dx <= 2 && clear; dx++) {
+        if (this.foot?.[(z + dz) * w.size + (x + dx)]) clear = false;
+        for (let dy = 0; dy <= 3 && clear; dy++) if (LOG_BLOCKS.has(w.getBlock(x + dx, gy + dy, z + dz))) clear = false;
+      }
+      if (!clear) continue;
+      const logs = [B.LOG, B.LOG, B.BIRCH_LOG, B.SPRUCE_LOG];
+      return { x, y: gy + 1, z, log: logs[(this.rng() * logs.length) | 0], taken: true, t: this.game.time, forest: true };
+    }
+    return null;
+  }
+  findTreesCount(c, r) {
+    const w = this.game.world;
+    let n = 0;
+    const cx = Math.floor(c.x), cz = Math.floor(c.z);
+    for (let z = cz - r; z <= cz + r; z += 1) for (let x = cx - r; x <= cx + r; x += 1) {
+      if ((x - cx) * (x - cx) + (z - cz) * (z - cz) > r * r) continue;
+      const gy = w.surfaceY(x, z);
+      // a trunk base: a log standing on the ground
+      for (let y = gy; y > gy - 12 && y > 1; y--) { const id = w.getBlock(x, y, z); if (LOG_BLOCKS.has(id)) { const bl = w.getBlock(x, y - 1, z); if (bl === B.GRASS || bl === B.DIRT) { n++; break; } } else if (id !== B.AIR && !LEAF_BLOCKS.has(id)) break; }
+    }
+    return n;
   }
   takeReplantSpot(base, v) {
     const now = this.game.time;
@@ -1042,7 +1110,7 @@ export class Village {
     if (a !== B.AIR && BLOCKS[a].solid) return;
     const leaf = LEAF_OF[s.log] || B.LEAVES;
     this.editBlock(s.x, s.y, s.z, leaf);      // a young bush that grows into a tree
-    this.saplings.push({ x: s.x, y: s.y, z: s.z, log: s.log, leaf, growAt: this.game.time + 70 + this.rng() * 70 });
+    this.saplings.push({ x: s.x, y: s.y, z: s.z, log: s.log, leaf, growAt: this.game.time + 60 + this.rng() * 60 });
     this.game.particles?.emit({ pos: { x: s.x + 0.5, y: s.y + 0.6, z: s.z + 0.5 }, count: 8, colors: [0x6fd05a, 0x9fe070], speed: 1, gravity: 1, life: 0.8, size: 0.12 });
   }
   growSaplings() {
@@ -1055,6 +1123,7 @@ export class Village {
       if (w.getBlock(s.x, s.y, s.z) !== s.leaf || this.buildingAt(s.x, s.y, s.z)) continue;
       this.editBlock(s.x, s.y, s.z, B.AIR);
       this.growTree(s.x, s.y, s.z, s.log);
+      this._grown = (this._grown || 0) + 1;
     }
   }
   growTree(x, y, z, log) {
@@ -1266,8 +1335,8 @@ export class Village {
     const st = this.game.state;
     this.tickUpgrades(dt);
     this.industry.tick(dt);
-    // crops grow (≈75 s from seed to ripe, faster with agriculture)
-    const stage = st.researchDone.has('agriculture') ? 16 : 25;
+    // crops grow (≈4 min from seed to ripe, ≈2.6 min with agriculture): one farm feeds ~25 villagers (~60 later)
+    const stage = st.researchDone.has('agriculture') ? 52 : 80;
     const w = this.game.world, wmul = this.game.weather?.cropMul ?? 1;
     for (const b of this.buildings) {
       if (b.type !== 'farm' || b.state !== 'complete') continue;
@@ -1379,6 +1448,8 @@ export class Village {
       if (!this.game.world.isWalkable(Math.floor(s.x), Math.floor(s.y), Math.floor(s.z))) v.teleportNear(v.position);
     }
     for (const s of o.saplings || []) this.saplings.push({ ...s, growAt: this.game.time + (s.growAt || 60) });
+    // older saves: buildings below their age's base level catch up (their looks already did)
+    if (this.raiseLevelsForAge((this.game.state.age | 0), true)) for (const b of this.buildings) b.refreshMaxHp();
     this.recalcPop();
     this.recalcRadius();
     this.ghostsDirty = true;

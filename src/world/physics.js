@@ -30,6 +30,13 @@ export function moveEntity(world, e, dt) {
     else v.y -= GRAVITY * dt;
     v.y = Math.max(v.y, -50);
   }
+  // ladders: no falling, climb while pushing forward / jumping, slide down slowly otherwise
+  e.onLadder = !e.flying && (world.getBlock(p.x, p.y + 0.2, p.z) === B.LADDER || world.getBlock(p.x, p.y + 1.1, p.z) === B.LADDER);
+  if (e.onLadder) {
+    if (e.climb) v.y = 3.6;
+    else if (e.sneak) v.y = 0;
+    else v.y = Math.max(v.y, -2.2);
+  }
   const wasOnGround = e.onGround;
   e.onGround = false;
   e.hitWall = false;

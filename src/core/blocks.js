@@ -113,6 +113,9 @@ def(74, 'glass_blue', { label: 'Тонированное стекло', render: 
 def(75, 'led', { label: 'Светодиодная панель', hardness: 1.5, light: 13, cost: { steel: 1, gold: 1 }, drop: { steel: 1 } });
 def(76, 'neon', { label: 'Неон', hardness: 1.5, light: 12, cost: { steel: 1, crystal: 1 }, drop: { steel: 1 } });
 def(77, 'energy_glass', { label: 'Энергостекло', render: 'transparent', hardness: 3, light: 10, cost: { crystal: 1, steel: 1 } });
+// furniture & ladders for building interiors (a ladder is climbable and doesn't block movement)
+def(79, 'ladder', { label: 'Лестница', render: 'cutout', solid: false, hardness: 0.6, cost: { wood: 1 }, drop: { wood: 1 }, tool: 'axe' });
+def(80, 'bed', { label: 'Кровать', tiles: { top: 'bed_top', side: 'bed_side', bottom: 'planks' }, hardness: 0.8, cost: { wood: 2, food: 1 }, drop: { wood: 1 }, tool: 'axe' });
 def(78, 'nano', { label: 'Нанокомпозит', hardness: 10, cost: { steel: 2, crystal: 1 }, drop: { steel: 1 }, tool: 'pick' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
@@ -135,5 +138,5 @@ export const PALETTE = [
   B.PLANKS, B.COBBLESTONE, B.STONE_BRICKS, B.LOG, B.TIMBER_FRAME, B.PLASTER, B.ROOF_TILES, B.THATCH,
   B.GLASS, B.TORCH, B.LANTERN, B.PALISADE, B.REINFORCED_WALL, B.DIRT, B.SAND, B.GRAVEL, B.PATH,
   B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.HAZARD, B.SERVER, B.POLYMER,
-  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
+  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.LADDER, B.BED, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
 ];

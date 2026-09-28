@@ -390,6 +390,10 @@ export class Player extends Entity {
       if (this.sprinting) { v.x += fx * 1.2; v.z += fz * 1.2; this.stamina = Math.max(0, this.stamina - 3); }
     }
 
+    // ladders: push forward or hold jump to climb, crouch to hold on
+    this.climb = !cmd && this.onLadder && (my > 0.2 || a.jump);
+    this.sneak = this.crouching;
+    if (this.climb) this._fallStart = null;
     // physics (touch players get auto-step up single blocks)
     this.autoStep = !!g.isTouch && !this.crouching;
     const wasGround = this.onGround, wasWater = this.inWater;
@@ -630,6 +634,10 @@ export class Player extends Entity {
     for (const [x, y, z] of leaves) edits.push([x, y, z, B.AIR]);
     if (v?.bulkEdit) v.bulkEdit(edits); else for (const [x, y, z] of edits) w.setBlock(x, y, z, B.AIR);
     for (const [x, y, z] of edits) w.changes?.set(w.index(x, y, z), B.AIR);
+    // the village's woodcutters replant trees felled near the village
+    let base = logs[0];
+    for (const l of logs) if (l[1] < base[1]) base = l;
+    v?.onTreeFelled?.({ x: base[0], y: base[1], z: base[2], id: hit.id }, { byPlayer: true });
     g.state.addAll(drop);
     g.state.stats.blocksMined += logs.length;
     g.state.stats.treesFelled = (g.state.stats.treesFelled || 0) + 1;

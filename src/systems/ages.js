@@ -67,6 +67,7 @@ export function advanceAge(game) {
   game.state.siegePending = game.state.age;
   const v = game.village;
   if (v) {
+    v.raiseLevelsForAge?.(game.state.age);
     for (const b of v.buildings) b.refreshMaxHp?.();
     const n = v.restyleAll?.() || 0;
     if (n) game.bus.emit('toast', { text: 'Город перестраивается в стиле новой эпохи', kind: 'info' });

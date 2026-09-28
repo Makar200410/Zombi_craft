@@ -192,8 +192,9 @@ function* woodcutterBrain(v) {
     if (!base) { yield* idleStep(v); continue; }
     if (v.workplace && !v.workplace.isComplete && v.workplace.state !== 'destroyed' && !vil.townHall) { yield* waitForWorkplace(v); continue; }
     if (v.carryTotal >= 6) { yield* deposit(v); continue; }
-    // plant a sapling from time to time
-    const sap = vil.takeReplantSpot(base, v);
+    // replant felled trees; when the woods thin out, plant new ones (checked now and then)
+    let sap = vil.takeReplantSpot(base, v);
+    if (!sap && v.workplace === base && (v._forestT = (v._forestT || 0) - 1) <= 0) { v._forestT = 4; sap = vil.forestSpot(base); }
     if (sap) {
       v.task = 'Идёт сажать дерево';
       const rel = v.onRelease(() => { sap.taken = false; });
@@ -290,7 +291,7 @@ function* farmerBrain(v) {
       v.face({ x: p.x + 0.5, z: p.z + 0.5 });
       yield* v.work('hoe', 2.5, 0.6);
       const a = w.getBlock(p.x, p.y + 1, p.z);
-      if (a >= B.WHEAT_0 && a < B.WHEAT_3 && rnd() < 0.35) vil.editBlock(p.x, p.y + 1, p.z, a + 1);
+      if (a >= B.WHEAT_0 && a < B.WHEAT_3 && rnd() < 0.12) vil.editBlock(p.x, p.y + 1, p.z, a + 1);
       yield* v.wait(0.5 + rnd());
       continue;
     }
@@ -307,7 +308,7 @@ function* farmerBrain(v) {
       if (w.getBlock(best.x, best.y + 1, best.z) === B.WHEAT_3) {
         vil.editBlock(best.x, best.y + 1, best.z, B.AIR);
         game.particles?.emit({ pos: P, box: 0.4, count: 8, colors: [0xe8c860, 0xd0a840, 0xf0e090], speed: 1.5, dir: { x: 0, y: 2, z: 0 }, gravity: 8, life: 0.7, size: 0.12 });
-        const yieldAmt = 2 * (game.state.researchDone.has('agriculture') ? 1.5 : 1) * (vil.hasBuilding('granary') ? 1.25 : 1) * (vil.hasWonder('ziggurat') ? 1.25 : 1) * (v.workplace?.levelWorkBonus || 1);
+        const yieldAmt = 1.5 * (game.state.researchDone.has('agriculture') ? 1.5 : 1) * (vil.hasBuilding('granary') ? 1.25 : 1) * (vil.hasWonder('ziggurat') ? 1.25 : 1) * (v.workplace?.levelWorkBonus || 1);
         v.addCarry('food', yieldAmt);
         v.task = 'Сеет пшеницу';
         yield* v.work('hoe', 0.7);
@@ -352,9 +353,11 @@ function* minerBrain(v) {
       v.face({ x: deep.x + 1, z: deep.z + 1 });
       yield* v.work('mine', 4.5 / v.workSpeed, 0.5, () => game.audio?.play('pick_hit', { pos: deep, volume: 0.5 }));
       v.addCarry('stone', 1);
+      // ore finds: iron is scarce in a small mine and grows with the mine's level (+30% per level)
       const r = rnd();
-      const lucky = game.state.researchDone.has('mining') ? 1.5 : 1;
-      if (r < 0.22 * lucky) v.addCarry('coal', 1); else if (r < 0.36 * lucky) v.addCarry('iron_ore', 1); else if (r < 0.40 * lucky) v.addCarry('gold_ore', 1); else if (r < 0.42 * lucky) v.addCarry('crystal', 1);
+      const lucky = game.state.researchDone.has('mining') ? 1.5 : 1, lvl = 1 + 0.3 * ((mine.level || 1) - 1);
+      const pC = 0.2 * lucky, pI = pC + 0.07 * lvl * lucky, pG = pI + 0.03 * lvl * lucky, pX = pG + 0.02 * lucky;
+      if (r < pC) v.addCarry('coal', 1); else if (r < pI) v.addCarry('iron_ore', 1); else if (r < pG) v.addCarry('gold_ore', 1); else if (r < pX) v.addCarry('crystal', 1);
       if (game.state.researchDone.has('nuclear') && rnd() < 0.07) v.addCarry('uranium', 1);
       continue;
     }
@@ -376,8 +379,13 @@ function* minerBrain(v) {
       game.particles?.blockBreak(t.x, t.y, t.z, id);
       game.audio?.play('break_block', { pos: P, volume: 0.5 });
       const drop = BLOCKS[id].drop || {};
-      for (const k in drop) if (drop[k] > 0) v.addCarry(k, drop[k]);
-      if (id === B.STONE) { const r = rnd(), lucky = game.state.researchDone.has('mining') ? 1.5 : 1; if (r < 0.08 * lucky) v.addCarry('coal', 1); else if (r < 0.13 * lucky) v.addCarry('iron_ore', 1); }
+      const lvl = 1 + 0.3 * ((mine.level || 1) - 1);
+      for (const k in drop) if (drop[k] > 0) {
+        // ore veins give one piece of ore, a second one more often in a well-developed mine
+        const n = (k === 'iron_ore' || k === 'gold_ore') ? 1 + (rnd() < 0.12 * (lvl - 1) ? 1 : 0) : drop[k];
+        v.addCarry(k, n);
+      }
+      if (id === B.STONE) { const r = rnd(), lucky = game.state.researchDone.has('mining') ? 1.5 : 1; if (r < 0.08 * lucky) v.addCarry('coal', 1); else if (r < (0.08 + 0.025 * lvl) * lucky) v.addCarry('iron_ore', 1); }
     }
     v.release(rel);
   }
