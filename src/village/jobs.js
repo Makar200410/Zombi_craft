@@ -698,7 +698,7 @@ function* towerPost(v, role) {
     if (role === 'mg') { range = 26; cooldown = 0.22; type = 'bullet'; dmg = 9; extra = { sound: 'mg_shot' }; }
     if (role === 'rocket') { range = 48; cooldown = 5.5; type = 'bomb'; dmg = 90; extra = { splash: 5, sound: 'rocket_launch' }; }
     dmg *= (b.levelWorkBonus || 1) * (vil.industry?.dmgMul || 1);
-    range *= vil.industry?.rangeMul || 1;
+    range *= (vil.industry?.rangeMul || 1) * (game.weather?.rangeMul ?? 1);
     if (vil.hasWonder('arsenal')) cooldown *= 0.8;
     const z = vil.nearestZombie(v.eye, range, true);
     if (!z) { v.task = role === 'mage' ? 'Следит за округой с башни' : role === 'cannon' ? 'Заряжает пушку' : role === 'mg' ? 'Держит сектор' : role === 'rocket' ? 'Наводит ракеты' : 'На посту'; v.model.setLoop(null); continue; }

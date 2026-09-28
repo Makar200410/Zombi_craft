@@ -160,14 +160,32 @@ export class Renderer {
     const f = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
     const c = this._c;
     for (const k of ['top', 'horizon', 'bottom', 'fog', 'sun', 'cloud']) c[k].copy(a[k]).lerp(b[k], f);
-    // rain: grey, overcast sky and a dimmer sun
-    const rain = this.weatherDim || 0;
-    if (rain > 0) {
+    const night = st.nightFactor;
+    // weather: overcast sky turns grey, fog paints everything a misty white, lightning flashes the sky
+    const W = this.game.weather;
+    const cloud = W ? Math.max(0, (W.cloud - 0.35) / 0.65) : 0, fogW = W ? W.fog : 0, flash = W?.fx?.skyFlash || 0;
+    const rain = cloud;
+    if (cloud > 0 || fogW > 0) {
       const grey = this._grey || (this._grey = new THREE.Color());
-      for (const k of ['top', 'horizon', 'fog', 'cloud']) { const l = c[k].r * 0.3 + c[k].g * 0.55 + c[k].b * 0.15; grey.setRGB(l * 0.85, l * 0.88, l * 0.95); c[k].lerp(grey, rain * 0.75); }
+      for (const k of ['top', 'horizon', 'fog', 'cloud']) {
+        const l = c[k].r * 0.3 + c[k].g * 0.55 + c[k].b * 0.15;
+        grey.setRGB(l * 0.82, l * 0.86, l * 0.93);
+        c[k].lerp(grey, cloud * (k === 'cloud' ? 0.6 : 0.8));
+      }
+      if (fogW > 0) {
+        const day = 1 - night * 0.85;
+        grey.setRGB(0.62 * day + 0.03, 0.66 * day + 0.035, 0.7 * day + 0.05);
+        for (const k of ['horizon', 'fog', 'top']) c[k].lerp(grey, fogW * (k === 'top' ? 0.45 : 0.85));
+      }
+      // storms are darker still
+      const dark = 1 - (W.storm || 0) * 0.35 - cloud * 0.12;
+      for (const k of ['top', 'horizon', 'fog', 'cloud']) c[k].multiplyScalar(dark);
+    }
+    if (flash > 0) {
+      const fc = this._flashC || (this._flashC = new THREE.Color(0xc4ccff));
+      for (const k of ['top', 'horizon', 'fog', 'cloud']) c[k].lerp(fc, Math.min(0.85, flash * 0.9));
     }
     const amb = a.amb + (b.amb - a.amb) * f, sunI = a.sunI + (b.sunI - a.sunI) * f, moonI = a.moonI + (b.moonI - a.moonI) * f;
-    const night = st.nightFactor;
     // sun travels east → west; tilt a bit so shadows are never perfectly axis aligned
     const ang = (t - 0.25) * Math.PI * 2;
     this.sunDir.set(Math.cos(ang), Math.sin(ang), 0.35).normalize();
@@ -175,12 +193,12 @@ export class Renderer {
     this.sun.position.copy(focus).addScaledVector(this.sunDir, 120);
     this.sun.target.position.copy(focus);
     this.sun.color.copy(c.sun);
-    this.sun.intensity = sunI * (this.sunDir.y > 0 ? 1 : 0) * (1 - rain * 0.45);
+    this.sun.intensity = sunI * (this.sunDir.y > 0 ? 1 : 0) * (1 - rain * 0.6) * (1 - fogW * 0.35);
     this.sun.castShadow = this.game.quality !== 'low' && this.sunDir.y > 0.05;
     this.moon.position.copy(focus).addScaledVector(this.sunDir, -120);
     this.moon.target.position.copy(focus);
-    this.moon.intensity = moonI;
-    this.hemi.intensity = amb * (1 - rain * 0.15);
+    this.moon.intensity = moonI * (1 - rain * 0.5);
+    this.hemi.intensity = amb * (1 - rain * 0.15) * (1 - (W?.storm || 0) * 0.3) + flash * 2.2;
     this.hemi.color.copy(c.horizon).lerp(new THREE.Color(0xffffff), 0.4);
     this.hemi.groundColor.set(0x6b6656).multiplyScalar(0.45 + amb * 0.55);
     this.scene.fog.color.copy(c.fog);
@@ -193,12 +211,14 @@ export class Renderer {
       const d = this.camera.position.distanceTo(this.shadowFocus);
       fogFar = Math.max(fogFar, d + 45);
     }
-    this.scene.fog.near = Math.min(30, fogFar * 0.45) - night * 10;
-    this.scene.fog.far = fogFar * (1 - night * 0.25) * (1 - rain * 0.3);
+    // weather fog: rain shortens the view, real fog closes it right in (less so from the strategy camera)
+    const fogK = this.game.mode === 'command' ? 0.45 : 1;
+    this.scene.fog.near = (Math.min(30, fogFar * 0.45) - night * 10) * (1 - fogW * 0.8 * fogK);
+    this.scene.fog.far = fogFar * (1 - night * 0.25) * (1 - rain * 0.25) * (1 - fogW * 0.62 * fogK);
     worldUniforms.uSkyLight.value = 1 - night * 0.7;
     worldUniforms.uBlockLightStrength.value = 1.1 + night * 0.6;
     this.renderer.toneMappingExposure = 1.0 + night * 0.25;
-    this.sky.update(dt, this.camera.position, this.sunDir, c, night, this.game.time);
+    this.sky.update(dt, this.camera.position, this.sunDir, c, night, this.game.time, W);
     if (this.bloom) this.bloom.strength = 0.25 + night * 0.35;
   }
 

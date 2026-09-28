@@ -78,7 +78,8 @@ export class Hud {
     this.dayLbl = h('div.zc-day', 'День 1');
     this.timeLbl = h('div.zc-timer', '');
     this.ageLbl = h('div.zc-age', '');
-    this.clock = h('div.zc-clock.zc-panel', this.dial, h('div.zc-clock-txt', this.dayLbl, this.timeLbl, this.ageLbl));
+    this.wxLbl = h('button.zc-wx.ui-i', { onclick: () => this.weatherInfo() }, '');
+    this.clock = h('div.zc-clock.zc-panel', this.dial, h('div.zc-clock-txt', this.dayLbl, this.timeLbl, this.ageLbl, this.wxLbl));
     this.researchPill = h('button.zc-rpill.ui-i', { onclick: () => ui.openResearch() },
       img(resourceIcon('research')), this.rpName = h('span.zc-rpill-name'), h('div.zc-rpill-track', this.rpFill = h('div.zc-rpill-fill')));
     this.topRight = h('div.zc-topright', ui.minimap.root, this.clock, this.researchPill, ui.questTracker.root);
@@ -248,17 +249,33 @@ export class Hud {
     let txt, cls = '';
     const active = w?.activeCount || 0;
     if (active > 0 || (st.isNight && (w?.waveActive || w?.active))) {
-      txt = 'ВОЛНА ' + (w?.currentWave || 1) + ' — осталось ' + active; cls = 'wave';
+      txt = 'ВОЛНА ' + (w?.currentWave || 1) + ' · ☠ ' + active; cls = 'wave';   // short: the clock is as narrow as the minimap
     } else if (st.isNight) {
-      txt = 'До рассвета ' + fmtTime(st.secondsToDawn ?? 0); cls = 'night';
+      txt = 'До утра ' + fmtTime(st.secondsToDawn ?? 0); cls = 'night';
     } else {
       const s = (typeof w?.nextWaveIn === 'number' && w.nextWaveIn >= 0) ? w.nextWaveIn : st.secondsToDusk;
       txt = 'До ночи ' + fmtTime(s); cls = s < 30 ? 'warn' : '';
     }
     setText(this.timeLbl, txt);
+    const tip = cls === 'wave' ? 'Волна ' + (w?.currentWave || 1) + ': осталось зомби — ' + active : '';
+    if (this.timeLbl.title !== tip) this.timeLbl.title = tip;
+    const wx = g.weather;
+    if (wx && this._wx !== wx.type) {
+      this._wx = wx.type;
+      const d = wx.def;
+      setText(this.wxLbl, d.icon + ' ' + d.name);
+      this.wxLbl.title = d.name + (d.effect ? ': ' + d.effect : '');
+      this.wxLbl.dataset.w = wx.type;
+    }
     if (this._clockCls !== cls) { this.clock.dataset.state = cls; this._clockCls = cls; }
     this._dialT += dt;
     if (this._dialT > 0.5) { this._dialT = 0; this.drawDial(); }
+  }
+
+  weatherInfo() {
+    const d = this.game.weather?.def; if (!d) return;
+    this.ui.click?.();
+    this.ui.toast(d.icon + ' ' + d.name + (d.effect ? ' — ' + d.effect : ' — погода не влияет на игру.'), 'info');
   }
 
   drawDial() {

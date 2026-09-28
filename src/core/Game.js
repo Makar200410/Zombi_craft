@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Quests } from '../systems/quests.js';
 import { Ambience } from '../systems/ambience.js';
+import { Weather } from '../systems/weather.js';
 import { EventBus } from './events.js';
 import { GameState } from './state.js';
 import { World } from '../world/World.js';
@@ -71,11 +72,12 @@ export class Game {
     this.crafting = new Crafting(this);
     this.quests = new Quests(this);
     this.ambience = new Ambience(this);
+    this.weather = new Weather(this);
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.ambience, this.save];
-    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.ambience, this.save, this.ui]) s.init?.();
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.save];
+    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.save, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);

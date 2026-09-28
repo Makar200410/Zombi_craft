@@ -60,7 +60,16 @@ export const SAMPLES = {
   level_up: ['level_up'],
   wave_horn: ['wave_horn'],
   wave_cleared: ['wave_cleared'],
-  rain_loop: ['rain_loop'],
+  // weather (stereo loops)
+  rain_light: ['rain_light'],
+  rain_heavy: ['rain_heavy'],
+  wind_loop: ['wind_loop'],
+  wind_storm: ['wind_storm'],
+  wind_snow: ['wind_snow'],
+  wind_gust: ['wind_gust'],
+  wind_leaves: ['wind_leaves_1', 'wind_leaves_2'],
+  thunder_roll: ['thunder_roll_1', 'thunder_roll_2'],
+  thunder_far: ['thunder_far_1', 'thunder_far_2'],
 };
 /** Relative volume of each recorded sound so they sit well together (files are loudness-normalised). */
 export const SAMPLE_GAIN = {
@@ -71,9 +80,10 @@ export const SAMPLE_GAIN = {
   fireball_cast: 0.7, fire_impact: 0.6, frost_cast: 0.6, frost_impact: 0.55, lightning: 0.75, heal: 0.6, meteor_fall: 0.9,
   zombie_groan: 0.75, zombie_hurt: 0.6, zombie_die: 0.8, zombie_spit: 0.6, villager_hurt: 0.55, player_hurt: 0.9, death: 0.9,
   ui_click: 0.5, ui_open: 0.45, ui_close: 0.4, coins: 0.7, research_done: 0.75, build_complete: 0.7, level_up: 0.8, wave_horn: 0.9, wave_cleared: 0.85,
+  wind_gust: 0.6, wind_leaves: 0.6, thunder_roll: 1, thunder_far: 0.9,
 };
 /** New sound names without a procedural version fall back to a similar synthesized one while loading. */
-export const SOUND_ALIAS = { rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning' };
+export const SOUND_ALIAS = { rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
 export const SFX_DIR = 'audio/sfx/';
 
 /** Orchestral soundtrack by Omri Lahav & Wildfire Games (0 A.D.), per mood. */
@@ -92,7 +102,7 @@ export const PLAYLISTS = {
 export const CREDITS = [
   'Музыка: Omri Lahav и другие композиторы Wildfire Games — саундтрек игры 0 A.D. (play0ad.com), CC BY-SA 3.0, wildfiregames.com, creativecommons.org/licenses/by-sa/3.0/. Треки перекодированы в Opus.',
   'Звуки блоков и шагов: Minetest Game — Mito551 (CC BY-SA 3.0); Erdie, Benboncan, sonictechtonic, Dynamicell (CC BY 3.0); Sheyvan, Iwan Gabovitch (qubodup), TumeniNodes / steveygos93 (CC0). github.com/minetest/minetest_game',
-  'Оружие, магия, голоса, стройка, сигналы и дождь: 0 A.D. — © Wildfire Games, CC BY-SA 3.0 (звуки зомби сделаны из человеческих криков: понижен тон, добавлено эхо).',
+  'Оружие, магия, голоса, стройка, сигналы, дождь, ветер, метель и гром: 0 A.D. — © Wildfire Games, CC BY-SA 3.0 (звуки зомби сделаны из человеческих криков: понижен тон, добавлено эхо).',
   'Выстрелы, пулемёт, пушка, ракета, арбалет, монеты, щелчки: Unciv (github.com/yairm210/Unciv) — Deganoth, DylanSmithSound, EvanBoyerman (CC BY 4.0/3.0); pgi, BaDoink, GameWithBepis, TheDJoe93, EathanMarkson, stijn, Breviceps, dave.des, Marregheriti (CC0).',
   'Лазер: Kenney (kenney.nl), CC0 / MIT.',
   'Некоторые короткие звуки синтезируются самой игрой.',

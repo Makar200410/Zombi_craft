@@ -19,6 +19,8 @@ export const CONSTRUCTION = new Uint8Array(256);
 for (const n of ['PLANKS', 'COBBLESTONE', 'STONE_BRICKS', 'GLASS', 'THATCH', 'ROOF_TILES', 'LANTERN', 'IRON_BLOCK',
   'WORKBENCH', 'FURNACE', 'BOOKSHELF', 'ARCANE_TABLE', 'HAY_BALE', 'PLASTER', 'TIMBER_FRAME', 'PALISADE',
   'REINFORCED_WALL', 'BANNER']) if (B[n] !== undefined) CONSTRUCTION[B[n]] = 1;
+const LEAF = new Uint8Array(256);
+for (const id of LEAF_BLOCKS) LEAF[id] = 1;
 const TREE = new Uint8Array(256);
 for (const id of LOG_BLOCKS) TREE[id] = 1;
 for (const id of LEAF_BLOCKS) TREE[id] = 1;
@@ -100,7 +102,9 @@ export class FlowField {
     }
     let s = y + 1;
     const i = z * S + x;
-    const a = SOLID[at(s)], b = SOLID[at(s + 1)], c = SOLID[at(s + 2)];
+    // leaves don't block the undead (they push through crowns), so only trunks, walls and rock count
+    const blk = (y) => SOLID[at(y)] && !LEAF[at(y)];
+    const a = blk(s), b = blk(s + 1), c = blk(s + 2);
     let obst = 0;
     if (!a && !b) { /* open ground */ }
     else if (a && !b && !c) { s += 1; }                 // one-block floor/slab/path: just a step

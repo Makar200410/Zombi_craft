@@ -7,6 +7,8 @@ export const worldUniforms = {
   uBlockLightColor: { value: new THREE.Color(1.0, 0.72, 0.42) },
   uBlockLightStrength: { value: 1.6 },
   uWind: { value: 1 },
+  uWet: { value: 0 },               // 0..1 rain-soaked ground (darker, cooler)
+  uSnowCover: { value: 0 },         // 0..1 snow settled on surfaces open to the sky
 };
 
 /**
@@ -21,10 +23,12 @@ function patch(mat, { sway = false, water = false } = {}) {
       .replace('#include <common>', `#include <common>
 attribute vec4 light;
 varying vec4 vLight;
+varying float vUp;
 uniform float uTime;
 uniform float uWind;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vLight = light;
+vUp = normal.y;
 ${sway ? `
 float sw = light.w < 1.5 ? light.w : 0.0;
 float ph = position.x * 0.7 + position.z * 0.9;
@@ -35,10 +39,23 @@ if (normal.y > 0.5) transformed.y += (sin(uTime * 1.6 + position.x * 0.9) * 0.03
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 varying vec4 vLight;
+varying float vUp;
+uniform float uWet;
+uniform float uSnowCover;
 uniform float uSkyLight;
 uniform vec3 uBlockLightColor;
 uniform float uBlockLightStrength;
 uniform float uTime;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+${water ? '' : `
+{
+  // weather on surfaces open to the sky (sky light ~1): wet = darker and a bit cooler, snow on top faces
+  float open = smoothstep(0.82, 0.97, vLight.y);
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.7, 0.73, 0.79), uWet * open);
+  float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+  float snow = uSnowCover * open * smoothstep(0.55, 0.9, vUp) * (vLight.w > 1.5 ? 0.0 : 1.0);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.96) * (0.9 + lum * 0.25), clamp(snow * 1.15, 0.0, 0.92));
+}`}`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>
 {
   float ao = vLight.x;

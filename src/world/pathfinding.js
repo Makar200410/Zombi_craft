@@ -1,7 +1,7 @@
 // A* over walkable voxel cells. Moves: 4 horizontal neighbours (+ diagonals when both sides free),
 // step up 1, drop down up to 3. Returns list of cell positions {x,y,z} (feet cells) or null.
 import { SOLID } from './World.js';
-import { B } from '../core/blocks.js';
+import { B, LEAF_BLOCKS } from '../core/blocks.js';
 
 class Heap {
   constructor() { this.a = []; }
@@ -35,7 +35,8 @@ export function findPath(world, from, to, opts = {}) {
   const size = world.size;
   const solid = (x, y, z) => {
     if (x < 0 || z < 0 || x >= size || z >= size) return true;
-    return SOLID[world.getBlock(x, y, z)] === 1;
+    const id = world.getBlock(x, y, z);
+    return SOLID[id] === 1 && !LEAF_BLOCKS.has(id);     // leaves can be walked through
   };
   const passable = (x, y, z) => !solid(x, y, z) && !solid(x, y + 1, z);
   const standable = (x, y, z) => passable(x, y, z) && (solid(x, y - 1, z) || (allowWater && world.getBlock(x, y - 1, z) === B.WATER));

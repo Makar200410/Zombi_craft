@@ -41,7 +41,7 @@ CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/ · CC0 — https://cr
 Взмахи меча (swing_*), попадания (flesh_imp_*, flesh_stab_*), лук и стрелы (bow_*, arrow_hit_*), мушкеты
 (musket_*, blunderbuss_* — понижен тон), взрыв с обломками, шипение огня (sizzle_*), гром (thunder_*),
 крики (vhurt_*, player_death), рубка (lumber_*), стройка (construct_*), жатва (harvest_*), чавканье (spit_*),
-сигналы (research_done, level_up, wave_horn, wave_cleared, build_complete), дождь (rain_loop).
+сигналы (research_done, level_up, wave_horn, wave_cleared, build_complete), дождь (rain_light, rain_heavy — бесшовные петли), ветер и буря (wind_loop, wind_storm, wind_gust, wind_leaves_*), метель (wind_snow), гром (thunder_roll_*, thunder_far_*) — из ambient/weather.
 **Звуки зомби** (zgroan_*, zhurt_*, zdie_*) — производные от male_death_*: понижен тон, замедлены, добавлены
 фильтр и эхо; распространяются на условиях CC BY-SA 3.0.
 

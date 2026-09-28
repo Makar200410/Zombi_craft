@@ -262,6 +262,11 @@
 .zc-clock { width: var(--mm); display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 5px; border-radius: 30px; }
 .zc-dial { width: 46px; height: 46px; flex: none; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .6)); }
 .zc-clock-txt { min-width: 0; flex: 1; }
+.zc-wx { display: block; font: inherit; font-size: 11px; font-weight: 700; color: var(--ink-2); background: none; border: 0; padding: 0; margin-top: 1px; cursor: pointer; white-space: nowrap; text-align: left; opacity: .92; }
+.zc-wx[data-w='storm'] { color: #c8b8ff; }
+.zc-wx[data-w='snow'] { color: #d8ecff; }
+.zc-wx[data-w='fog'] { color: #c8ccd4; }
+.zc-wx[data-w='rain'] { color: #9cc8ff; }
 .zc-age { font-size: 11px; font-weight: 700; opacity: .9; white-space: nowrap; margin-top: 1px; }
 .zc-ins-age { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255, 220, 150, .15); }
 .zc-ins-age .zc-btn { margin-top: 6px; }

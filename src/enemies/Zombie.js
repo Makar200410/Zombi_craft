@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
-import { B, BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
 import { CONSTRUCTION } from './flowfield.js';
 import { getZombieSkin } from './skinFallback.js';
@@ -515,7 +515,7 @@ export class Zombie extends Entity {
         else if (dd <= 1e-4) { sx += Math.random() - 0.5; sz += Math.random() - 0.5; }
       }
     }
-    const sm = this.speedMul * (this.inWater ? 0.6 : 1);
+    const sm = this.speedMul * (this.inWater ? 0.6 : 1) * (this.game.weather?.zombieSpeed ?? 1);
     const tx = mx * speed * sm + sx * 2.2, tz = mz * speed * sm + sz * 2.2;
     const acc = Math.min(1, dt * (this.onGround ? 10 : 2.5));
     v.x += (tx - v.x) * acc;
@@ -546,7 +546,8 @@ export class Zombie extends Entity {
         this.stallN = (this.stallN || 0) + 1;
         const cell = this._findBlocking();
         // walls & buildings get smashed right away; natural blocks (trees, rock) only when truly stuck
-        if (cell && (this._isBuilt(cell) || this.stallN >= 2 || this.base === 'brute')) this.breakCell = cell;
+        if (this.stallN >= 4 && this._unstick()) this.stallN = 0;   // failsafe: ~8 s without progress
+        else if (cell && (this._isBuilt(cell) || this.stallN >= 2 || this.base === 'brute')) this.breakCell = cell;
         else { this.sideT = 0.9; this.sideSign = Math.random() < 0.5 ? -1 : 1; if (this.onGround) this.velocity.y = 7; }
         this.path = null;
       } else if (moved > 0.8) this.stallN = 0;
@@ -561,6 +562,28 @@ export class Zombie extends Entity {
         if (this.onGround && cell && !this.game.world.isSolid(cell.x, cell.y + 1, cell.z)) this.velocity.y = 7;
       }
     }
+  }
+
+  /** Last resort when wedged between trunks / rocks: hop to a free neighbouring column that is closer to the goal. */
+  _unstick() {
+    const w = this.game.world, p = this.position, ff = this.game.waves?.flow;
+    const px = Math.floor(p.x), pz = Math.floor(p.z);
+    const free = (x, y, z) => !w.isSolid(x, y, z) && !w.isSolid(x, y + 1, z) && (this.height <= 2 || !w.isSolid(x, y + 2, z));
+    let best = null, bestD = Infinity;
+    for (let r = 1; r <= 2 && !best; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const x = px + dx, z = pz + dz;
+      const y = w.groundBelow ? w.groundBelow(x, p.y + 2, z) + 1 : w.surfaceY(x, z) + 1;
+      if (Math.abs(y - p.y) > 2.2 || !free(x, y, z)) continue;
+      let d = ff?.dist && ff.size ? ff.dist[z * ff.size + x] : 0;
+      if (!(d < 1e8)) d = 1e8;
+      d += Math.hypot(dx - (this.moveDirX || 0) * r, dz - (this.moveDirZ || 0) * r) * 0.1;
+      if (d < bestD) { bestD = d; best = { x: x + 0.5, y, z: z + 0.5 }; }
+    }
+    if (!best) return false;
+    p.set(best.x, best.y + 0.01, best.z); this.velocity.set(0, 0, 0);
+    this.breakCell = null; this.path = null;
+    return true;
   }
 
   /** Was this block placed by someone (walls, buildings) rather than generated terrain / trees? */
@@ -951,7 +974,7 @@ export class Zombie extends Entity {
 
 function breakable(w, x, y, z) {
   const id = w.getBlock(x, y, z);
-  if (!SOLID[id]) return false;
+  if (!SOLID[id] || LEAF_BLOCKS.has(id)) return false;     // leaves are walked through
   const b = BLOCKS[id];
   return !!b && isFinite(b.hardness) && id !== B.BEDROCK;
 }

@@ -1039,7 +1039,7 @@ export class Village {
     this._thCd = 0.4;
     if (this._thFor !== th) { this._thFor = th; this._thTop = new THREE.Vector3(th.x + th.w / 2, th.y + Math.min(12, th.def.height || 10) + 1, th.z + th.d / 2); this._thShooter = null; }
     const top = this._thTop;
-    const range = this.game.state.researchDone.has('ballistics') ? 32 : 24;
+    const range = (this.game.state.researchDone.has('ballistics') ? 32 : 24) * (this.game.weather?.rangeMul ?? 1);
     let best = null, bd = range * range;
     for (const z of this.zombies) {
       if (z.dead) continue;
@@ -1169,12 +1169,12 @@ export class Village {
     this.industry.tick(dt);
     // crops grow (≈75 s from seed to ripe, faster with agriculture)
     const stage = st.researchDone.has('agriculture') ? 16 : 25;
-    const w = this.game.world;
+    const w = this.game.world, wmul = this.game.weather?.cropMul ?? 1;
     for (const b of this.buildings) {
       if (b.type !== 'farm' || b.state !== 'complete') continue;
       for (const p of b.plots) {
         const a = w.getBlock(p.x, p.y + 1, p.z);
-        if (a >= B.WHEAT_0 && a < B.WHEAT_3 && w.getBlock(p.x, p.y, p.z) === B.FARMLAND && this.rng() < dt / stage) this.editBlock(p.x, p.y + 1, p.z, a + 1);
+        if (a >= B.WHEAT_0 && a < B.WHEAT_3 && w.getBlock(p.x, p.y, p.z) === B.FARMLAND && this.rng() < dt / stage * wmul) this.editBlock(p.x, p.y + 1, p.z, a + 1);
       }
     }
     this.growSaplings();

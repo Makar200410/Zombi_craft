@@ -655,6 +655,9 @@ export class Audio {
     if (!this.ctx || !this.unlocked) return;
     try { this._updateListener(); } catch (e) { /* ignore */ }
     try { this._updateMusic(dt); } catch (e) { /* ignore */ }
+    // weather loops fade out in the menus and while paused
+    const g = this.game;
+    if (this._wx && (!g?.running || g.paused)) this.setWeather({});
   }
 
   _updateListener() {
@@ -720,31 +723,61 @@ export class Audio {
     this._musicNextEventAt = ctx.currentTime + 1;
   }
 
-  // ---- Rain (looping filtered noise) -------------------------------------
-  setRain(v) {
+  // ---- Weather ambience: recorded rain / wind / blizzard loops, muffled under a roof ----------------
+  /** w: {rain, snow, wind, storm, indoor} (0..1 each). Called every frame by the weather system. */
+  setWeather(w = {}) {
     if (!this.ctx || !this.sfxBus) return;
     try {
-      if (!this._rain) {
-        if (v <= 0.01) return;
-        const ctx = this.ctx;
-        const rec = this._sampleFor('rain_loop');
-        const src = ctx.createBufferSource(); src.buffer = rec || getNoiseBuffer(ctx); src.loop = true;
-        const gain = ctx.createGain(); gain.gain.value = 0;
-        if (rec) { src.connect(gain); this._rainRec = true; }
-        else {
-          const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
-          const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
-          src.connect(hp); hp.connect(lp); lp.connect(gain); this._rainRec = false;
-        }
-        gain.connect(this.sfxBus);
-        src.start();
-        this._rain = { src, gain };
+      const ctx = this.ctx, now = ctx.currentTime;
+      const rain = w.rain || 0, snow = w.snow || 0, wind = w.wind || 0, storm = w.storm || 0, indoor = w.indoor || 0;
+      if (!this._wx) {
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000; lp.Q.value = 0.4;
+        lp.connect(this.sfxBus);
+        this._wx = { lp, ch: {}, indoor: -1 };
       }
-      const g = this._rain.gain.gain, now = this.ctx.currentTime;
-      g.setTargetAtTime(Math.max(0, Math.min(1, v)) * (this._rainRec ? 0.55 : 0.16), now, 0.4);
-      if (v <= 0.01 && this._rain) { const r = this._rain; this._rain = null; setTimeout(() => { try { r.src.stop(); r.gain.disconnect(); } catch (e) { /* ignore */ } }, 2500); g.setTargetAtTime(0, now, 0.3); }
+      const W = this._wx;
+      const heavy = Math.max(0, Math.min(1, (rain - 0.45) / 0.45));
+      const target = {
+        rain_light: Math.min(1, rain * 2.2) * (1 - heavy * 0.55) * 0.55,
+        rain_heavy: heavy * 0.6,
+        wind_loop: Math.max(0, wind - 0.2) * 0.5 * (1 - storm) * (1 - Math.min(1, snow * 1.5)),
+        wind_storm: storm * 0.45,
+        wind_snow: Math.min(1, snow * 1.5) * 0.5,
+      };
+      for (const name in target) {
+        const v = target[name] * (1 - indoor * 0.35);
+        let c = W.ch[name];
+        if (!c) {
+          if (v < 0.01) continue;
+          let buf = this._sampleFor(name), noise = false;
+          if (!buf) {
+            // recording failed to load → filtered noise for the rain, nothing for the rest
+            if (name !== 'rain_light' || this._buffers.get(SAMPLES[name][0]) !== false) continue;
+            buf = getNoiseBuffer(ctx); noise = true;
+          }
+          const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+          const gain = ctx.createGain(); gain.gain.value = 0;
+          if (noise) {
+            const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+            const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
+            src.connect(hp); hp.connect(lp); lp.connect(gain);
+          } else src.connect(gain);
+          gain.connect(W.lp);
+          src.start(now, Math.random() * buf.duration);
+          c = W.ch[name] = { src, gain, noise, quietFor: 0 };
+        }
+        c.gain.gain.setTargetAtTime(v * (c.noise ? 0.3 : 1), now, 0.6);
+        // loops that stay silent for a while are stopped (and restarted later if needed)
+        c.quietFor = v < 0.005 ? c.quietFor + 1 : 0;
+        if (c.quietFor > 400) { try { c.src.stop(now + 0.1); c.gain.disconnect(); } catch (e) { /* ignore */ } delete W.ch[name]; }
+      }
+      // under a roof the rain turns into a dull drumming
+      const ind = indoor > 0.5 ? 1 : 0;
+      if (W.indoor !== ind) { W.indoor = ind; W.lp.frequency.setTargetAtTime(ind ? 700 : 16000, now, 0.2); }
     } catch (e) { /* never throw */ }
   }
+  /** Old API (rain only). */
+  setRain(v) { this.setWeather({ rain: v }); }
 
   // ---- Streamed orchestral soundtrack -----------------------------------
   _initSoundtrack() {
