@@ -52,7 +52,10 @@ function propMat(color, glow = false) {
   return propMats[k];
 }
 
-let lastGroan = 0, lastHurtSnd = 0;
+let lastGroan = 0, lastHurtSnd = 0, lastRoar = 0;
+// recorded voices: keep the type's pitch character without turning real growls into chipmunks or slow-motion
+const sunDeath = (source, z) => source === 'sun' || (z._sunburn && !source);
+const voice = (p) => Math.max(0.72, Math.min(1.32, 1 + (p - 1) * 0.42));
 
 export class Zombie extends Entity {
   /**
@@ -208,7 +211,7 @@ export class Zombie extends Entity {
         let n = 0;
         for (const o of game.waves?.zombies || []) if (o !== this && !o.dead && o.position.distanceTo(pos) < T.aura) { o.buffUntil = game.time + 1.4; n++; }
         if (n && !this.far) game.particles?.emit({ pos: this.eye, count: 6, colors: [0xff40c0, 0xff90e0], additive: true, speed: 3, spread: 1, life: 0.5, size: 0.2, gravity: 0 });
-        if (n && Math.random() < 0.25) game.audio?.play('zombie_groan', { pos, pitch: 1.9, volume: 0.9 });
+        if (n && Math.random() < 0.25) game.audio?.play('zombie_roar', { pos, pitch: 1.2, volume: 0.9 });
       }
     }
     if (T.leap) {
@@ -248,6 +251,7 @@ export class Zombie extends Entity {
   /** Armour and elemental immunities. */
   damage(amount, source, opts = {}) {
     const T = this.T;
+    this._lastHitAmt = amount;
     const kind = opts.kind || 'phys';
     if (T.immune && kind === T.immune) {
       if (kind === 'fire') this.burnTimer = 0;
@@ -315,7 +319,7 @@ export class Zombie extends Entity {
       this.groanT = 5 + Math.random() * 12;
       if (d2 < 34 * 34 && game.time - lastGroan > 0.7) {
         lastGroan = game.time;
-        game.audio?.play('zombie_groan', { pos: this.eye, pitch: this.T.groanPitch, volume: this.boss ? 1 : 0.65 });
+        game.audio?.play(this.boss || this.T.groanPitch < 0.7 ? 'zombie_roar' : 'zombie_groan', { pos: this.eye, pitch: voice(this.T.groanPitch), volume: this.boss ? 1 : 0.65 });
       }
     }
   }
@@ -387,7 +391,12 @@ export class Zombie extends Entity {
         const d = cand.position.distanceTo(pos);
         let ok = d < 5;
         if (!ok) ok = this._los(cand);
-        if (ok) { if (this.target !== cand) { this.target = cand; this.path = null; } }
+        if (ok) {
+          if (this.target !== cand) {
+            if (!this.target && !this.far && game.time - lastRoar > 2.5 && Math.random() < 0.35) { lastRoar = game.time; game.audio?.play('zombie_roar', { pos: this.eye, pitch: voice(T.groanPitch), volume: 0.8 }); }
+            this.target = cand; this.path = null;
+          }
+        }
         else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.4) this.target = null;
       } else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.5) this.target = null;
       if (this.wanderer && this.target && this.home && pos.distanceTo(this.home) > 32) this.target = null;
@@ -831,7 +840,7 @@ export class Zombie extends Entity {
   _raise() {
     const game = this.game, waves = game.waves;
     this.model.play('cast');
-    game.audio?.play('zombie_groan', { pos: this.position, pitch: 0.45, volume: 1 });
+    game.audio?.play('zombie_roar', { pos: this.position, pitch: 0.75, volume: 1 });
     game.audio?.play('fireball_cast', { pos: this.position, pitch: 0.35, volume: 0.8 });
     game.particles?.emit({ pos: this.center, box: 0.3, count: 40, colors: [0xa040ff, 0xd080ff, 0x5010a0], additive: true, speed: 4, life: 0.8, size: 0.3, gravity: 0 });
     if (!waves?.spawn) return;
@@ -889,7 +898,7 @@ export class Zombie extends Entity {
       if (!this.model.action) this.model.play('hurt');
       if (game.time - (this._hurtSnd || 0) > 0.35 && game.time - lastHurtSnd > 0.08) {
         this._hurtSnd = lastHurtSnd = game.time;
-        game.audio?.play('zombie_hurt', { pos: this.eye, pitch: this.T.groanPitch * (0.9 + Math.random() * 0.2) });
+        game.audio?.play('zombie_hurt', { pos: this.eye, pitch: voice(this.T.groanPitch) * (0.94 + Math.random() * 0.12) });
       }
       if (!this.far) game.particles?.emit({ pos: this.center, box: 0.2, count: 6, colors: [0x5a1a10, 0x3a6a20, 0x2a1008], speed: 2.5, life: 0.5, size: 0.12, gravity: 12 });
       // retaliate against whoever hurt us
@@ -910,8 +919,10 @@ export class Zombie extends Entity {
     this.killedBy = source;
     this.velocity.x *= 0.3; this.velocity.z *= 0.3;
     if (this._exploded) { this.object3d.visible = false; return; }
+    // blown apart by a huge hit (cannon, rocket, meteor, explosion): wet splatter as well
+    if ((this._lastHitAmt || 0) >= this.maxHp * 0.6 && !sunDeath(source, this)) game.audio?.play('zombie_gib', { pos: this.eye, volume: 0.8 });
     const sun = source === 'sun' || (this._sunburn && !source);
-    game.audio?.play('zombie_die', { pos: this.eye, pitch: this.T.groanPitch });
+    game.audio?.play('zombie_die', { pos: this.eye, pitch: voice(this.T.groanPitch) });
     game.bus.emit('zombie:killed', { zombie: this, by: source });
     if (!sun) {
       if (game.state.stats) game.state.stats.kills = (game.state.stats.kills || 0) + 1;

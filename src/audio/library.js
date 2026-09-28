@@ -43,9 +43,11 @@ export const SAMPLES = {
   heal: ['heal'],
   meteor_fall: ['meteor'],
   // creatures
-  zombie_groan: R('zgroan_', [1, 2, 3, 4, 5, 6]),
-  zombie_hurt: R('zhurt_', [10, 11, 12]),
-  zombie_die: R('zdie_', [20, 21, 22, 23]),
+  zombie_groan: R('zmoan_', [1, 2, 3, 4, 5, 6, 7]),
+  zombie_roar: ['zroar_1', 'zmoan_6'],
+  zombie_hurt: R('zpain_', [1, 2, 3, 4, 5]),
+  zombie_die: R('zdeath_', [1, 2, 3, 4, 5, 6, 7]),
+  zombie_gib: R('zgib_', [1, 2]),
   zombie_spit: R('spit_', [1, 2, 3]),
   villager_hurt: [...R('vhurt_m_', [30, 31, 32]), ...R('vhurt_f_', [1, 2, 3])],
   player_hurt: ['player_damage'],
@@ -78,12 +80,12 @@ export const SAMPLE_GAIN = {
   swing: 0.55, hit_zombie: 0.7, hit_flesh: 0.7, bow_shoot: 0.8, arrow_hit: 0.6, crossbow_shoot: 0.75, musket_shot: 0.8, blunderbuss_shot: 0.85,
   rifle_shot: 0.7, mg_shot: 0.45, cannon_shot: 0.9, rocket_launch: 0.8, laser_shot: 0.55, explosion: 1,
   fireball_cast: 0.7, fire_impact: 0.6, frost_cast: 0.6, frost_impact: 0.55, lightning: 0.75, heal: 0.6, meteor_fall: 0.9,
-  zombie_groan: 0.75, zombie_hurt: 0.6, zombie_die: 0.8, zombie_spit: 0.6, villager_hurt: 0.55, player_hurt: 0.9, death: 0.9,
+  zombie_groan: 0.7, zombie_roar: 0.85, zombie_hurt: 0.6, zombie_die: 0.8, zombie_gib: 0.75, zombie_spit: 0.6, villager_hurt: 0.55, player_hurt: 0.9, death: 0.9,
   ui_click: 0.5, ui_open: 0.45, ui_close: 0.4, coins: 0.7, research_done: 0.75, build_complete: 0.7, level_up: 0.8, wave_horn: 0.9, wave_cleared: 0.85,
   wind_gust: 0.6, wind_leaves: 0.6, thunder_roll: 1, thunder_far: 0.9,
 };
 /** New sound names without a procedural version fall back to a similar synthesized one while loading. */
-export const SOUND_ALIAS = { rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
+export const SOUND_ALIAS = { zombie_roar: 'zombie_groan', zombie_gib: 'hit_zombie', rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
 export const SFX_DIR = 'audio/sfx/';
 
 /** Orchestral soundtrack by Omri Lahav & Wildfire Games (0 A.D.), per mood. */
@@ -102,7 +104,8 @@ export const PLAYLISTS = {
 export const CREDITS = [
   'Музыка: Omri Lahav и другие композиторы Wildfire Games — саундтрек игры 0 A.D. (play0ad.com), CC BY-SA 3.0, wildfiregames.com, creativecommons.org/licenses/by-sa/3.0/. Треки перекодированы в Opus.',
   'Звуки блоков и шагов: Minetest Game — Mito551 (CC BY-SA 3.0); Erdie, Benboncan, sonictechtonic, Dynamicell (CC BY 3.0); Sheyvan, Iwan Gabovitch (qubodup), TumeniNodes / steveygos93 (CC0). github.com/minetest/minetest_game',
-  'Оружие, магия, голоса, стройка, сигналы, дождь, ветер, метель и гром: 0 A.D. — © Wildfire Games, CC BY-SA 3.0 (звуки зомби сделаны из человеческих криков: понижен тон, добавлено эхо).',
+  'Оружие, магия, голоса, стройка, сигналы, дождь, ветер, метель и гром: 0 A.D. — © Wildfire Games, CC BY-SA 3.0.',
+  'Голоса зомби: FuzzyTuesday, mazlyn, bananplyte, tonsil5, PaulMorek (CC0), -sihiL (CC BY 3.0), missozzy, LittleRobotSoundFactory, Audionautics (CC BY) — из звукового пакета CDDA-Soundpacks (Fris0uman); Under7dude, haratman, rubberduck (CC0) — из VoxeLibre/MineClone2. Источники: freesound.org, opengameart.org.',
   'Выстрелы, пулемёт, пушка, ракета, арбалет, монеты, щелчки: Unciv (github.com/yairm210/Unciv) — Deganoth, DylanSmithSound, EvanBoyerman (CC BY 4.0/3.0); pgi, BaDoink, GameWithBepis, TheDJoe93, EathanMarkson, stijn, Breviceps, dave.des, Marregheriti (CC0).',
   'Лазер: Kenney (kenney.nl), CC0 / MIT.',
   'Некоторые короткие звуки синтезируются самой игрой.',

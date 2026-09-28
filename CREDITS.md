@@ -42,8 +42,25 @@ CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/ · CC0 — https://cr
 (musket_*, blunderbuss_* — понижен тон), взрыв с обломками, шипение огня (sizzle_*), гром (thunder_*),
 крики (vhurt_*, player_death), рубка (lumber_*), стройка (construct_*), жатва (harvest_*), чавканье (spit_*),
 сигналы (research_done, level_up, wave_horn, wave_cleared, build_complete), дождь (rain_light, rain_heavy — бесшовные петли), ветер и буря (wind_loop, wind_storm, wind_gust, wind_leaves_*), метель (wind_snow), гром (thunder_roll_*, thunder_far_*) — из ambient/weather.
-**Звуки зомби** (zgroan_*, zhurt_*, zdie_*) — производные от male_death_*: понижен тон, замедлены, добавлены
-фильтр и эхо; распространяются на условиях CC BY-SA 3.0.
+
+### Голоса зомби (живые записи, freesound.org / opengameart.org)
+
+| Файл | Источник, автор | Лицензия |
+|---|---|---|
+| zmoan_1, zmoan_2 | CDDA-Soundpacks (github.com/Fris0uman/CDDA-Soundpacks) — FuzzyTuesday, freesound.org/s/730386/ | CC0 |
+| zmoan_3, zmoan_4, zpain_5 | CDDA-Soundpacks — -sihiL, freesound.org/s/213848/ | CC BY 3.0 |
+| zmoan_5 | CDDA-Soundpacks — mazlyn, freesound.org/s/338267/ | CC0 |
+| zmoan_6 | VoxeLibre / MineClone2 (github.com/MineClone2/MineClone2) — Under7dude, freesound.org/s/163445/ | CC0 |
+| zmoan_7, zroar_1, zpain_2–4, zdeath_6–7 | VoxeLibre / MineClone2 — rubberduck, opengameart.org/content/80-cc0-creature-sfx | CC0 |
+| zpain_1, zdeath_5 | VoxeLibre / MineClone2 — haratman, freesound.org/s/393749/ | CC0 |
+| zdeath_1 | CDDA-Soundpacks — missozzy, freesound.org/s/169841/ | CC BY |
+| zdeath_2 | CDDA-Soundpacks — LittleRobotSoundFactory, freesound.org/s/316208/ | CC BY |
+| zdeath_3 | CDDA-Soundpacks — bananplyte, freesound.org/s/452347/ | CC0 |
+| zdeath_4 | CDDA-Soundpacks — tonsil5, freesound.org/s/555412/ | CC0 |
+| zgib_1 | CDDA-Soundpacks — PaulMorek, freesound.org/s/196725/ | CC0 |
+| zgib_2 | CDDA-Soundpacks — Audionautics, freesound.org/s/133968/ | CC BY |
+
+Обрезаны паузы, выровнена громкость; в игре тон слегка меняется в зависимости от вида зомби.
 
 ### Из Unciv (https://github.com/yairm210/Unciv, docs/Credits.md)
 
