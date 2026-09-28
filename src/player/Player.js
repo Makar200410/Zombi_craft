@@ -632,6 +632,7 @@ export class Player extends Entity {
     for (const [x, y, z] of edits) w.changes?.set(w.index(x, y, z), B.AIR);
     g.state.addAll(drop);
     g.state.stats.blocksMined += logs.length;
+    g.state.stats.treesFelled = (g.state.stats.treesFelled || 0) + 1;
     for (let i = 0; i < logs.length; i += Math.max(1, Math.floor(logs.length / 6))) g.particles?.blockBreak(logs[i][0], logs[i][1], logs[i][2], B.LOG);
     for (let i = 0; i < leaves.length; i += 8) g.particles?.blockBreak(leaves[i][0], leaves[i][1], leaves[i][2], B.LEAVES);
     g.audio?.play('dig_wood', { pos: { x: hit.x + 0.5, y: hit.y + 0.5, z: hit.z + 0.5 }, volume: 0.9, pitch: 0.8 });

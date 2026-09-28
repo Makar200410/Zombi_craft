@@ -81,7 +81,7 @@ export class Hud {
     this.clock = h('div.zc-clock.zc-panel', this.dial, h('div.zc-clock-txt', this.dayLbl, this.timeLbl, this.ageLbl));
     this.researchPill = h('button.zc-rpill.ui-i', { onclick: () => ui.openResearch() },
       img(resourceIcon('research')), this.rpName = h('span.zc-rpill-name'), h('div.zc-rpill-track', this.rpFill = h('div.zc-rpill-fill')));
-    this.topRight = h('div.zc-topright', ui.minimap.root, this.clock, this.researchPill);
+    this.topRight = h('div.zc-topright', ui.minimap.root, this.clock, this.researchPill, ui.questTracker.root);
 
     // --- crosshair
     this.crosshair = h('div.zc-crosshair', h('i'), h('i'), h('i'), h('i'), h('b'));
@@ -231,6 +231,7 @@ export class Hud {
     this.updateClock(dt);
     this.updateHotbar(dt);
     this.updateResearchPill();
+    this.ui.questTracker?.update();
 
     if (this.ui.settings.showFps) {
       this._fpsAcc += dt; this._fpsN++;

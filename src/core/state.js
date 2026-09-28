@@ -16,7 +16,8 @@ export class GameState {
     this.finale = 0;               // 0 → 1 singularity built (plague next night) → 2 plague under way → 3 won
     this.ngPlus = 0;               // New Game+ cycle
     this.unlockedItems = new Set();
-    this.stats = { kills: 0, wavesSurvived: 0, blocksMined: 0, blocksPlaced: 0, villagersLost: 0 };
+    this.stats = { kills: 0, wavesSurvived: 0, blocksMined: 0, blocksPlaced: 0, villagersLost: 0, treesFelled: 0 };
+    this.questsDone = new Set();
     this.difficulty = 'normal';
     this.seed = (Math.random() * 1e9) | 0;
     this._wasNight = this.isNight;
@@ -80,7 +81,7 @@ export class GameState {
     return {
       resources: { ...this.resources }, day: this.day, timeOfDay: this.timeOfDay,
       researchDone: [...this.researchDone], unlockedItems: [...this.unlockedItems], stats: { ...this.stats },
-      difficulty: this.difficulty, seed: this.seed, age: this.age, siegePending: this.siegePending, finale: this.finale, ngPlus: this.ngPlus,
+      difficulty: this.difficulty, seed: this.seed, age: this.age, siegePending: this.siegePending, finale: this.finale, ngPlus: this.ngPlus, questsDone: [...this.questsDone],
     };
   }
   deserialize(o) {
@@ -89,6 +90,7 @@ export class GameState {
     this.researchDone = new Set(o.researchDone || []); this.unlockedItems = new Set(o.unlockedItems || []);
     Object.assign(this.stats, o.stats || {});
     this.difficulty = o.difficulty || 'normal'; this.seed = o.seed ?? this.seed; this.age = o.age | 0; this.siegePending = o.siegePending | 0; this.finale = o.finale | 0; this.ngPlus = o.ngPlus | 0;
+    this.questsDone = new Set(o.questsDone || []); this._questsLegacy = !o.questsDone;
     this.bus.emit('resources:changed', { resources: this.resources });
   }
 }
