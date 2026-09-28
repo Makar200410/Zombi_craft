@@ -208,7 +208,7 @@ export class UI {
     g.setPaused(false);
     if (!g.isTouch && g.mode === 'explore') this._lockPointer();
   }
-  openResearch(id) { this._unlockPointer(); this.research.show(id); }
+  openResearch(id) { this._unlockPointer(); this.game.input?.releasePointer?.(); this.research.show(id); }
   onPanelClosed() {}
   _unlockPointer() {
     if (document.pointerLockElement) { this._intentionalUnlock = performance.now(); try { document.exitPointerLock(); } catch (e) { /* ignore */ } }

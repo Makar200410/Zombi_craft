@@ -3,7 +3,7 @@
 // (an item already on the hotbar swaps places with it).
 import { ITEMS } from '../core/items.js';
 import { TECHS } from '../systems/research.js';
-import { h, img, glyph, glyphImg, itemIcon, clear, toggle } from './dom.js';
+import { h, img, glyph, glyphImg, itemIcon, clear, toggle, dragScroll } from './dom.js';
 
 const KIND_ORDER = ['melee', 'ranged', 'gun', 'spell', 'tool', 'build'];
 const KIND_NAMES = { melee: 'Ближний бой', ranged: 'Стрелковое', gun: 'Огнестрельное', spell: 'Магия', tool: 'Инструменты', build: 'Строительство' };
@@ -16,6 +16,8 @@ export class InventoryPanel {
     this.root = h('div.zc-research.zc-craft.zc-inv.ui-i');
     this.slotsEl = h('div.zc-inv-slots');
     this.grid = h('div.zc-inv-grid');
+    dragScroll(this.grid, { x: false, y: true });
+    this.grid.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
     const head = h('div.zc-rs-head',
       h('div.zc-rs-title', img(glyph('sword')), h('span', 'Инвентарь')),
       h('div.zc-inv-hint', 'Выберите ячейку панели, затем предмет'),
@@ -33,7 +35,7 @@ export class InventoryPanel {
     this.target = p?.selected ?? 0;
     this.open = true;
     this.root.classList.add('open');
-    this.ui._unlockPointer?.();
+    this.ui._unlockPointer?.(); this.game.input?.releasePointer?.();
     this.game.audio?.play?.('ui_open');
     this.render();
   }

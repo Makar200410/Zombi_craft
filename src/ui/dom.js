@@ -41,8 +41,43 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
 
 /**
- * Makes a horizontal strip scrollable everywhere: the mouse wheel scrolls it sideways, the mouse can drag it
- * (a drag does not count as a click), touch uses native panning. Returns {by(dx)} for arrow buttons.
+ * Drag-to-scroll with the mouse: the view moves ONLY while the left button is held (a drag doesn't count as a
+ * click). Touch keeps native panning. The end of a drag is detected robustly (capture-phase pointerup +
+ * button state on every move), because the UI root stops pointerup from bubbling to window.
+ */
+export function dragScroll(el, { x = true, y = true } = {}) {
+  let drag = null;
+  const end = () => {
+    if (!drag) return;
+    if (drag.moved) {
+      const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+      el.addEventListener('click', stop, { capture: true, once: true });
+      setTimeout(() => el.removeEventListener('click', stop, { capture: true }), 0);
+    }
+    el.classList.remove('dragging'); el.style.scrollSnapType = '';
+    drag = null;
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, sl: el.scrollLeft, st: el.scrollTop, moved: false };
+  });
+  addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (!(e.buttons & 1)) { end(); return; }          // button released somewhere we didn't hear about
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 5) { drag.moved = true; el.classList.add('dragging'); el.style.scrollSnapType = 'none'; }
+    if (!drag.moved) return;
+    if (x) el.scrollLeft = drag.sl - dx;
+    if (y) el.scrollTop = drag.st - dy;
+  }, true);
+  addEventListener('pointerup', end, true);
+  addEventListener('pointercancel', end, true);
+  addEventListener('blur', end);
+}
+
+/**
+ * Makes a horizontal strip scrollable everywhere: the mouse wheel scrolls it sideways, the mouse can drag it,
+ * touch uses native panning. Returns {by(dx)} for arrow buttons.
  */
 export function hscroll(el) {
   el.addEventListener('wheel', (e) => {
@@ -51,27 +86,7 @@ export function hscroll(el) {
     el.scrollLeft += d * (e.deltaMode === 1 ? 32 : 1);
     e.preventDefault(); e.stopPropagation();
   }, { passive: false });
-  let drag = null;
-  el.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'mouse' || e.button !== 0) return;
-    drag = { x: e.clientX, left: el.scrollLeft, moved: false, id: e.pointerId };
-  });
-  addEventListener('pointermove', (e) => {
-    if (!drag || e.pointerId !== drag.id) return;
-    const dx = e.clientX - drag.x;
-    if (Math.abs(dx) > 6) drag.moved = true;
-    if (drag.moved) { el.style.scrollSnapType = 'none'; el.scrollLeft = drag.left - dx; }
-  });
-  addEventListener('pointerup', (e) => {
-    if (!drag || e.pointerId !== drag.id) return;
-    if (drag.moved) {
-      const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
-      el.addEventListener('click', stop, { capture: true, once: true });
-      setTimeout(() => el.removeEventListener('click', stop, { capture: true }), 0);
-    }
-    el.style.scrollSnapType = '';
-    drag = null;
-  });
+  dragScroll(el, { x: true, y: false });
   return { by(dx) { el.scrollBy({ left: dx, behavior: 'smooth' }); } };
 }
 

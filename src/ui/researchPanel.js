@@ -1,6 +1,6 @@
 // Research lab tech tree: pannable graph of tiers with SVG links + node details.
 import { TECHS, TECH_ORDER } from '../systems/research.js';
-import { h, img, glyph, glyphImg, resourceIcon, itemIcon, blockIcon, costRow, clear, setText, setStyle, toggle, fmtTime } from './dom.js';
+import { h, img, glyph, glyphImg, resourceIcon, itemIcon, blockIcon, costRow, clear, setText, setStyle, toggle, fmtTime, dragScroll } from './dom.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const STATUS_LABEL = { done: 'Изучено', active: 'Исследуется', available: 'Доступно', locked: 'Закрыто' };
@@ -98,23 +98,8 @@ export class ResearchPanel {
   }
 
   _dragPan() {
-    const v = this.view;
-    let drag = null;
-    v.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'touch') return;   // native scrolling on touch
-      drag = { x: e.clientX, y: e.clientY, sl: v.scrollLeft, st: v.scrollTop, moved: false };
-    });
-    addEventListener('pointermove', (e) => {
-      if (!drag) return;
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; v.classList.add('dragging'); }
-      v.scrollLeft = drag.sl - dx; v.scrollTop = drag.st - dy;
-    });
-    addEventListener('pointerup', () => {
-      if (drag?.moved) { const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; v.addEventListener('click', stop, { capture: true, once: true }); setTimeout(() => v.removeEventListener('click', stop, { capture: true }), 0); }
-      drag = null; v.classList.remove('dragging');
-    });
-    v.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: true });
+    dragScroll(this.view);
+    this.view.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: true });
   }
 
   show(id) {

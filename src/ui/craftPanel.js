@@ -2,7 +2,7 @@
 // or by using a workbench / furnace / iron block / arcane table in the world (then filtered to that station).
 import { RECIPES, RECIPE_CATS, STATIONS } from '../systems/crafting.js';
 import { ITEMS } from '../core/items.js';
-import { h, img, glyph, glyphImg, resourceIcon, itemIcon, costRow, clear, toggle } from './dom.js';
+import { h, img, glyph, glyphImg, resourceIcon, itemIcon, costRow, clear, toggle, dragScroll } from './dom.js';
 
 const STATION_CAT = { furnace: 'smelt', anvil: 'weapons', arcane: 'magic', workbench: 'tools', factory: 'weapons' };
 
@@ -17,6 +17,8 @@ export class CraftPanel {
     this.cats = h('div.zc-cats.zc-cr-cats');
     for (const [id, name] of RECIPE_CATS) this.cats.append(h('button.zc-chipbtn.ui-i', { 'data-cat': id, onclick: () => { this.cat = id; this.ui.click(); this.render(); } }, name));
     this.grid = h('div.zc-cr-grid');
+    dragScroll(this.grid, { x: false, y: true });
+    this.grid.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
     const head = h('div.zc-rs-head',
       h('div.zc-rs-title', img(glyph('hammer')), h('span', 'Крафт')),
       this.stationsEl,
@@ -35,7 +37,7 @@ export class CraftPanel {
     if (station && STATION_CAT[station]) this.cat = STATION_CAT[station];
     this.open = true;
     this.root.classList.add('open');
-    this.ui._unlockPointer?.();
+    this.ui._unlockPointer?.(); this.game.input?.releasePointer?.();
     this.game.audio?.play?.('ui_open');
     this.render();
   }

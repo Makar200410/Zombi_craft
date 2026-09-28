@@ -104,6 +104,7 @@ export class Input {
   requestLock() {
     const cv = this.canvas;
     if (!cv || this.game.isTouch || this.locked || !cv.requestPointerLock) return;
+    if (this.game.ui?.modalOpen) return;          // never grab the mouse while a panel (craft, research…) is open
     try {
       const p = cv.requestPointerLock({ unadjustedMovement: true });
       if (p && p.catch) p.catch(() => { try { const p2 = cv.requestPointerLock(); p2?.catch?.(() => {}); } catch (e) { /* ignore */ } });

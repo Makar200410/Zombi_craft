@@ -6,7 +6,7 @@ const STATION_OF_BLOCK = { [_B.WORKBENCH]: 'workbench', [_B.FURNACE]: 'furnace',
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
 import { ITEMS, DEFAULT_HOTBAR, RESOURCE_LABELS } from '../core/items.js';
-import { B, BLOCKS, PALETTE } from '../core/blocks.js';
+import { B, BLOCKS, PALETTE, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { playerSkin } from '../art/skins.js';
 import { Viewmodel } from './Viewmodel.js';
 import { BlockCursor } from './BlockCursor.js';
@@ -331,9 +331,14 @@ export class Player extends Entity {
     if (input.wheel) {
       // with the build hammer in hand the wheel picks the block (hold Shift to switch items instead)
       const pickBlocks = this.itemId === 'build_hammer' && !input.isDown('ShiftLeft') && !input.isDown('ShiftRight');
+      // exactly one slot per wheel notch (a notch is ~100 px; touchpads send many small deltas)
       this._wheelAcc += input.wheel;
-      while (this._wheelAcc >= 50) { this._wheelAcc -= 50; if (pickBlocks) this.cycleBuildBlock(1); else this.selectSlot(this.selected + 1); }
-      while (this._wheelAcc <= -50) { this._wheelAcc += 50; if (pickBlocks) this.cycleBuildBlock(-1); else this.selectSlot(this.selected - 1); }
+      const now = this.game.time;
+      if (Math.abs(this._wheelAcc) >= 40 && now - (this._wheelAt || 0) > 0.07) {
+        const dir = this._wheelAcc > 0 ? 1 : -1;
+        this._wheelAcc = 0; this._wheelAt = now;
+        if (pickBlocks) this.cycleBuildBlock(dir); else this.selectSlot(this.selected + dir);
+      } else if (Math.abs(this._wheelAcc) >= 40) this._wheelAcc = 0;
     } else this._wheelAcc *= 0.8;
     if (input.consumePressed('KeyV') || input.consumePressed('F5')) this.toggleView();
     if (input.consumePressed('KeyR')) this.cycleBuildBlock(input.isDown('ShiftLeft') ? -1 : 1);
@@ -557,6 +562,11 @@ export class Player extends Entity {
     const b = BLOCKS[hit.id];
     if (!b || !isFinite(b.hardness)) return;
     const key = hit.x + ',' + hit.y + ',' + hit.z;
+    // an axe fells a whole natural tree with one blow
+    if (it.toolType === 'axe' && LOG_BLOCKS.has(hit.id)) {
+      if (this.game.time < (this._fellUntil || 0)) return;          // one tree per swing
+      if (this._fellTree(hit)) { this._fellUntil = this.game.time + 0.45; return; }
+    }
     if (key !== this._mineKey) { this._mineKey = key; this._mineSoundT = 0; this._mineFxT = 0; }
     let mul = 1;
     if (it.kind === 'tool' && it.toolType === b.tool) mul = it.speed || 1;
@@ -579,6 +589,59 @@ export class Player extends Entity {
       this.model?.play('mine');
     }
     if (this._mineFxT <= 0) { this._mineFxT = 0.12; g.particles.blockHit(hit.x, hit.y, hit.z, hit.id, hit.point); }
+  }
+
+  /** Removes the connected natural tree (logs + its leaves). Returns false for logs in buildings / placed by hand. */
+  _fellTree(hit) {
+    const g = this.game, w = g.world, v = g.village;
+    const natural = (x, y, z) => !(v?.buildingAt?.(x, y, z)) && !(w.changes && w.changes.has(w.index(x, y, z)));
+    if (!natural(hit.x, hit.y, hit.z)) return false;
+    const seen = new Set(), logs = [], leaves = [];
+    const k = (x, y, z) => x + ',' + y + ',' + z;
+    const q = [[hit.x, hit.y, hit.z]]; seen.add(k(hit.x, hit.y, hit.z));
+    while (q.length && logs.length < 80) {
+      const [x, y, z] = q.pop();
+      logs.push([x, y, z]);
+      for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, nz = z + dz, key = k(nx, ny, nz);
+        if (seen.has(key)) continue;
+        if (LOG_BLOCKS.has(w.getBlock(nx, ny, nz)) && natural(nx, ny, nz)) { seen.add(key); q.push([nx, ny, nz]); }
+      }
+    }
+    // leaves hanging off the tree (up to 4 steps from a log)
+    const lq = logs.map(([x, y, z]) => [x, y, z, 0]);
+    while (lq.length && leaves.length < 320) {
+      const [x, y, z, d] = lq.shift();
+      if (d >= 4) continue;
+      for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+        const nx = x + dx, ny = y + dy, nz = z + dz, key = k(nx, ny, nz);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (LEAF_BLOCKS.has(w.getBlock(nx, ny, nz)) && natural(nx, ny, nz)) { leaves.push([nx, ny, nz]); lq.push([nx, ny, nz, d + 1]); }
+      }
+    }
+    const drop = {};
+    const edits = [];
+    for (const [x, y, z] of logs) {
+      const b = BLOCKS[w.getBlock(x, y, z)];
+      for (const r in b.drop) drop[r] = (drop[r] || 0) + b.drop[r];
+      edits.push([x, y, z, B.AIR]);
+    }
+    for (const [x, y, z] of leaves) edits.push([x, y, z, B.AIR]);
+    if (v?.bulkEdit) v.bulkEdit(edits); else for (const [x, y, z] of edits) w.setBlock(x, y, z, B.AIR);
+    for (const [x, y, z] of edits) w.changes?.set(w.index(x, y, z), B.AIR);
+    g.state.addAll(drop);
+    g.state.stats.blocksMined += logs.length;
+    for (let i = 0; i < logs.length; i += Math.max(1, Math.floor(logs.length / 6))) g.particles?.blockBreak(logs[i][0], logs[i][1], logs[i][2], B.LOG);
+    for (let i = 0; i < leaves.length; i += 8) g.particles?.blockBreak(leaves[i][0], leaves[i][1], leaves[i][2], B.LEAVES);
+    g.audio?.play('dig_wood', { pos: { x: hit.x + 0.5, y: hit.y + 0.5, z: hit.z + 0.5 }, volume: 0.9, pitch: 0.8 });
+    g.audio?.play('break_block', { pos: { x: hit.x + 0.5, y: hit.y + 1.5, z: hit.z + 0.5 }, volume: 1, pitch: 0.7 });
+    g.bus.emit('block:broken', { x: hit.x, y: hit.y, z: hit.z, id: hit.id, by: 'player', tree: true });
+    this._hint('Дерево срублено: +' + (drop.wood || 0) + ' дерева');
+    this.model?.play('mine'); this.viewmodel?.play?.('swing');
+    g.cameraRig?.shake?.(0.05);
+    this._mineKey = '';
+    return true;
   }
 
   /** Cell where the build block would go for a given block hit (+ whether it's allowed). */
