@@ -1149,6 +1149,17 @@ export class Village {
   }
 
   // ---- quarry
+  /** The mine whose quarry pit contains column (x, z), or null. */
+  quarryAt(x, z) {
+    x = Math.floor(x); z = Math.floor(z);
+    for (const b of this.buildings) {
+      if (!b.quarry || b.state === 'destroyed') continue;
+      if (x < b.x || z < b.z || x >= b.x + b.w || z >= b.z + b.d) continue;
+      const set = b._qset || (b._qset = new Set(b.quarry.cells.map(c => c.x + ',' + c.z)));
+      if (set.has(x + ',' + z)) return b;
+    }
+    return null;
+  }
   nextQuarryBlock(mine) {
     const q = mine.quarry;
     if (!q || mine.quarryDone) return null;

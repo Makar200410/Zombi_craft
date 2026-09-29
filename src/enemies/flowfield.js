@@ -136,6 +136,7 @@ export class FlowField {
   // ---------- goals ----------
   _collectGoals() {
     const game = this.game, S = this.size;
+    this._pit = new Set();
     const goals = [];
     const owners = [];
     const blds = [];
@@ -145,7 +146,13 @@ export class FlowField {
       if (!b || b.state === 'destroyed' || b.state === 'planned') continue;
       const type = typeof b.type === 'string' ? b.type : b.type?.id;
       if (WALL_TYPES.has(type)) continue;
-      const cells = buildingCells(b, S);
+      let cells = buildingCells(b, S);
+      // a mine's quarry pit is part of its plot but not something to walk into: zombies attack the shed instead
+      if (b.quarry) {
+        const pit = new Set(b.quarry.cells.map(c => c.z * S + c.x));
+        cells = cells.filter(c => !pit.has(c));
+        for (const c of pit) this._pit.add(c);
+      }
       if (!cells.length) continue;
       const k = blds.length; blds.push(b);
       for (const c of cells) { goals.push(c); owners.push(k); }
@@ -172,7 +179,7 @@ export class FlowField {
     if (!buf || buf.dist.length !== n || buf.dist === this.dist) buf = { dist: new Float32Array(n), owner: new Int16Array(n) };
     buf.dist.fill(INF); buf.owner.fill(-1);
     const heap = this._heap && this._heap.hk.length >= 65536 ? this._heap : { hk: new Float32Array(65536), hv: new Int32Array(65536) };
-    const job = { dist: buf.dist, owner: buf.owner, blds, hk: heap.hk, hv: heap.hv, hn: 0 };
+    const job = { dist: buf.dist, owner: buf.owner, blds, hk: heap.hk, hv: heap.hv, hn: 0, pit: this._pit };
     for (let k = 0; k < goals.length; k++) {
       const g = goals[k];
       if (job.dist[g] === 0) continue;
@@ -232,7 +239,7 @@ export class FlowField {
         if (nx < 0 || nz < 0 || nx >= S || nz >= S) continue;
         const n = nz * S + nx;
         const on = obst[n];
-        if (on >= INF) continue;
+        if (on >= INF || job.pit.has(n)) continue;          // never route through a quarry pit
         // cost for a zombie standing on n to move into c
         let step = k < 4 ? 1 : 1.414;
         if (k >= 4) {

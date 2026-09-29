@@ -36,8 +36,11 @@ export class QuestTracker {
         const txt = p.n > 1 ? `${p.label}: ${p.cur}/${p.n}` : p.label;
         goals.append(h('div.zc-qt-goal' + (p.done ? '.ok' : ''), h('i', p.done ? '✓' : '•'), h('span', txt)));
       }
+      // how to do the next unfinished goal
+      const gi = a.prog.findIndex(p => !p.done);
+      const hint = gi >= 0 ? qs.hint(a.q.goals[gi]) : '';
       this.list.append(h('div.zc-qt-q' + (side ? '.side' : ''), { title: a.q.desc, onclick: () => this.ui.quests.show(a.q.id) },
-        h('div.zc-qt-title', a.q.title), goals));
+        h('div.zc-qt-title', a.q.title), goals, hint ? h('div.zc-qt-hint', '💡 ' + hint) : null));
     }
     if (!qs.active.length) this.list.append(h('div.zc-qt-q', h('div.zc-qt-title', 'Все задания выполнены!')));
   }
@@ -91,9 +94,10 @@ export class QuestPanel {
           goals.append(h('div.zc-qt-goal' + (ok ? '.ok' : ''), h('i', ok ? '✓' : '•'), h('span', p.n > 1 && it.state !== 'done' ? `${p.label}: ${p.cur}/${p.n}` : p.label)));
         }
         const rw = rewardText(it.q.reward);
+        const hints = it.state === 'active' ? it.q.goals.map((g, i) => { const p = act ? act.prog[i] : qs.goal(g); return p.done ? '' : qs.hint(g); }).filter(Boolean) : [];
         const el = h('div.zc-qj-q.' + it.state + (it.side ? '.side' : ''),
           h('div.zc-qj-qhead', h('span.zc-qj-mark', it.state === 'done' ? '✓' : it.state === 'active' ? '➤' : '·'), h('b', it.q.title), it.side ? h('small', ' (доп.)') : null),
-          h('div.zc-qj-desc', it.q.desc), goals, rw ? h('div.zc-qj-rw', 'Награда: ' + rw) : null);
+          h('div.zc-qj-desc', it.q.desc), goals, ...[...new Set(hints)].map(t => h('div.zc-qj-hint', '💡 ' + t)), rw ? h('div.zc-qj-rw', 'Награда: ' + rw) : null);
         if (focusId === it.q.id || (!focusId && !focusEl && it.state === 'active')) focusEl = el;
         sec.append(el);
       }

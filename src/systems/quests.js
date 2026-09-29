@@ -149,6 +149,32 @@ export class Quests {
     }
     return { cur: Math.min(cur, n), n, done: cur >= n, label };
   }
+  /** How to do a goal (shown under the quest). */
+  hint(g) {
+    const game = this.game, st = game.state, t = game.isTouch;
+    const cmd = t ? '«Командовать»' : 'Tab (командовать)';
+    switch (g.t) {
+      case 'build': {
+        const d = BUILDING_TYPES[g.type]; if (!d) return '';
+        if (d.age != null && (st.age | 0) < d.age) return `Откроется в эпохе «${AGES[d.age]?.name}».`;
+        if (d.research && !st.researchDone.has(d.research)) return `Сначала изучите «${TECHS[d.research]?.name || d.research}» (Исследования), затем ${cmd} → «Строить» → «${d.name}».`;
+        return `${cmd} → «Строить» → «${d.name}» → укажите место. Строители построят сами.`;
+      }
+      case 'job': return `${cmd} → «Жители» → «+» у «${JOB_NAMES[g.job] || g.job}». Нужны свободные жители и здание с местами.`;
+      case 'pop': return 'Стройте дома и держите запас еды — новые жители приходят сами днём.';
+      case 'research': return `Постройте лабораторию, поставьте учёных, затем «Исследования» → «${TECHS[g.tech]?.name || g.tech}» → «Изучить».`;
+      case 'craft': return `${t ? '«Крафт»' : 'I (крафт)'} → «${ITEMS[g.item]?.name || g.item}». Иногда нужен верстак или печь рядом.`;
+      case 'res': return 'Копите: назначьте рабочих на добычу или добудьте сами.';
+      case 'waves': return 'Переживите ночи: сражайтесь рядом со стражей, стройте стены и вышки.';
+      case 'trees': return `Возьмите топор (${t ? 'ячейка с топором' : 'клавиша 3'}) и бейте по стволу.`;
+      case 'th': return `${cmd} → ратуша → «Улучшить». Нужны строители и ресурсы.`;
+      case 'age': return `${cmd} → ратуша → раздел «Эпоха» → «Перейти». Нужны уровень ратуши, исследования и ресурсы.`;
+      case 'level': return `${cmd} → выберите здание → «Улучшить». Выше уровня ратуши +1 нельзя.`;
+      case 'power': return 'Постройте электростанцию (или реактор) и назначьте инженеров, подвозите уголь.';
+      case 'finale': return 'Постройте «Проект „Сингулярность“» и продержитесь следующую ночь.';
+      default: return '';
+    }
+  }
   check(q) {
     const prog = q.goals.map(g => this.goal(g));
     return { prog, done: prog.every(p => p.done) };

@@ -207,6 +207,7 @@ export class Menus {
         this.btn('Сохранить игру', () => { if (this.game.save?.save?.({ toast: true })) this._pausePage('home'); }, '', glyph('book')),
         this.btn('Настройки', () => this._pausePage('settings'), '', glyph('gear')),
         this.btn('Как играть', () => this._pausePage('help'), '', glyph('flag')),
+        this.btn('Пройти обучение заново', () => { this.ui.resume(); this.ui.tutorial?.restart(); }, 'ghost', glyph('book')),
         this.btn('Главное меню', () => this.ui.confirm('Выйти в меню?', 'Прогресс будет сохранён.', 'Выйти', () => this.ui.quitToMenu()), 'ghost', glyph('home')),
       ));
   }

@@ -555,7 +555,8 @@ export class Zombie extends Entity {
         this.stallN = (this.stallN || 0) + 1;
         const cell = this._findBlocking();
         // walls & buildings get smashed right away; natural blocks (trees, rock) only when truly stuck
-        if (this.stallN >= 4 && this._unstick()) this.stallN = 0;   // failsafe: ~8 s without progress
+        const inPit = this.game.village?.quarryAt?.(pos.x, pos.z);
+        if ((this.stallN >= 4 || (inPit && this.stallN >= 1)) && this._unstick(!!inPit)) this.stallN = 0;   // failsafe: ~8 s without progress (2 s in a pit)
         else if (cell && (this._isBuilt(cell) || this.stallN >= 2 || this.base === 'brute')) this.breakCell = cell;
         else { this.sideT = 0.9; this.sideSign = Math.random() < 0.5 ? -1 : 1; if (this.onGround) this.velocity.y = 7; }
         this.path = null;
@@ -574,8 +575,9 @@ export class Zombie extends Entity {
   }
 
   /** Last resort when wedged between trunks / rocks: hop to a free neighbouring column that is closer to the goal. */
-  _unstick() {
+  _unstick(pit = false) {
     const w = this.game.world, p = this.position, ff = this.game.waves?.flow;
+    if (pit) return this._climbOutOfPit();
     const px = Math.floor(p.x), pz = Math.floor(p.z);
     const free = (x, y, z) => !w.isSolid(x, y, z) && !w.isSolid(x, y + 1, z) && (this.height <= 2 || !w.isSolid(x, y + 2, z));
     let best = null, bestD = Infinity;
@@ -590,6 +592,30 @@ export class Zombie extends Entity {
       if (d < bestD) { bestD = d; best = { x: x + 0.5, y, z: z + 0.5 }; }
     }
     if (!best) return false;
+    p.set(best.x, best.y + 0.01, best.z); this.velocity.set(0, 0, 0);
+    this.breakCell = null; this.path = null;
+    return true;
+  }
+
+  /** Out of a mine's quarry: scramble up onto the nearest edge of the pit. */
+  _climbOutOfPit() {
+    const w = this.game.world, vil = this.game.village, p = this.position;
+    const px = Math.floor(p.x), pz = Math.floor(p.z);
+    let best = null, bestD = Infinity;
+    for (let r = 1; r <= 9; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = px + dx, z = pz + dz;
+        if (vil.quarryAt(x, z)) continue;
+        const y = w.surfaceY(x, z) + 1;
+        if (w.isSolid(x, y, z) || w.isSolid(x, y + 1, z) || y < p.y - 1) continue;
+        const d = Math.hypot(dx, dz) + Math.max(0, y - p.y) * 0.2;
+        if (d < bestD) { bestD = d; best = { x: x + 0.5, y, z: z + 0.5 }; }
+      }
+      if (best) break;
+    }
+    if (!best) return false;
+    this.game.particles?.emit({ pos: { x: p.x, y: p.y + 0.5, z: p.z }, count: 8, colors: [0x7a6a58, 0x5a4a3a], speed: 2, dir: { x: 0, y: 3, z: 0 }, gravity: 12, life: 0.6, size: 0.15 });
     p.set(best.x, best.y + 0.01, best.z); this.velocity.set(0, 0, 0);
     this.breakCell = null; this.path = null;
     return true;

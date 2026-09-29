@@ -9,10 +9,10 @@ import { EnemyProjectiles } from './fx.js';
 
 const DIFF = {
   // "alive" = max undead on the field at once (phones on low quality get ~55% of it)
-  // twice the undead of old and ~1.5x tougher (health x1.3, damage x1.2): guards can't hold every wave alone
-  easy: { count: 1.7, hp: 1.2, dmg: 1.0, reward: 1.0, alive: 55 },
-  normal: { count: 2.6, hp: 1.55, dmg: 1.35, reward: 1.35, alive: 75 },
-  hard: { count: 3.6, hp: 2.0, dmg: 1.65, reward: 1.7, alive: 100 },
+  // many undead, but each one is half as strong: big hordes the player can cut through
+  easy: { count: 1.7, hp: 0.6, dmg: 0.5, reward: 1.0, alive: 55 },
+  normal: { count: 2.6, hp: 0.78, dmg: 0.68, reward: 1.35, alive: 75 },
+  hard: { count: 3.6, hp: 1.0, dmg: 0.83, reward: 1.7, alive: 100 },
 };
 const GRID = 2;   // spatial hash cell size for separation queries
 
