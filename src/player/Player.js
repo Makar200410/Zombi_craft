@@ -540,8 +540,18 @@ export class Player extends Entity {
     this.cursor.update(dt, this.target.block, ghost);
   }
 
+  /**
+   * The player is the village's hero: stronger than any guard. Damage grows with the age (+20% each) and with
+   * the gear the blacksmith forges for the garrison (+15% per armory level); ranged weapons get half the bonus.
+   */
+  get heroMul() {
+    const v = this.game.village;
+    let m = 1.8 + 0.2 * (this.game.state.age | 0) + 0.15 * (v?.armory?.level || 0);
+    if (v?.hasWonder?.('colossus')) m *= 1.25;
+    return m;
+  }
   _swing(aim, it) {
-    const res = this.game.combat.useItem(this, it.id, aim.origin, aim.dir);
+    const res = this.game.combat.useItem(this, it.id, aim.origin, aim.dir, { damageMul: this.heroMul });
     if (!res) return;
     this.viewmodel.play('swing');
     this.model?.play(it.kind === 'tool' && it.toolType === 'axe' ? 'chop' : 'attack');
@@ -551,7 +561,7 @@ export class Player extends Entity {
   _fire(aim, it, opts = {}) {
     const g = this.game;
     const muzzle = this.muzzle(aim);
-    const res = g.combat.useItem(this, it.id, aim.origin, aim.dir, { ...opts, muzzle });
+    const res = g.combat.useItem(this, it.id, aim.origin, aim.dir, { damageMul: 1 + (this.heroMul - 1) * 0.5, ...opts, muzzle });
     if (!res) return;
     const vm = this.viewmodel;
     if (it.kind === 'gun') { vm.play('recoil', it.pellets ? 1.3 : 1); this.model?.play('shoot'); navigator.vibrate?.(25); }

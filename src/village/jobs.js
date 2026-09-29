@@ -685,8 +685,9 @@ function* swing(v, z, bash) {
   v.model.play('attack');
   game.audio?.play('swing', { pos: v.position, volume: 0.5 });
   const smith = game.state.researchDone.has('smithing');
-  let dmg = (smith ? 14 : 10) + vil.armory.level * 2;
-  dmg *= (v.workplace?.levelWorkBonus || 1) * (vil.hasWonder('colossus') ? 1.25 : 1);   // better-equipped garrison in upgraded buildings
+  // guards are solid soldiers but weaker than the player (the hero, see Player.heroMul)
+  let dmg = (smith ? 10 : 7) + vil.armory.level * 1.5;
+  dmg *= (1 + 0.08 * ((v.workplace?.level || 1) - 1)) * (vil.hasWonder('colossus') ? 1.25 : 1);   // better-equipped garrison in upgraded buildings
   if (z.stunTimer > 0) dmg *= 1.5;    // hitting a stunned zombie
   let done = false;
   try { if (game.combat?.meleeHit) { game.combat.meleeHit(v, z, dmg, { knockback: dir.clone().multiplyScalar(4), item: smith ? 'sword_iron' : 'sword_wood' }); done = true; } } catch (e) { done = false; }
