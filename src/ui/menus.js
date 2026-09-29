@@ -1,6 +1,9 @@
 // Full-screen menus: main menu, new game, settings, how-to-play, pause, death, game over, confirm, loading.
 import { h, img, glyph, glyphImg, resourceIcon, itemIcon, clear } from './dom.js';
 import { CREDITS } from '../audio/library.js';
+import { AGES } from '../systems/ages.js';
+
+const agoText = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'только что'; if (m < 60) return m + ' мин назад'; const hh = Math.round(m / 60); if (hh < 24) return hh + ' ч назад'; const d = Math.round(hh / 24); return d + ' дн назад'; };
 
 const DIFFS = [
   { id: 'easy', name: 'Лёгкая', desc: 'Меньше зомби, больше времени на стройку.', icon: 'shield' },
@@ -70,23 +73,64 @@ export class Menus {
     c.classList.remove('page-in'); void c.offsetWidth; c.classList.add('page-in');
     if (p === 'home') this._home(c);
     else if (p === 'new') this._newGame(c);
+    else if (p === 'worlds') this._worlds(c);
     else if (p === 'settings') this._settings(c, () => this.page('home'));
     else if (p === 'help') this._help(c, () => this.page('home'));
   }
   _home(c) {
     const save = this.game.save;
-    const info = save?.hasSave?.() ? save.info?.() : null;
+    const last = save?.lastWorld?.();
+    const n = save?.worlds?.().length || 0;
     const list = h('div.zc-mm-buttons');
-    if (info) list.append(this.btn('Продолжить', () => this.ui.continueGame(), 'primary big', glyph('play'), `День ${info.day} · ${DIFF_NAMES[info.difficulty] || ''}`));
+    if (last) list.append(this.btn('Продолжить', () => this.ui.continueGame(last.id), 'primary big', glyph('play'), `«${last.name}» · день ${last.day}`));
+    if (n) list.append(this.btn('Мои миры', () => this.page('worlds'), 'big', glyph('home'), `${n} ${n === 1 ? 'мир' : n < 5 ? 'мира' : 'миров'}`));
     list.append(
-      this.btn('Новая игра', () => this.page('new'), info ? 'big' : 'primary big', glyph('sword')),
+      this.btn('Новый мир', () => this.page('new'), last ? 'big' : 'primary big', glyph('sword')),
       this.btn('Настройки', () => this.page('settings'), '', glyph('gear')),
       this.btn('Как играть', () => this.page('help'), '', glyph('book')),
     );
     c.append(list);
   }
+  /** Saved worlds, like Minecraft: play, rename or delete any of them. */
+  _worlds(c) {
+    const save = this.game.save;
+    c.append(h('h2.zc-h', 'Мои миры'));
+    const list = h('div.zc-worlds');
+    const render = () => {
+      clear(list);
+      const ws = save.worlds();
+      if (!ws.length) list.append(h('div.zc-note', 'Пока нет ни одного мира.'));
+      for (const w of ws) {
+        const age = AGES[w.age | 0];
+        const name = h('b.zc-world-name', w.name);
+        const row = h('div.zc-world',
+          h('div.zc-world-info', name,
+            h('small', `День ${w.day || 1} · `, h('span', { style: 'color:' + (age?.color || '#ccc') }, age?.name || ''), ` · ${DIFF_NAMES[w.difficulty] || ''} · волн ${w.waves || 0}`),
+            h('small.zc-world-time', 'Играли: ' + agoText(w.savedAt))),
+          h('div.zc-world-btns',
+            this.btn('Играть', () => this.ui.continueGame(w.id), 'primary small', glyph('play')),
+            this.btn('', () => {
+              const inp = h('input.zc-input', { type: 'text', value: w.name, maxlength: 32 });
+              inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { save.renameWorld(w.id, inp.value); render(); } });
+              inp.addEventListener('blur', () => { save.renameWorld(w.id, inp.value); render(); });
+              name.replaceWith(inp); inp.focus(); inp.select();
+            }, 'ghost small icon', glyph('hammer')),
+            this.btn('', () => this.ui.confirm('Удалить мир?', `«${w.name}» будет удалён навсегда.`, 'Удалить', async () => { await save.deleteWorld(w.id); if (!save.worlds().length) this.page('home'); else render(); }), 'ghost small icon danger', glyph('skull'))));
+        list.append(row);
+      }
+    };
+    render();
+    list.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+    c.append(list, h('div.zc-row.end',
+      this.btn('Назад', () => this.page('home'), 'ghost'),
+      this.btn('Новый мир', () => this.page('new'), 'primary', glyph('sword'))));
+  }
   _newGame(c) {
-    c.append(h('h2.zc-h', 'Новая игра'));
+    c.append(h('h2.zc-h', 'Новый мир'));
+    const nameIn = h('input.zc-input', { type: 'text', placeholder: 'Мир ' + ((this.game.save?.worlds?.().length || 0) + 1), maxlength: 32, value: '', oninput: (e) => { this.worldName = e.target.value; } });
+    nameIn.addEventListener('keydown', (e) => e.stopPropagation());
+    this.worldName = '';
+    c.append(h('label.zc-field', h('span.zc-field-lbl', 'Название мира'), nameIn));
     const cards = h('div.zc-diffs');
     const render = () => { for (const el of cards.children) el.classList.toggle('sel', el.dataset.id === this.difficulty); };
     for (const d of DIFFS) {
@@ -98,10 +142,10 @@ export class Menus {
     seed.addEventListener('keydown', (e) => e.stopPropagation());
     c.append(h('div.zc-field-lbl', 'Сложность'), cards,
       h('label.zc-field', h('span.zc-field-lbl', 'Зерно мира (необязательно)'), seed));
-    if (this.game.save?.hasSave?.()) c.append(h('div.zc-note.warn', 'Текущее сохранение будет перезаписано.'));
+    c.append(h('div.zc-note', 'Все миры сохраняются отдельно — старые никуда не денутся.'));
     c.append(h('div.zc-row.end',
       this.btn('Назад', () => this.page('home'), 'ghost'),
-      this.btn('В бой!', () => this.ui.startNewGame({ difficulty: this.difficulty, seed: seedFrom(this.seedText) }), 'primary', glyph('play'))));
+      this.btn('Создать мир', () => this.ui.startNewGame({ difficulty: this.difficulty, seed: seedFrom(this.seedText), name: this.worldName }), 'primary', glyph('play'))));
   }
 
   _settings(c, back) {
@@ -270,7 +314,7 @@ export class Menus {
         stat(glyph('star'), 'Новая игра+', st.ngPlus | 0)),
       h('div.zc-row.center',
         this.btn('Играть дальше', () => this.ui.continueAfterVictory(), 'primary big', glyph('play')),
-        this.btn('Новая игра+ ' + ng, () => this.ui.startNewGame({ difficulty: st.difficulty, ngPlus: ng }), 'ghost', glyph('sword'))),
+        this.btn('Новая игра+ ' + ng, () => this.ui.startNewGame({ difficulty: st.difficulty, ngPlus: ng, name: (this.game.save?.lastWorld?.()?.name || 'Мир').replace(/ \+\d+$/, '') + ' +' + ng }), 'ghost', glyph('sword'))),
       h('div.zc-note', 'Новая игра+: новый мир, больше стартовых ресурсов, но нежить на 25% крепче за каждый цикл.'));
     s.append(card);
   }

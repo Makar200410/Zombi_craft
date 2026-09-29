@@ -125,11 +125,11 @@ export class UI {
     for (const k of ['st-boot', 'st-menu', 'st-play']) this.root.classList.remove(k);
     this.root.classList.add('st-' + s);
   }
-  async startNewGame({ difficulty = 'normal', seed = null, ngPlus = 0 } = {}) {
+  async startNewGame({ difficulty = 'normal', seed = null, ngPlus = 0, name = '' } = {}) {
     const g = this.game;
     g.running = false;
     g.setPaused(false);
-    g.save?.deleteSave?.();
+    if (g.save) g.save.worldId = null;          // a new world: the others stay as they are
     if (seed != null || this._worldUsed) {
       const prog = this.menus.showLoading('Генерация мира…');
       await g.setup({ seed: seed ?? ((Math.random() * 1e9) | 0) }, prog);
@@ -146,11 +146,14 @@ export class UI {
     }
     this.menus.hide();
     g.begin();
+    // register the world and write its first save right away
+    g.save?.createWorld?.(name, { difficulty, seed: g.world?.seed });
+    g.save?.save?.({ toast: false });
   }
-  async continueGame() {
+  async continueGame(id = null) {
     const g = this.game;
-    const prog = this.menus.showLoading('Загрузка сохранения…');
-    const ok = await g.save?.load?.(prog);
+    const prog = this.menus.showLoading('Загрузка мира…');
+    const ok = await g.save?.load?.(prog, id);
     if (ok) { this.menus.hide(); this._setState('play'); }
     else { this.menus.showMain(); this.toast('Не удалось загрузить сохранение', 'bad'); }
   }
@@ -303,6 +306,7 @@ export class UI {
   // ---------------------------------------------------------------- frame
   update(dt) {
     const g = this.game;
+    if (!g.running) this.tutorial.update(dt);     // hides its card in the menus
     if (g.running) {
       this.hud.update(dt);
       this.minimap.update(dt);

@@ -127,7 +127,10 @@ export class Tutorial {
   }
   update() {
     const s = this.cur;
-    if (!s || !this.game.running) return;
+    // hidden in the menus, back when the game runs again
+    const vis = !!s && this.game.running;
+    if (vis !== this.root.classList.contains('show')) { toggle(this.root, 'show', vis); if (!vis) this._glow(null); }
+    if (!vis) return;
     // the glowing target may be re-created by its panel
     if (s.glow && !this._glowEl?.isConnected) this._glow(s.glow());
     try { if (s.check()) this.advance(); } catch (e) { /* ignore */ }

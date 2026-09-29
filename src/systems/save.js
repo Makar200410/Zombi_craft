@@ -1,6 +1,10 @@
-// Save / load to localStorage. World block edits are stored compactly:
-// sorted indices, delta + run-length encoded as varints, then base64.
-const KEY = 'zc_save_v1';
+// Worlds (like Minecraft): any number of saved worlds, each with its own name. The list of worlds (small meta
+// data) lives in localStorage; the world data itself in IndexedDB (plenty of room), with localStorage as a fallback.
+// World block edits are stored compactly: sorted indices, delta + run-length encoded as varints, then base64.
+const KEY = 'zc_save_v1';            // the single save of older versions (migrated into the world list)
+const INDEX = 'zc_worlds_v1';        // [{id, name, created, savedAt, day, age, difficulty, waves}]
+const LAST = 'zc_world_last';
+const LS_PREFIX = 'zc_world_';
 const VERSION = 1;
 const AUTOSAVE_EVERY = 120;   // seconds of played time
 
@@ -57,6 +61,44 @@ export function decodeChanges(str) {
   return out;
 }
 
+// ---- tiny IndexedDB key/value store (falls back to localStorage) -------------------------------
+let dbp = null;
+function db() {
+  if (dbp) return dbp;
+  dbp = new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open('zombicraft', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('worlds');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  }).catch(() => null);
+  return dbp;
+}
+async function idbDo(mode, fn) {
+  const d = await db(); if (!d) throw new Error('no idb');
+  return new Promise((res, rej) => {
+    const tx = d.transaction('worlds', mode), st = tx.objectStore('worlds');
+    const r = fn(st);
+    tx.oncomplete = () => res(r?.result);
+    tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+  });
+}
+const store = {
+  async get(id) {
+    try { const v = await idbDo('readonly', st => st.get(id)); if (v != null) return v; } catch (e) { /* fall back */ }
+    try { return localStorage.getItem(LS_PREFIX + id); } catch (e) { return null; }
+  },
+  async put(id, data) {
+    try { await idbDo('readwrite', st => st.put(data, id)); try { localStorage.removeItem(LS_PREFIX + id); } catch (e) { /* ignore */ } return true; }
+    catch (e) { localStorage.setItem(LS_PREFIX + id, data); return true; }
+  },
+  async del(id) {
+    try { await idbDo('readwrite', st => st.delete(id)); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(LS_PREFIX + id); } catch (e) { /* ignore */ }
+  },
+};
+
 export class SaveSystem {
   constructor(game) {
     this.game = game;
@@ -87,18 +129,63 @@ export class SaveSystem {
     }
   }
 
-  hasSave() {
-    try { return !!localStorage.getItem(KEY); } catch (e) { return false; }
+  // ---------------------------------------------------------------- world list
+  /** All saved worlds, most recently played first. */
+  worlds() {
+    this._migrate();
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(INDEX) || '[]'); } catch (e) { list = []; }
+    return list.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
   }
-  /** Small summary for the menu (day, difficulty, time) or null. */
-  info() {
+  _writeIndex(list) { try { localStorage.setItem(INDEX, JSON.stringify(list)); } catch (e) { /* ignore */ } }
+  _migrate() {
+    if (this._migrated) return; this._migrated = true;
     try {
-      const raw = localStorage.getItem(KEY); if (!raw) return null;
+      const raw = localStorage.getItem(KEY); if (!raw) return;
       const o = JSON.parse(raw);
-      return { day: o.state?.day || 1, difficulty: o.state?.difficulty || 'normal', savedAt: o.savedAt || 0, wave: o.state?.stats?.wavesSurvived || 0 };
-    } catch (e) { return null; }
+      const id = 'w' + Date.now().toString(36);
+      const list = JSON.parse(localStorage.getItem(INDEX) || '[]');
+      list.push({ id, name: 'Мой мир', created: o.savedAt || Date.now(), ...this._meta(o) });
+      store.put(id, raw).then(() => { try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ } });
+      this._writeIndex(list);
+      localStorage.setItem(LAST, id);
+    } catch (e) { /* ignore */ }
   }
-  deleteSave() { try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ } }
+  _meta(o) {
+    return { savedAt: o.savedAt || Date.now(), day: o.state?.day || 1, age: o.state?.age | 0, difficulty: o.state?.difficulty || 'normal', waves: o.state?.stats?.wavesSurvived || 0, seed: o.seed };
+  }
+  /** The last played world (for «Продолжить»), or null. */
+  lastWorld() {
+    const list = this.worlds(); if (!list.length) return null;
+    let id = null; try { id = localStorage.getItem(LAST); } catch (e) { /* ignore */ }
+    return list.find(w => w.id === id) || list[0];
+  }
+  /** Start a new world entry (the game fills it on the first save). */
+  createWorld(name, meta = {}) {
+    const list = this.worlds();
+    const id = 'w' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+    const n = (name || '').trim() || 'Мир ' + (list.length + 1);
+    list.push({ id, name: n.slice(0, 32), created: Date.now(), savedAt: Date.now(), day: 1, age: 0, waves: 0, ...meta });
+    this._writeIndex(list);
+    this.worldId = id;
+    try { localStorage.setItem(LAST, id); } catch (e) { /* ignore */ }
+    return id;
+  }
+  renameWorld(id, name) {
+    const list = this.worlds(), w = list.find(x => x.id === id); if (!w) return;
+    w.name = (name || '').trim().slice(0, 32) || w.name;
+    this._writeIndex(list);
+  }
+  async deleteWorld(id) {
+    this._writeIndex(this.worlds().filter(w => w.id !== id));
+    await store.del(id);
+    if (this.worldId === id) this.worldId = null;
+  }
+  /** Kept for older callers: is there anything to continue? */
+  hasSave() { return !!this.lastWorld(); }
+  info() { const w = this.lastWorld(); return w ? { ...w, wave: w.waves } : null; }
+  /** Game over: the fallen world is gone (the dead don't give second chances). */
+  deleteSave() { if (this.worldId) this.deleteWorld(this.worldId); }
 
   serialize() {
     const g = this.game;
@@ -124,32 +211,37 @@ export class SaveSystem {
   save({ toast = true } = {}) {
     const g = this.game;
     if (!g.running || !g.world) return false;
-    let data;
-    try { data = JSON.stringify(this.serialize()); } catch (e) { console.error('save serialize failed', e); return false; }
-    const write = () => localStorage.setItem(KEY, data);
-    try { write(); }
-    catch (e) {
-      // quota: drop the old save + other large keys of ours and retry once
-      try { localStorage.removeItem(KEY); localStorage.removeItem(KEY + '_bak'); write(); }
-      catch (e2) {
-        console.warn('save failed', e2);
-        g.bus.emit('toast', { text: 'Не удалось сохранить: мало места', kind: 'bad' });
-        return false;
-      }
-    }
+    let obj, data;
+    try { obj = this.serialize(); data = JSON.stringify(obj); } catch (e) { console.error('save serialize failed', e); return false; }
+    if (!this.worldId) this.createWorld('', { difficulty: g.state.difficulty });
+    const id = this.worldId;
+    // update the world list right away (small), write the data in the background
+    const list = this.worlds(), w = list.find(x => x.id === id);
+    if (w) { Object.assign(w, this._meta(obj)); this._writeIndex(list); }
+    else { list.push({ id, name: 'Мир ' + (list.length + 1), created: Date.now(), ...this._meta(obj) }); this._writeIndex(list); }
+    try { localStorage.setItem(LAST, id); } catch (e) { /* ignore */ }
     this.lastSaveAt = Date.now();
     this._timer = 0;
-    if (toast) g.bus.emit('toast', { text: 'Игра сохранена', kind: 'info', icon: 'save' });
-    g.bus.emit('game:saved', {});
+    this._pending = store.put(id, data).then(() => {
+      if (toast) g.bus.emit('toast', { text: 'Мир «' + (w?.name || '') + '» сохранён', kind: 'info', icon: 'save' });
+      g.bus.emit('game:saved', {});
+    }).catch((e) => {
+      console.warn('save failed', e);
+      g.bus.emit('toast', { text: 'Не удалось сохранить: мало места', kind: 'bad' });
+    });
     return true;
   }
 
   /** Restore the saved game. progress(p, text) optional. Returns true on success. */
-  async load(progress = () => {}) {
+  async load(progress = () => {}, id = null) {
     const g = this.game;
+    id = id || this.lastWorld()?.id;
+    if (!id) return false;
     let o;
-    try { o = JSON.parse(localStorage.getItem(KEY)); } catch (e) { o = null; }
+    try { o = JSON.parse(await store.get(id)); } catch (e) { o = null; }
     if (!o) return false;
+    this.worldId = id;
+    try { localStorage.setItem(LAST, id); } catch (e) { /* ignore */ }
     this.loading = true;
     try {
       g.running = false;

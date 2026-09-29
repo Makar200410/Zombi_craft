@@ -1021,3 +1021,16 @@
 .zc-job-hire .zc-cost { gap: 6px; }
 .zc-job-hire .zc-cost img { width: 14px; height: 14px; }
 .zc-cr-actions .zc-btn:disabled, .zc-ins-age .zc-btn:disabled { filter: grayscale(.85) brightness(.6); opacity: .7; cursor: not-allowed; }
+
+/* world list */
+.zc-worlds { display: flex; flex-direction: column; gap: 8px; max-height: min(52vh, 420px); overflow-y: auto; padding-right: 4px; margin-top: 6px; }
+.zc-world { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; background: rgba(0, 0, 0, .35); border: 1px solid rgba(234, 198, 110, .25); }
+.zc-world:hover { border-color: rgba(234, 198, 110, .6); }
+.zc-world-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.zc-world-name { font-size: 16px; color: #fff0c4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zc-world-info small { font-size: 12px; color: #d8cba8; }
+.zc-world-time { opacity: .75; }
+.zc-world-btns { display: flex; gap: 6px; align-items: center; }
+.zc-world-btns .icon { min-width: 0; padding: 6px 8px; }
+.zc-world-btns .danger img { filter: hue-rotate(-30deg) saturate(1.5); }
+.zc-world .zc-input { font-size: 15px; padding: 4px 8px; }
