@@ -44,7 +44,9 @@ export class Building {
     this.rot = rot & 3; this.variant = variant;
     // era buildings are designed per tier (age); the others get their materials swapped
     this.tier = this.def.tiered ? Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)) : 0;
-    const L = this.def.layout(this.rot, variant, this.tier);
+    this.grow = this.def.growAt(this.tier);       // blocks added on every side (era buildings widen after the iron age)
+    this.wantGrow = 0;                            // wider than that it would like to be, but something is in the way
+    const L = this.def.layout(this.rot, variant, this.tier, this.grow);
     this.layout = L;
     this.w = L.w; this.d = L.d; this.height = L.height;
     this.state = 'planned';
@@ -129,13 +131,19 @@ export class Building {
    * Switches an era building to the design of another tier (no world edits: the village morphs the blocks).
    * Returns the height of the old design so leftovers above the new one can be cleared.
    */
-  relayout(tier) {
+  relayout(tier, grow = this.grow, shift = true) {
     const oldH = this.height;
-    const L = this.def.layout(this.rot, this.variant, tier);
+    const L = this.def.layout(this.rot, this.variant, tier, grow);
+    // a wider (or narrower) design stays centred on the same spot
+    if (shift) { this.x += Math.round((this.w - L.w) / 2); this.z += Math.round((this.d - L.d) / 2); }
     const x = this.x, y = this.y, z = this.z;
     this.tier = tier;
+    this.grow = grow;
     this.layout = L;
+    this.w = L.w; this.d = L.d;
     this.height = L.height;
+    this.center.set(x + this.w / 2, y + 1, z + this.d / 2);
+    this.quarry = L.quarry ? { ...L.quarry, cells: L.quarry.cells.map(c => ({ x: x + c.dx, z: z + c.dz, step: c.step, lx: c.lx })) } : null;
     this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, base: b.id, dy: b.dy }));
     this.built = new Uint8Array(this.blocks.length);
     this.builtCount = 0;
@@ -313,6 +321,6 @@ export class Building {
   }
 
   serialize() {
-    return { id: this.id, type: this.type, x: this.x, y: this.y, z: this.z, rot: this.rot, variant: this.variant, state: this.state, hp: this.hp, level: this.level, tier: this.tier, quarryDone: this.quarryDone, upgrade: this.upgrade };
+    return { id: this.id, type: this.type, x: this.x, y: this.y, z: this.z, rot: this.rot, variant: this.variant, state: this.state, hp: this.hp, level: this.level, tier: this.tier, grow: this.grow, wantGrow: this.wantGrow || 0, quarryDone: this.quarryDone, upgrade: this.upgrade };
   }
 }

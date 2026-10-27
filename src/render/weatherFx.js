@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { HEIGHT } from '../world/World.js';
 
 // GPU precipitation: rain streaks / snow flakes live in a box that wraps around the view point (world-anchored,
 // so walking through the rain does not drag it along). A small "roof map" (the highest block of every column
@@ -113,7 +112,7 @@ export class WeatherFx {
     const w = this.game.world, S = w.size;
     if (x < 0 || z < 0 || x >= S || z >= S) return 0;
     const b = w.blocks, step = S * S, base = x + S * z;
-    for (let y = HEIGHT - 1; y >= 0; y--) if (b[base + step * y]) return y + 1;
+    for (let y = w.height - 1; y >= 0; y--) if (b[base + step * y]) return y + 1;
     return 0;
   }
   _updateOcc(force) {

@@ -1,11 +1,18 @@
 import * as THREE from 'three';
 import { B, BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { TerrainGen, SEA_LEVEL } from './terrain.js';
+import { TerrainGenV1 } from './terrainV1.js';
 import { findPath } from './pathfinding.js';
 
 export const CHUNK = 16;
-export const HEIGHT = 64;
+export const HEIGHT = 64;          // height of worlds made before the deep underground (see WORLD_FORMATS)
 export { SEA_LEVEL };
+/** World shapes: v1 = the first worlds (shallow), v2 = deep worlds with a layered underground and biomes. */
+export const WORLD_FORMATS = {
+  1: { size: 1216, height: 64, sea: SEA_LEVEL },
+  2: { size: 1024, height: 96, sea: 44 },
+};
+export const WORLD_FORMAT = 2;
 
 const LIGHT_BLOCKING = new Uint8Array(256);
 const EMIT = new Uint8Array(256);
@@ -22,14 +29,16 @@ export { LIGHT_BLOCKING, SOLID };
  * index(x,y,z) = x + size * (z + size * y)
  */
 export class World {
-  constructor(game, { size = 192, seed = 1 } = {}) {
+  constructor(game, { size = 192, seed = 1, height = HEIGHT, sea = SEA_LEVEL, format = 1 } = {}) {
     this.game = game;
     this.size = size;
-    this.height = HEIGHT;
+    this.height = height;
+    this.sea = sea;
+    this.format = format;
     this.seed = seed;
     this.chunksX = Math.ceil(size / CHUNK);
-    this.blocks = new Uint8Array(size * size * HEIGHT);
-    this.light = new Uint8Array(size * size * HEIGHT);   // hi nibble sky, lo nibble block light
+    this.blocks = new Uint8Array(size * size * height);
+    this.light = new Uint8Array(size * size * height);   // hi nibble sky, lo nibble block light
     this.top = new Int16Array(size * size);               // highest light-blocking block per column (-1 none)
     this.dirty = new Set();                                // chunk keys needing remesh
     this.generated = new Uint8Array(this.chunksX * this.chunksX);   // chunks whose terrain exists
@@ -42,14 +51,14 @@ export class World {
   }
 
   index(x, y, z) { return x + this.size * (z + this.size * y); }
-  inBounds(x, y, z) { return x >= 0 && z >= 0 && y >= 0 && x < this.size && z < this.size && y < HEIGHT; }
+  inBounds(x, y, z) { return x >= 0 && z >= 0 && y >= 0 && x < this.size && z < this.size && y < this.height; }
 
   /**
    * Generates the region around the village (radius in blocks); the rest of the world is generated lazily
    * (pumpGeneration) as the player gets near, so a 10× larger world loads as fast as the old one.
    */
   generate(radius = 150) {
-    this.gen = new TerrainGen(this);
+    this.gen = this._makeGen();
     const c = this.size / 2, cc = Math.floor(c / CHUNK), R = Math.ceil(radius / CHUNK) + 1;
     for (let cz = cc - R; cz <= cc + R; cz++) for (let cx = cc - R; cx <= cc + R; cx++) {
       if (cx < 0 || cz < 0 || cx >= this.chunksX || cz >= this.chunksX) continue;
@@ -58,6 +67,8 @@ export class World {
     }
     this.computeAllLight();
   }
+
+  _makeGen() { return this.format === 1 ? new TerrainGenV1(this) : new TerrainGen(this); }
 
   isGenerated(x, z) {
     const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
@@ -68,7 +79,7 @@ export class World {
     if (cx < 0 || cz < 0 || cx >= this.chunksX || cz >= this.chunksX) return false;
     const k = cz * this.chunksX + cx;
     if (this.generated[k]) return false;
-    if (!this.gen) this.gen = new TerrainGen(this);
+    if (!this.gen) this.gen = this._makeGen();
     this.gen.generateChunk(cx, cz);
     this.generated[k] = 1;
     const key = cx + ',' + cz;
@@ -118,7 +129,7 @@ export class World {
   getBlock(x, y, z) {
     x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
     if (y < 0) return B.BEDROCK;
-    if (x < 0 || z < 0 || x >= this.size || z >= this.size || y >= HEIGHT) return B.AIR;
+    if (x < 0 || z < 0 || x >= this.size || z >= this.size || y >= this.height) return B.AIR;
     return this.blocks[x + this.size * (z + this.size * y)];
   }
   isSolid(x, y, z) { return SOLID[this.getBlock(x, y, z)] === 1; }
@@ -129,24 +140,24 @@ export class World {
     return SOLID[this.getBlock(x, y, z)] === 1;
   }
   getLight(x, y, z) {
-    if (!this.inBounds(x, y, z)) return y >= HEIGHT ? 0xF0 : 0xF0;
+    if (!this.inBounds(x, y, z)) return y >= this.height ? 0xF0 : 0xF0;
     return this.light[x + this.size * (z + this.size * y)];
   }
 
   surfaceY(x, z) {
     x = Math.floor(x); z = Math.floor(z);
-    if (x < 0 || z < 0 || x >= this.size || z >= this.size) return SEA_LEVEL;
-    for (let y = HEIGHT - 1; y >= 0; y--) if (SOLID[this.blocks[x + this.size * (z + this.size * y)]]) return y;
+    if (x < 0 || z < 0 || x >= this.size || z >= this.size) return this.sea;
+    for (let y = this.height - 1; y >= 0; y--) if (SOLID[this.blocks[x + this.size * (z + this.size * y)]]) return y;
     return 0;
   }
   /** Height of the first standable surface at or below `fromY` (for NPC placement under trees etc.). */
   groundBelow(x, fromY, z) {
     x = Math.floor(x); z = Math.floor(z);
-    for (let y = Math.min(HEIGHT - 1, Math.floor(fromY)); y >= 0; y--) if (this.isSolid(x, y, z)) return y;
+    for (let y = Math.min(this.height - 1, Math.floor(fromY)); y >= 0; y--) if (this.isSolid(x, y, z)) return y;
     return 0;
   }
   isWalkable(x, y, z) {
-    return this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z) && this.getBlock(x, y, z) !== B.WATER;
+    return this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z) && this.getBlock(x, y, z) !== B.WATER && this.getBlock(x, y, z) !== B.LAVA;
   }
 
   setBlock(x, y, z, id, opts = {}) {
@@ -183,7 +194,7 @@ export class World {
     x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
     const id = this.getBlock(x, y, z);
     const b = BLOCKS[id];
-    if (!b || id === B.AIR || id === B.WATER || !isFinite(b.hardness)) return { broken: false, id, progress: 0 };
+    if (!b || id === B.AIR || id === B.WATER || id === B.LAVA || !isFinite(b.hardness)) return { broken: false, id, progress: 0 };
     const i = this.index(x, y, z);
     const d = this.damage.get(i) || { dmg: 0, t: 0 };
     d.dmg += dmg; d.t = this.game ? this.game.time : 0;
@@ -242,7 +253,7 @@ export class World {
       else if (tMY < tMZ) { y += stepY; t = tMY; tMY += tDY; nx = 0; ny = -stepY; nz = 0; }
       else { z += stepZ; t = tMZ; tMZ += tDZ; nx = 0; ny = 0; nz = -stepZ; }
       if (t > maxDist) return null;
-      if (y < -1 || y > HEIGHT + 1) return null;
+      if (y < -1 || y > this.height + 1) return null;
     }
     return null;
   }
@@ -275,11 +286,11 @@ export class World {
     if (x1 < x0 || z1 < z0) return;
     const sq = [], bq = [];
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
-      let t = HEIGHT - 1;
+      let t = this.height - 1;
       for (; t >= 0; t--) if (LIGHT_BLOCKING[blocks[x + size * (z + size * t)]]) break;
       this.top[z * size + x] = t;
     }
-    for (let y = 0; y < HEIGHT; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    for (let y = 0; y < this.height; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       const i = x + size * (z + size * y);
       const sky = y > this.top[z * size + x] ? 15 : 0;
       const e = EMIT[blocks[i]];
@@ -294,7 +305,7 @@ export class World {
       if (x < x1) maxN = Math.max(maxN, this.top[z * size + x + 1]);
       if (z > z0) maxN = Math.max(maxN, this.top[(z - 1) * size + x]);
       if (z < z1) maxN = Math.max(maxN, this.top[(z + 1) * size + x]);
-      for (let y = t + 1; y <= maxN + 1 && y < HEIGHT; y++) sq.push(x, y, z);
+      for (let y = t + 1; y <= maxN + 1 && y < this.height; y++) sq.push(x, y, z);
     }
     const seedBorder = (x, y, z) => {
       if (x < 0 || z < 0 || x >= size || z >= size) return;
@@ -302,11 +313,11 @@ export class World {
       if ((l >> 4) > 1) sq.push(x, y, z);
       if ((l & 15) > 1) bq.push(x, y, z);
     };
-    for (let y = 0; y < HEIGHT; y++) {
+    for (let y = 0; y < this.height; y++) {
       for (let z = z0; z <= z1; z++) { seedBorder(x0 - 1, y, z); seedBorder(x1 + 1, y, z); }
       for (let x = x0; x <= x1; x++) { seedBorder(x, y, z0 - 1); seedBorder(x, y, z1 + 1); }
     }
-    const box = [x0, 0, z0, x1, HEIGHT - 1, z1];
+    const box = [x0, 0, z0, x1, this.height - 1, z1];
     this._spread(sq, 4, box);
     this._spread(bq, 0, box);
     const N = this.chunksX;
@@ -315,7 +326,7 @@ export class World {
   }
   /** BFS spread. shift 4 = sky light (hi nibble), 0 = block light. box optional clamp [x0,y0,z0,x1,y1,z1]. */
   _spread(queue, shift, box) {
-    const { size, light, blocks } = this;
+    const { size, light, blocks } = this, H = this.height;
     const mask = 0xF << shift, inv = ~mask & 0xFF;
     let head = 0;
     while (head < queue.length) {
@@ -324,7 +335,7 @@ export class World {
       if (lv <= 1) continue;
       for (let f = 0; f < 6; f++) {
         const nx = x + (f === 0 ? 1 : f === 1 ? -1 : 0), ny = y + (f === 2 ? 1 : f === 3 ? -1 : 0), nz = z + (f === 4 ? 1 : f === 5 ? -1 : 0);
-        if (nx < 0 || nz < 0 || ny < 0 || nx >= size || nz >= size || ny >= HEIGHT) continue;
+        if (nx < 0 || nz < 0 || ny < 0 || nx >= size || nz >= size || ny >= H) continue;
         if (box && (nx < box[0] || ny < box[1] || nz < box[2] || nx > box[3] || ny > box[4] || nz > box[5])) continue;
         const ni = nx + size * (nz + size * ny);
         if (LIGHT_BLOCKING[blocks[ni]]) continue;
@@ -339,17 +350,17 @@ export class World {
     const R = 15;
     const x0 = Math.max(0, cx - R), x1 = Math.min(size - 1, cx + R);
     const z0 = Math.max(0, cz - R), z1 = Math.min(size - 1, cz + R);
-    const y0 = 0, y1 = Math.min(HEIGHT - 1, cy + R);
+    const y0 = 0, y1 = Math.min(this.height - 1, cy + R);
     // update column top for the changed column
     {
-      let y = HEIGHT - 1;
+      let y = this.height - 1;
       for (; y >= 0; y--) if (LIGHT_BLOCKING[blocks[cx + size * (cz + size * y)]]) break;
       this.top[cz * size + cx] = y;
     }
     const box = [x0, y0, z0, x1, y1, z1];
     const sq = [], bq = [];
     const w = x1 - x0 + 1, d = z1 - z0 + 1;
-    if (!this._old || this._old.length < w * d * HEIGHT) this._old = new Uint8Array(31 * 31 * HEIGHT);
+    if (!this._old || this._old.length < w * d * this.height) this._old = new Uint8Array(31 * 31 * this.height);
     const old = this._old;
     for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       const i = x + size * (z + size * y);
@@ -371,7 +382,7 @@ export class World {
       for (let z = z0; z <= z1; z++) { seedBorder(x0 - 1, y, z); seedBorder(x1 + 1, y, z); }
       for (let x = x0; x <= x1; x++) { seedBorder(x, y, z0 - 1); seedBorder(x, y, z1 + 1); }
     }
-    if (y1 < HEIGHT - 1) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) seedBorder(x, y1 + 1, z);
+    if (y1 < this.height - 1) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) seedBorder(x, y1 + 1, z);
     this._spread(sq, 4, box);
     this._spread(bq, 0, box);
     // mark chunks whose light actually changed (plus neighbours via markDirty) dirty

@@ -117,6 +117,22 @@ def(77, 'energy_glass', { label: 'Энергостекло', render: 'transparen
 def(79, 'ladder', { label: 'Лестница', render: 'cutout', solid: false, hardness: 0.6, cost: { wood: 1 }, drop: { wood: 1 }, tool: 'axe' });
 def(80, 'bed', { label: 'Кровать', tiles: { top: 'bed_top', side: 'bed_side', bottom: 'planks' }, hardness: 0.8, cost: { wood: 2, food: 1 }, drop: { wood: 1 }, tool: 'axe' });
 def(78, 'nano', { label: 'Нанокомпозит', hardness: 10, cost: { steel: 2, crystal: 1 }, drop: { steel: 1 }, tool: 'pick' });
+// underground & biomes (deep worlds)
+def(81, 'lava', { label: 'Лава', shape: 'liquid', solid: false, hardness: 0, light: 15, placeable: false, replaceable: true });
+def(82, 'chest', { label: 'Сундук', tiles: { top: 'chest_top', side: 'chest_side', bottom: 'planks' }, hardness: 1.5, placeable: false, tool: 'axe' });
+def(83, 'glow_mushroom', { label: 'Светящийся гриб', tiles: 'glow_mushroom', shape: 'cross', render: 'cutout', solid: false, hardness: 0, light: 11, drop: { food: 1 }, replaceable: true });
+def(84, 'glow_moss', { label: 'Светящийся мох', tiles: { top: 'glow_moss_top', side: 'glow_moss_side', bottom: 'dark_stone' }, hardness: 2.5, light: 7, drop: { stone: 1 }, tool: 'pick' });
+def(85, 'cactus', { label: 'Кактус', tiles: { top: 'cactus_top', side: 'cactus_side' }, render: 'cutout', hardness: 0.8, drop: { food: 1 }, tool: 'axe' });
+def(86, 'ice', { label: 'Лёд', render: 'transparent', hardness: 1, tool: 'pick' });
+def(87, 'mud', { label: 'Ил', hardness: 1, tool: 'shovel' });
+def(88, 'dry_grass', { label: 'Сухая трава', tiles: { top: 'dry_grass_top', side: 'dry_grass_side', bottom: 'dirt' }, hardness: 1.2, tool: 'shovel' });
+def(89, 'reeds', { label: 'Камыш', tiles: 'reeds', shape: 'cross', render: 'cutout', solid: false, hardness: 0, replaceable: true });
+def(90, 'cobweb', { label: 'Паутина', tiles: 'cobweb', shape: 'cross', render: 'cutout', solid: false, hardness: 0.3, replaceable: true });
+def(91, 'obsidian', { label: 'Обсидиан', hardness: 14, drop: { stone: 1 }, cost: { stone: 3 }, tool: 'pick' });
+def(92, 'amethyst', { label: 'Аметистовая жеода', render: 'opaque', hardness: 4, light: 7, drop: { crystal: 1 }, tool: 'pick' });
+def(93, 'red_sand', { label: 'Красный песок', hardness: 1, tool: 'shovel' });
+def(94, 'acacia_leaves', { label: 'Листва акации', render: 'cutout', hardness: 0.4, tool: 'axe' });
+def(95, 'packed_ice', { label: 'Плотный лёд', hardness: 2, tool: 'pick' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
@@ -131,12 +147,12 @@ export const TILE_NAMES = (() => {
 export const isSolid = (id) => BLOCKS[id] ? BLOCKS[id].solid : false;
 export const isOpaqueCube = (id) => { const b = BLOCKS[id]; return !!b && b.shape === 'cube' && b.render === 'opaque'; };
 export const LOG_BLOCKS = new Set([B.LOG, B.SPRUCE_LOG, B.BIRCH_LOG]);
-export const LEAF_BLOCKS = new Set([B.LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES]);
-export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL_ORE]);
+export const LEAF_BLOCKS = new Set([B.LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES, B.ACACIA_LEAVES]);
+export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL_ORE, B.AMETHYST]);
 // Blocks the player can pick in the build palette (in order).
 export const PALETTE = [
   B.PLANKS, B.COBBLESTONE, B.STONE_BRICKS, B.LOG, B.TIMBER_FRAME, B.PLASTER, B.ROOF_TILES, B.THATCH,
   B.GLASS, B.TORCH, B.LANTERN, B.PALISADE, B.REINFORCED_WALL, B.DIRT, B.SAND, B.GRAVEL, B.PATH,
   B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.HAZARD, B.SERVER, B.POLYMER,
-  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.LADDER, B.BED, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
+  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.LADDER, B.BED, B.OBSIDIAN, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
 ];

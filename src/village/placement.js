@@ -91,7 +91,7 @@ export class Placement {
       // fall back to intersecting the village ground plane
       const ray = pk && pk.ray;
       if (!ray) return null;
-      const gy = (this.village.townHall ? this.village.townHall.y : 25) + 1;
+      const gy = (this.village.townHall ? this.village.townHall.y : (this.village.game.world?.sea ?? 20) + 5) + 1;
       if (Math.abs(ray.direction.y) < 1e-4) return null;
       const t = (gy - ray.origin.y) / ray.direction.y;
       if (t < 0) return null;

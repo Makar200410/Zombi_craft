@@ -750,12 +750,106 @@ function watchtower(v, t) {
 const OWN_T4 = new Set(['house']);
 const DESIGNS = { town_hall: townHall, house, builder_hut: builderHut, storehouse, granary, barracks, laboratory, forge, lumber_camp: lumberCamp, farm, mine, market, watchtower };
 
+// ---------------------------------------------------------------- growing wider
+// After the iron age buildings also grow in width: every side gets `grow` more blocks (side wings, a yard, a
+// fence), so the town has to make room for them. Index = tier.
+const GROW = {
+  default: [0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2],
+  watchtower: [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
+};
+/** How many blocks per side a type grows at a tier. */
+export function growOf(id, t) {
+  if (!DESIGNS[id]) return 0;
+  return (GROW[id] || GROW.default)[Math.max(0, Math.min(10, t | 0))];
+}
+
 /**
- * Design function (variant, tier) for a building type: tier 4 keeps the classic handmade medieval design,
- * every other tier comes from the era designs above. Returns null for types without era designs.
+ * Wraps a design in a wider plot: the design in the middle, low side wings in the era's materials joined to it by
+ * a doorway (when its sides are plain walls), otherwise a fenced yard with crates and lamps; a path to the door.
+ */
+function widen(core, t, E) {
+  const e = eraOf(t), W = core.w + 2 * E, D = core.d + 2 * E;
+  const bp = new BP(W, D);
+  yard(bp, e);
+  const za = E + 1, zb = E + core.d - 2, zMidCore = Math.floor(core.d / 2);
+  // how tall is the design's wall? (wings are about half as tall)
+  let wallH = 0;
+  while (wallH < 40 && core.get(1, wallH + 1, zMidCore) !== AIR) wallH++;
+  const ws = wallH >= 15 ? 2 : 1;        // (wallH counts the gable too)
+  const wingTop = ws * SH + 2;          // the wing with its roof stays below this (roof eaves above it stay)
+  // can a wing lean against this side? (no structure low on the design's outer column, no fields / quarry there)
+  const wingOk = (side) => {
+    const cx = side ? core.w - 1 : 0;
+    let busy = 0;
+    for (const c of core.cells.values()) if (c.dx === cx && c.dy >= 1 && c.dy <= wingTop && c.dz >= 1 && c.dz <= core.d - 2) busy++;
+    const near = (x) => (side ? x >= core.w - 2 : x <= 1);
+    if (core.plots.some(p => near(p.dx))) return false;
+    if (core.quarry && (near(core.quarry.x0) || near(core.quarry.x1))) return false;
+    return busy <= 3;
+  };
+  const wings = E >= 2 ? [0, 1].filter(wingOk) : [];
+  for (const side of wings) {
+    const xa = side ? E + core.w - 2 : 1, xb = side ? W - 2 : E + 1;
+    const doorX = side ? xb - 1 : xa + 1;
+    const top = block(bp, e, xa, za, xb, zb, 1, ws, { door: { x: doorX, z: zb, lights: false } });
+    roof(bp, e, xa, za, xb, zb, top, { axis: 'z', kind: e.roofKind === 'cone' ? 'gable' : e.roofKind });
+    // a little furniture: crates in the back, a light
+    const xin = side ? xb - 1 : xa + 1;
+    bp.set(xin, 1, za + 1, e.crate);
+    if (zb - za > 3) bp.set(xin, 1, za + 2, t >= 8 ? B.IRON_BLOCK : B.BOOKSHELF);
+    if (isCube(e.light)) bp.set(xin, 3, Math.round((za + zb) / 2), e.light); else bp.set(xin, 1, zb - 1, B.TORCH);
+  }
+  // the design itself (its side columns give way to the wings)
+  const sideCol = (x, y, z) => (wings.includes(0) && x === 0 || wings.includes(1) && x === core.w - 1) && z >= 1 && z <= core.d - 2 && y <= wingTop;
+  for (const c of core.cells.values()) {
+    if (sideCol(c.dx, c.dy, c.dz)) continue;
+    bp.set(c.dx + E, c.dy, c.dz + E, c.id);
+  }
+  // doorways from the wings into the main hall (where there is a room behind the wall)
+  for (const side of wings) {
+    const wx = side ? core.w - 2 : 1, ix = side ? core.w - 3 : 2;
+    for (const dz of [0, 1, -1]) {
+      const z = zMidCore + dz;
+      if (core.get(wx, 1, z) === AIR || core.get(wx, 2, z) === AIR) break;          // already open
+      if (core.get(ix, 1, z) !== AIR || core.get(ix, 2, z) !== AIR) continue;        // furniture behind
+      bp.del(wx + E, 1, z + E); bp.del(wx + E, 2, z + E);
+      break;
+    }
+  }
+  // a fenced yard on the sides without wings, open towards the front
+  const fence = e.fence === B.LOG ? B.PALISADE : e.fence;
+  const lamp = isCube(e.light) ? e.light : B.TORCH;
+  const ring = (x, z) => bp.get(x, 1, z) === AIR && bp.set(x, 1, z, fence);
+  for (let z = 0; z < D - 1; z++) {
+    if (Math.abs(z - (D >> 1)) <= 0) continue;                                       // gates
+    if (!wings.includes(0)) ring(0, z);
+    if (!wings.includes(1)) ring(W - 1, z);
+  }
+  for (let x = 0; x < W; x++) if (Math.abs(x - (W >> 1)) > 0) ring(x, 0);
+  for (const [x, z] of [[0, 0], [W - 1, 0]]) { bp.set(x, 2, z, fence); bp.set(x, 3, z, lamp); }
+  for (const x of [0, W - 1]) { if (bp.get(x, 1, D - 1) === AIR) { bp.set(x, 1, D - 1, fence); bp.set(x, 2, D - 1, lamp); } }
+  // crates and a hedge in the back corners
+  for (const x of [1, W - 2]) if (bp.get(x, 1, 1) === AIR) bp.set(x, 1, 1, e.crate);
+  if (t <= 7) for (const x of [2, W - 3]) if (bp.get(x, 1, 1) === AIR) bp.set(x, 1, 1, B.LEAVES);
+  // points, fields and the quarry move with the design; a path leads to the door
+  for (const k in core.pts) for (const p of core.pts[k]) bp.point(k, p.dx + E, p.dy, p.dz + E);
+  for (const p of core.plots) bp.plots.push({ dx: p.dx + E, dy: p.dy, dz: p.dz + E });
+  if (core.quarry) bp.quarry = { x0: core.quarry.x0 + E, z0: core.quarry.z0 + E, x1: core.quarry.x1 + E, z1: core.quarry.z1 + E };
+  const dp = core.pts.door?.[0];
+  if (dp && dp.dz >= core.d - 1) for (let z = dp.dz + E; z < D; z++) if (bp.get(dp.dx + E, 1, z) === AIR || z >= dp.dz + E + 1) { if (bp.get(dp.dx + E, 1, z) === AIR) bp.set(dp.dx + E, 0, z, e.pave); }
+  return bp;
+}
+
+/**
+ * Design function (variant, tier, grow) for a building type: tier 4 keeps the classic handmade medieval design,
+ * every other tier comes from the era designs above; grow > 0 widens it (see widen). Returns null for types
+ * without era designs.
  */
 export function tiered(id, medieval) {
   const f = DESIGNS[id];
   if (!f) return null;
-  return (v, t = 4) => (t === 4 && medieval && !OWN_T4.has(id) ? medieval(v) : f(v, t));
+  return (v, t = 4, grow = growOf(id, t)) => {
+    const core = t === 4 && medieval && !OWN_T4.has(id) ? medieval(v) : f(v, t);
+    return grow > 0 ? widen(core, t, grow) : core;
+  };
 }

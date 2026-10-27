@@ -20,7 +20,14 @@ export function moveEntity(world, e, dt) {
   const r = e.radius, h = e.height, fo = e.passFoliage !== false;
   const p = e.position, v = e.velocity;
   const feet = world.getBlock(p.x, p.y + 0.1, p.z), body = world.getBlock(p.x, p.y + h * 0.6, p.z);
-  e.inWater = feet === B.WATER || body === B.WATER;
+  // lava is a thick liquid that sets you on fire
+  e.inLava = feet === B.LAVA || body === B.LAVA;
+  e.inWater = feet === B.WATER || body === B.WATER || e.inLava;
+  if (e.inLava && !e.dead && e.damage) {
+    e.burnTimer = Math.max(e.burnTimer || 0, 4);
+    e._lavaAcc = (e._lavaAcc || 0) + dt;
+    if (e._lavaAcc > 0.5) { e._lavaAcc = 0; e.damage(7, null, { kind: 'fire' }); }
+  }
   e.headInWater = world.getBlock(p.x, p.y + h * 0.9, p.z) === B.WATER;
   // pushing through leaves is a bit slower
   e.inFoliage = fo && (LEAF[feet] || LEAF[body]) === 1;

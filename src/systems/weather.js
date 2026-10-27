@@ -3,7 +3,6 @@
 // snow particles, splashes, lightning and the ambient sound, and has small gameplay effects (see WEATHERS.effect).
 import { WeatherFx } from '../render/weatherFx.js';
 import { worldUniforms } from '../render/chunkMaterials.js';
-import { SEA_LEVEL } from '../world/terrain.js';
 
 export const WEATHERS = {
   clear: { name: 'Ясно', icon: '☀', cloud: 0.1, wind: 0.25, dur: [160, 320] },
@@ -114,13 +113,16 @@ export class Weather {
     // cold: on the high spruce mountains precipitation falls as snow
     const cam = g.camera.position, W = g.world;
     const cx = Math.floor(cam.x), cz = Math.floor(cam.z);
-    let coldHere = 0;
+    // the tundra is always cold; in the desert rain dries up before it reaches the ground (and it never snows)
+    let coldHere = 0, dryHere = 0;
     if (cx >= 0 && cz >= 0 && cx < W.size && cz < W.size) {
-      const i = cz * W.size + cx;
-      coldHere = W.biome[i] === 2 ? Math.min(1, Math.max(0, (W.heights[i] - SEA_LEVEL - 14) / 8)) : 0;
+      const i = cz * W.size + cx, bi = W.biome[i];
+      coldHere = bi === 9 ? 1 : bi === 2 ? Math.min(1, Math.max(0, (W.heights[i] - W.sea - 14) / 8)) : 0;
+      dryHere = bi === 6 ? 1 : 0;
     }
     this.cold = lerp(this.cold, coldHere, Math.min(1, dt * 0.5));
-    const rainVis = this.rain * (1 - this.cold), snowVis = Math.min(1, this.snow + this.rain * this.cold * 0.8);
+    this.dry = lerp(this.dry || 0, dryHere, Math.min(1, dt * 0.5));
+    const rainVis = this.rain * (1 - this.cold) * (1 - this.dry), snowVis = Math.min(1, this.snow + this.rain * this.cold * 0.8) * (1 - this.dry);
 
     // ground: wet in the rain, dries slowly; snow settles while it snows and melts afterwards
     this.wet = rainVis > this.wet ? lerp(this.wet, rainVis, Math.min(1, dt / 15)) : Math.max(0, this.wet - dt / 70);

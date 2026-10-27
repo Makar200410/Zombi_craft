@@ -1,7 +1,7 @@
 // Builds chunk geometry buffers (world-space positions) with smooth lighting + ambient occlusion.
 // Output buckets: solid (opaque + cutout cubes), plants (cross sprites, double sided), water, glass.
 import { BLOCKS, B } from '../core/blocks.js';
-import { CHUNK, HEIGHT, LIGHT_BLOCKING } from './World.js';
+import { CHUNK, LIGHT_BLOCKING } from './World.js';
 
 // face: n (normal), u, v (tangent axes, u×v=n), base corner
 const FACES = [
@@ -46,7 +46,7 @@ class Bucket {
 export function meshChunk(world, cx, cz, atlas, opts = {}) {
   const fancyLeaves = opts.fancyLeaves !== false;
   const lowDetail = !!opts.lowDetail;
-  const size = world.size, blocks = world.blocks, light = world.light;
+  const size = world.size, blocks = world.blocks, light = world.light, HEIGHT = world.height;
   const solid = new Bucket(), plants = new Bucket(), water = new Bucket(), glass = new Bucket();
   const x0 = cx * CHUNK, z0 = cz * CHUNK;
   const x1 = Math.min(size, x0 + CHUNK), z1 = Math.min(size, z0 + CHUNK);
@@ -74,8 +74,8 @@ export function meshChunk(world, cx, cz, atlas, opts = {}) {
     const shape = SHAPE[id], render = RENDER[id];
     const def = BLOCKS[id];
     if (shape === 2) { if (!(lowDetail && id === B.TALL_GRASS)) crossQuads(x, y, z, id, def); continue; }
-    const isLiquid = shape === 3;
-    const emissive = def.light > 0 && !isLiquid && shape === 1;
+    const isLiquid = shape === 3, isLava = id === B.LAVA;
+    const emissive = (def.light > 0 && shape === 1 && id !== B.GLOW_MOSS && id !== B.AMETHYST) || isLava;   // moss & geodes only light their surroundings
     for (let f = 0; f < 6; f++) {
       const F = FACES[f];
       const nx = x + F.n[0], ny = y + F.n[1], nz = z + F.n[2];
@@ -90,7 +90,7 @@ export function meshChunk(world, cx, cz, atlas, opts = {}) {
         if (nb === id && (render === 3 || (render === 2 && !fancyLeaves))) continue;
       }
       // tile uv
-      const t = uvOf(isLiquid ? 'water' : def.tiles[F.tile]);
+      const t = uvOf(isLiquid && !isLava ? 'water' : def.tiles[F.tile]);
       // corner positions
       let top = 1;
       if (isLiquid && get(x, y + 1, z) !== id) top = 0.875;
@@ -115,13 +115,13 @@ export function meshChunk(world, cx, cz, atlas, opts = {}) {
         if (!s1) { const l = lightAt(nx + su0, ny + su1, nz + su2); sky += l >> 4; blk += l & 15; cnt++; }
         if (!s2) { const l = lightAt(nx + sv0, ny + sv1, nz + sv2); sky += l >> 4; blk += l & 15; cnt++; }
         if (!cc && !(s1 && s2)) { const l = lightAt(nx + su0 + sv0, ny + su1 + sv1, nz + su2 + sv2); sky += l >> 4; blk += l & 15; cnt++; }
-        L[c * 4] = isLiquid || render === 3 ? 1 : (0.45 + 0.55 * ao / 3);
+        L[c * 4] = (isLiquid && !isLava) || render === 3 ? 1 : (0.45 + 0.55 * ao / 3);
         L[c * 4 + 1] = sky / cnt / 15;
         L[c * 4 + 2] = blk / cnt / 15;
         L[c * 4 + 3] = emissive ? 2 : (render === 2 ? 0.25 : 0);
       }
       const flip = aoArr[0] + aoArr[2] < aoArr[1] + aoArr[3];
-      const bucket = isLiquid ? water : render === 3 ? glass : solid;
+      const bucket = isLava ? solid : isLiquid ? water : render === 3 ? glass : solid;   // lava is opaque and glows
       bucket.quad(P, F.n, UV, L, flip);
     }
   }

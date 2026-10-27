@@ -57,7 +57,7 @@ export class WaveDirector {
     bus.on('time:dusk', () => { if (this.game.running) this.startWave(); });
     bus.on('time:dawn', () => this._dawn());
     bus.on('block:changed', ({ x, z }) => this.flow.onBlockChanged(x, z));
-    for (const ev of ['building:placed', 'building:completed', 'building:destroyed']) bus.on(ev, () => this.flow.invalidate());
+    for (const ev of ['building:placed', 'building:completed', 'building:destroyed', 'building:resized', 'building:restyled']) bus.on(ev, () => this.flow.invalidate());
     bus.on('world:ready', () => this._clearAll());
   }
 

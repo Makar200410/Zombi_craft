@@ -1,7 +1,6 @@
 // Village: buildings, villagers, jobs, construction, population, selection, save/load.
 import * as THREE from 'three';
 import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
-import { SEA_LEVEL } from '../world/terrain.js';
 import { oak, birch, spruce } from '../world/terrain.js';
 import { mulberry32 } from '../core/rng.js';
 import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS, setEraTier } from './buildings.js';
@@ -16,7 +15,8 @@ import { pickName, JOBS, JOB_ORDER } from './names.js';
 const MAX_VILLAGERS = 40;
 const SPAWN_INTERVAL = 40;
 const LEAF_OF = { [B.LOG]: B.LEAVES, [B.BIRCH_LOG]: B.BIRCH_LEAVES, [B.SPRUCE_LOG]: B.SPRUCE_LEAVES };
-const NON_TERRAIN = new Set([B.LOG, B.BIRCH_LOG, B.SPRUCE_LOG, B.LEAVES, B.BIRCH_LEAVES, B.SPRUCE_LEAVES]);
+const NON_TERRAIN = new Set([B.LOG, B.BIRCH_LOG, B.SPRUCE_LOG, B.LEAVES, B.BIRCH_LEAVES, B.SPRUCE_LEAVES, B.ACACIA_LEAVES, B.CACTUS]);
+const ROOM = 4;    // free ground kept around the starting buildings so they can grow wider in later ages
 
 export { BUILDING_TYPES, BUILDING_ORDER, JOBS, JOB_ORDER };
 
@@ -125,12 +125,13 @@ export class Village {
       edits.push([x, gy + 1, z, B.LOG], [x, gy + 2, z, B.TORCH]);
     }
     this.bulkEdit(edits);
-    this.placeBuilding('house', px + 3, pz0 + 4, 1, { free: true, instant: true });
-    this.placeBuilding('house', px - 9, pz0 + 4, 3, { free: true, instant: true, variant: 1 });
+    // (spaced so that every building keeps room to grow wider in later ages)
+    this.placeBuilding('house', px + 4, pz0 + 6, 1, { free: true, instant: true });
+    this.placeBuilding('house', px - 10, pz0 + 6, 3, { free: true, instant: true, variant: 1 });
     this.spawnPoint.set(door.x, door.y, door.z + 2);
     // a working economy from the first minute: a farm and a lumber camp next to the village
-    const farm = this.placeNear('farm', th, 12, 26);
-    const camp = this.placeNear('lumber_camp', th, 12, 30);
+    const farm = this.placeNear('farm', th, 14, 44, ROOM);
+    const camp = this.placeNear('lumber_camp', th, 14, 48, ROOM);
     this.recalcPop();
     // starting villagers: 2 builders, woodcutter, farmer and 2 guards posted at the town hall
     const jobs = [['builder'], ['builder'], ['woodcutter', camp], ['farmer', farm], ['guard', th], ['guard', th]];
@@ -145,7 +146,7 @@ export class Village {
   }
 
   /** Finds a valid site for a building in a ring around another building and stamps it instantly (free). */
-  placeNear(typeId, around, rMin, rMax) {
+  placeNear(typeId, around, rMin, rMax, room = 0) {
     const c = around.center || { x: around.x + around.w / 2, z: around.z + around.d / 2 };
     const def = BUILDING_TYPES[typeId]; if (!def) return null;
     for (let r = rMin; r <= rMax; r += 2) {
@@ -155,7 +156,7 @@ export class Village {
         for (let rot = 0; rot < 4; rot++) {
           const L = def.layout(rot);
           const x = Math.round(c.x + Math.cos(a) * r - L.w / 2), z = Math.round(c.z + Math.sin(a) * r - L.d / 2);
-          if (!this.checkSite(typeId, x, z, rot).ok) continue;
+          if (!this.checkSite(typeId, x, z, rot, { room }).ok) continue;
           const b = this.placeBuilding(typeId, x, z, rot, { free: true, instant: true });
           if (b) return b;
         }
@@ -266,15 +267,16 @@ export class Village {
     for (let z = z0; z < z0 + L.d; z++) for (let x = x0; x < x0 + L.w; x++) {
       const gy = this.groundY(x, z);
       hs.push(gy);
-      if (w.getBlock(x, gy + 1, z) === B.WATER || gy < SEA_LEVEL - 1) water = true;
+      if (w.getBlock(x, gy + 1, z) === B.WATER || gy < w.sea - 1) water = true;
     }
     hs.sort((a, b) => a - b);
     const y = hs[Math.floor(hs.length / 2)];
     const spread = Math.max(y - hs[0], hs[hs.length - 1] - y);
     if (water) return { ok: false, y, reason: 'Нельзя строить на воде' };
     if (spread > (def.line ? 4 : 3)) return { ok: false, y, reason: 'Слишком неровная местность' };
-    // overlap with other buildings (1-block gap between regular buildings, walls may touch)
-    const gap = def.line ? 0 : 1;
+    // overlap with other buildings (1-block gap between regular buildings, walls may touch; opts.room keeps
+    // extra space free on every side, for buildings that will grow wider)
+    const gap = def.line ? 0 : 1 + (opts.room || 0);
     for (let z = z0 - gap; z < z0 + L.d + gap; z++) for (let x = x0 - gap; x < x0 + L.w + gap; x++) {
       if (x < 0 || z < 0 || x >= w.size || z >= w.size) continue;
       const id = this.foot[z * w.size + x];
@@ -311,6 +313,10 @@ export class Village {
       b.hp = Math.round(b.maxHp * 0.1);
       this.scaffolds.set(b.id, new Scaffold(this.game, b));
       if (!def.line) this.toast(`Заложено: ${def.name}. Строители уже идут!`, 'info');
+      if (!def.line && def.tiered && (this.game.state.age | 0) < 3 && !this._roomTip) {
+        this._roomTip = true;
+        setTimeout(() => this.toast('Совет: со Средневековья здания становятся шире. Оставляйте между ними 4–6 блоков, иначе придётся расчищать место.', 'info'), 3000);
+      }
     }
     this.bus.emit('building:placed', { building: b });
     this.ghostsDirty = true;
@@ -416,14 +422,16 @@ export class Village {
     setEraTier((this.game.state.age | 0) + 1);
     const edits = [];
     let n = 0;
+    let blocked = 0;
     for (const b of this.buildings) {
       if (b.state === 'destroyed') continue;
-      if (b.def.tiered) { if (this.retier(b)) n++; continue; }
+      if (b.def.tiered) { if (this.retier(b, false, true)) n++; if (b.wantGrow > b.grow) blocked++; continue; }
       for (const e of b.applyLevelMaterials('collect')) edits.push(e);
       b.computeOps();
     }
     if (edits.length) this.bulkEdit(edits);
     for (const b of this.buildings) if (!b.def.tiered) b.refreshBuilt?.();
+    if (blocked) setTimeout(() => this.toast(`Здания новой эпохи шире: ${blocked} ${blocked === 1 ? 'зданию' : 'зданиям'} не хватает места. Расчистите землю вокруг (уберите соседние постройки) — они расширятся сами.`, 'warn'), 2500);
     return edits.length + n;
   }
 
@@ -432,20 +440,84 @@ export class Village {
    * An era building grows into the design of its style (age / level): swap its blueprint and let the town
    * rebuild it block by block over a few seconds (old parts come down from the top, new ones rise from the ground).
    */
-  retier(b, force = false) {
+  retier(b, force = false, silent = false) {
     if (!b.def.tiered || b.state === 'destroyed') return false;
     const t = b.style;
-    if (t === b.tier && !force) return false;
+    // after the iron age buildings also grow wider — as far as the space around them allows
+    const want = b.def.growAt(t);
+    let g = b.grow;
+    if (want > b.grow) {
+      g = want;
+      while (g > b.grow && !this.canGrow(b, t, g).ok) g--;
+      if (g < want) {
+        const why = this.canGrow(b, t, want).reason;
+        if (b.wantGrow !== want && !silent) this.toast(`«${b.def.name}» хочет стать шире, но ${why}. Расчистите место вокруг — здание расширится само.`, 'warn');
+        b.wantGrow = want;
+      } else b.wantGrow = 0;
+    } else if (want <= b.grow) b.wantGrow = 0;
+    if (t === b.tier && g === b.grow && !force) return false;
     const w = this.game.world;
     for (const bl of b.blocks) { const k = w.index(bl.x, bl.y, bl.z); if (this.cellIndex.get(k)?.b === b) this.cellIndex.delete(k); }
-    const oldH = b.relayout(t);
+    this._footprint(b, false);
+    const oldH = b.relayout(t, g);
+    this._footprint(b, true);
     b.blocks.forEach((bl, i) => this.cellIndex.set(w.index(bl.x, bl.y, bl.z), { b, i }));
     b.computeOps(oldH);
     b.refreshMaxHp();
     if (b.state === 'complete' || b.state === 'constructing') this.startMorph(b);
+    const sc = this.scaffolds.get(b.id); if (sc) sc.h = -1;
     if (b === this.townHall) this._thFor = null;
     this.ghostsDirty = true;
+    this.recalcRadius();
+    this.bus.emit('building:resized', { building: b });
     return true;
+  }
+  /** Marks (on = true) or clears the building's columns in the footprint map. */
+  _footprint(b, on) {
+    const w = this.game.world;
+    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) {
+      if (x < 0 || z < 0 || x >= w.size || z >= w.size) continue;
+      const i = z * w.size + x;
+      if (on) this.foot[i] = b.id; else if (this.foot[i] === b.id) this.foot[i] = 0;
+    }
+  }
+  /**
+   * Can building b grow to `grow` blocks per side (at tier t)? The new ground must be inside the world, dry, and free
+   * of other buildings (with the usual 1-block gap; walls may touch). Trees, grass and small hills are cleared by
+   * the rebuild itself. Returns {ok, reason}.
+   */
+  canGrow(b, t, grow) {
+    const w = this.game.world;
+    const L = b.def.layout(b.rot, b.variant, t, grow);
+    const x0 = b.x + Math.round((b.w - L.w) / 2), z0 = b.z + Math.round((b.d - L.d) / 2);
+    const m = 3;
+    if (x0 < m || z0 < m || x0 + L.w > w.size - m || z0 + L.d > w.size - m) return { ok: false, reason: 'рядом край мира' };
+    const blockers = new Set();
+    for (let z = z0 - 1; z < z0 + L.d + 1; z++) for (let x = x0 - 1; x < x0 + L.w + 1; x++) {
+      const id = this.foot[z * w.size + x];
+      const inside = x >= x0 && z >= z0 && x < x0 + L.w && z < z0 + L.d;
+      if (inside && !b.contains(x, z)) {
+        const gy = this.groundY(x, z);
+        if (w.getBlock(x, gy + 1, z) === B.WATER || gy < w.sea - 1) return { ok: false, reason: 'вокруг вода' };
+      }
+      if (!id || id === b.id) continue;
+      const other = this.byId.get(id);
+      if (!other) continue;
+      if (inside || !other.def.line) blockers.add(other);
+    }
+    if (blockers.size) {
+      const names = [...new Set([...blockers].map(o => o.def.line ? 'стена' : '«' + o.def.name + '»'))].slice(0, 2).join(' и ');
+      return { ok: false, reason: 'рядом мешает ' + names, blockers: [...blockers] };
+    }
+    return { ok: true, reason: '' };
+  }
+  /** Buildings waiting for room to grow try again now and then. */
+  retryGrowth() {
+    for (const b of this.buildings) {
+      if (!b.wantGrow || b.wantGrow <= b.grow || b.state !== 'complete' || this.morphs.some(m => m.b === b)) continue;
+      if (!this.canGrow(b, b.style, b.def.growAt(b.style)).ok) continue;
+      if (this.retier(b, true)) this.toast(`Место расчищено: «${b.def.name}» расширяется!`, 'good');
+    }
   }
   /** Queue the building's outstanding construction ops to be carried out automatically. */
   startMorph(b) {
@@ -977,7 +1049,7 @@ export class Village {
       if ((x - cx) * (x - cx) + (z - cz) * (z - cz) > R * R) continue;
       const top = w.surfaceY(x, z);
       if (!LEAF_BLOCKS.has(w.getBlock(x, top, z)) && !LOG_BLOCKS.has(w.getBlock(x, top, z))) continue;
-      for (let y = top; y > SEA_LEVEL - 3; y--) {
+      for (let y = top; y > w.sea - 3; y--) {
         const id = w.getBlock(x, y, z);
         if (LOG_BLOCKS.has(id)) {
           const below = w.getBlock(x, y - 1, z);
@@ -1334,6 +1406,8 @@ export class Village {
     this.ghosts.update(this.game.time);
     this._tick += dt;
     if (this._tick >= 1) { this.tick1(this._tick); this._tick = 0; }
+    this._growT = (this._growT || 0) + dt;
+    if (this._growT >= 4) { this._growT = 0; this.retryGrowth(); }
     this._ghostT -= dt;
     if (this.ghostsDirty && this._ghostT <= 0) { this.rebuildGhosts(); this._ghostT = 0.2; }
     this.industry.update(dt);
@@ -1430,9 +1504,11 @@ export class Village {
       // era buildings: the design that stands in the world (older saves had the medieval design + material swaps)
       let oldH = 0, morph = false;
       if (b.def.tiered) {
-        const saved = s.tier || 0;
-        if (saved) { if (saved !== b.tier) b.relayout(saved); }
-        else { oldH = b.def.layout(b.rot, b.variant, 4).height; b.relayout(b.style); morph = true; }
+        // the design that stands in the world at its saved width (saves before buildings grew wider: none)
+        const saved = s.tier || 0, grow = s.grow || 0;
+        if (saved) { if (saved !== b.tier || grow !== b.grow) b.relayout(saved, grow, false); }
+        else { oldH = b.def.layout(b.rot, b.variant, 4, 0).height; b.relayout(b.style, 0, false); morph = true; }
+        b.wantGrow = s.wantGrow || 0;
       }
       b.applyLevelMaterials(false);
       this.addBuilding(b);
@@ -1444,7 +1520,7 @@ export class Village {
       if (b.state === 'complete') b.needsRepair = b.builtCount < b.blocks.length;
       if (b.state === 'planned' || b.state === 'constructing') this.scaffolds.set(b.id, new Scaffold(this.game, b));
       if (morph && b.state === 'complete') this.startMorph(b);
-      else if (b.def.tiered && b.state === 'complete' && b.tier !== b.style) this.retier(b);
+      else if (b.def.tiered && b.state === 'complete' && b.tier !== b.style) this.retier(b, false, true);
     }
     this.nextBuildingId = Math.max(this.nextBuildingId, o.nextBuildingId || 1);
     for (const s of o.villagers || []) {

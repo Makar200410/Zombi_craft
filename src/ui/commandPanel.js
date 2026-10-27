@@ -427,6 +427,11 @@ export class CommandPanel {
     const badge = this._ins.badge = h('span.zc-badge.s-' + b.state, STATE_LABELS[b.state] || b.state);
     el.append(this._head(buildingIcon(b.type), t.name || b.type, t.category ? ({ economy: 'Экономика', military: 'Военное', magic: 'Магия', defense: 'Оборона' })[t.category] : '', badge));
     if (t.desc) el.append(h('p.zc-ins-desc', t.desc));
+    // an era building that would like to be wider but has no room
+    if (b.wantGrow > b.grow && this.game.village?.canGrow) {
+      const r = this.game.village.canGrow(b, b.style, b.wantGrow);
+      el.append(this._ins.grow = h('div.zc-note.warn', `⚠ Зданию тесно: в новой эпохе оно шире (+${b.wantGrow - b.grow} ${b.wantGrow - b.grow === 1 ? 'блок' : 'блока'} с каждой стороны), но ${r.reason || 'место занято'}. Освободите землю вокруг — оно расширится само.`));
+    }
     const prog = this._ins.prog = bar('build', 'Стройка');
     const hp = this._ins.hp = bar('hp', 'Прочность');
     el.append(prog.el, hp.el);
@@ -505,6 +510,7 @@ export class CommandPanel {
   }
   _updateBuilding(b) {
     const I = this._ins;
+    if (I.grow && !(b.wantGrow > b.grow)) { I.grow.remove(); I.grow = null; }
     if (I.upSig !== undefined && I.upSig !== this._upSig(b)) { this.renderInspector(); return; }
     if (I.lvl) {
       const bits = ['Уровень ' + (b.level || 1) + ' из ' + (b.maxLevel || 1)];

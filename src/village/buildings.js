@@ -6,7 +6,7 @@
 import { B } from '../core/blocks.js';
 
 import { BP } from './bp.js';
-import { tiered } from './architecture.js';
+import { tiered, growOf } from './architecture.js';
 
 // ---------------------------------------------------------------- designs
 
@@ -991,12 +991,13 @@ const cache = new Map();
 let eraTier = 1;
 export function setEraTier(t) { eraTier = Math.max(1, Math.min(10, t | 0)); }
 export function getEraTier() { return eraTier; }
-function compile(type, rot, variant, tier) {
-  if (!type.tiered) tier = 0;
-  const key = type.id + ':' + (rot & 3) + ':' + variant + ':' + tier;
+function compile(type, rot, variant, tier, grow) {
+  if (!type.tiered) { tier = 0; grow = 0; }
+  else grow = grow ?? growOf(type.id, tier);
+  const key = type.id + ':' + (rot & 3) + ':' + variant + ':' + tier + ':' + grow;
   let c = cache.get(key);
   if (c) return c;
-  const bp = type.tiered ? type.design(variant, tier) : type.design(variant);
+  const bp = type.tiered ? type.design(variant, tier, grow) : type.design(variant);
   const { w, d } = bp;
   const blocks = [];
   let height = 0;
@@ -1037,9 +1038,11 @@ function def(id, o) {
   // era designs: the type grows and changes materials with every age (see architecture.js)
   const era = tiered(id, t.design);
   if (era) { t.tiered = true; t.design = era; }
-  t.blueprint = (rot = 0, variant = 0, tier = eraTier) => compile(t, rot, variant % t.variants, tier).blocks;
-  t.layout = (rot = 0, variant = 0, tier = eraTier) => compile(t, rot, variant % t.variants, tier);
-  const l = t.layout(0, 0, 4);
+  // grow: blocks added on every side (era buildings widen after the iron age); default = the tier's full width
+  t.blueprint = (rot = 0, variant = 0, tier = eraTier, grow) => compile(t, rot, variant % t.variants, tier, grow).blocks;
+  t.layout = (rot = 0, variant = 0, tier = eraTier, grow) => compile(t, rot, variant % t.variants, tier, grow);
+  t.growAt = (tier) => (t.tiered ? growOf(id, tier) : 0);
+  const l = t.layout(0, 0, 4, 0);
   t.size = [l.w, l.d];
   t.height = l.height;
   BUILDING_TYPES[id] = t;

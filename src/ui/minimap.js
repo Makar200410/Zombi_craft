@@ -11,6 +11,8 @@ const NAME_COLORS = {
   bookshelf: 0x8a6030, arcane_table: 0x7050b0, hay_bale: 0xd8b840, plaster: 0xe8e0d0, timber_frame: 0xb09070, mossy_cobble: 0x6a7a5a,
   dark_stone: 0x484852, path: 0xa88a5a, snow: 0xf2f4f8, palisade: 0x7a5a32, reinforced_wall: 0x6a6a7a, banner: 0xc03030,
   mushroom: 0x5f9a3a, dead_bush: 0xb09a60, birch_log: 0xd8d0c0, birch_leaves: 0x6a9a3a,
+  lava: 0xf06818, chest: 0xa07040, glow_moss: 0x2ab0a8, cactus: 0x2e7a30, ice: 0xa8d0f0, packed_ice: 0x90b4dc, mud: 0x4a3a28,
+  dry_grass: 0xb09a44, obsidian: 0x22183a, amethyst: 0x9a5cd0, red_sand: 0xc8743a, acacia_leaves: 0x6a802a, sandstone: 0xd8b878,
 };
 const COL = new Uint32Array(256);
 const SKIP = new Uint8Array(256);   // look through (air, plants)

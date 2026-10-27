@@ -38,7 +38,7 @@ export function findPath(world, from, to, opts = {}) {
     const id = world.getBlock(x, y, z);
     return SOLID[id] === 1 && !LEAF_BLOCKS.has(id);     // leaves can be walked through
   };
-  const passable = (x, y, z) => !solid(x, y, z) && !solid(x, y + 1, z);
+  const passable = (x, y, z) => !solid(x, y, z) && !solid(x, y + 1, z) && world.getBlock(x, y, z) !== B.LAVA;
   const standable = (x, y, z) => passable(x, y, z) && (solid(x, y - 1, z) || (allowWater && world.getBlock(x, y - 1, z) === B.WATER));
   const fx = Math.floor(from.x), fz = Math.floor(from.z);
   let fy = Math.floor(from.y);

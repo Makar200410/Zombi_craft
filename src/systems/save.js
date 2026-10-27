@@ -195,6 +195,7 @@ export class SaveSystem {
       savedAt: Date.now(),
       seed: g.world?.seed ?? g.state.seed,
       size: g.world?.size || 192,
+      format: g.world?.format || 1,      // world shape (height / sea level), see WORLD_FORMATS
       changes: g.world?.changes ? encodeChanges(g.world.changes) : '',
       state: g.state.serialize(),
       village: safe(g.village),
@@ -245,7 +246,7 @@ export class SaveSystem {
     this.loading = true;
     try {
       g.running = false;
-      await g.setup({ seed: o.seed, size: o.size || 192 }, progress);
+      await g.setup({ seed: o.seed, size: o.size || 192, format: o.format || 1 }, progress);
       const w = g.world;
       progress(0.96, 'Восстанавливаем постройки…');
       const changes = decodeChanges(o.changes);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CHUNK, HEIGHT } from '../world/World.js';
+import { CHUNK } from '../world/World.js';
 import { meshChunk } from '../world/mesher.js';
 import { createChunkMaterials } from './chunkMaterials.js';
 
@@ -42,7 +42,7 @@ export class ChunkRenderer {
       g.setAttribute('uv', new THREE.BufferAttribute(d.uv, 2));
       g.setAttribute('light', new THREE.BufferAttribute(d.light, 4));
       g.setIndex(new THREE.BufferAttribute(d.index, 1));
-      g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CHUNK, 0, cz * CHUNK), new THREE.Vector3(cx * CHUNK + CHUNK, HEIGHT, cz * CHUNK + CHUNK));
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CHUNK, 0, cz * CHUNK), new THREE.Vector3(cx * CHUNK + CHUNK, this.world.height, cz * CHUNK + CHUNK));
       g.boundingSphere = new THREE.Sphere(); g.boundingBox.getBoundingSphere(g.boundingSphere);
       if (mesh) { mesh.geometry.dispose(); mesh.geometry = g; }
       else {

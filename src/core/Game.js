@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { Quests } from '../systems/quests.js';
 import { Ambience } from '../systems/ambience.js';
 import { Weather } from '../systems/weather.js';
+import { Underground } from '../systems/underground.js';
 import { EventBus } from './events.js';
 import { GameState } from './state.js';
-import { World } from '../world/World.js';
+import { World, WORLD_FORMATS, WORLD_FORMAT } from '../world/World.js';
 import { Renderer } from '../render/Renderer.js';
 import { ChunkRenderer } from '../render/ChunkRenderer.js';
 import { Particles } from '../render/particles.js';
@@ -72,12 +73,13 @@ export class Game {
     this.crafting = new Crafting(this);
     this.quests = new Quests(this);
     this.ambience = new Ambience(this);
+    this.underground = new Underground(this);
     this.weather = new Weather(this);
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.save];
-    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.save, this.ui]) s.init?.();
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.save];
+    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.save, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
@@ -85,13 +87,15 @@ export class Game {
   }
 
   /** (Re)generates the world for a seed. Call before begin(). */
-  async setup({ seed = (Math.random() * 1e9) | 0, size = 1216 } = {}, progress = () => {}) {
+  async setup({ seed = (Math.random() * 1e9) | 0, size, format = WORLD_FORMAT } = {}, progress = () => {}) {
+    const F = WORLD_FORMATS[format] || WORLD_FORMATS[1];
+    size = size || F.size;
     progress(0.15, 'Генерация мира…');
     await tick();
     if (this.chunkRenderer) { this.scene.remove(this.chunkRenderer.group); this.chunkRenderer.group.traverse(o => o.geometry?.dispose()); }
     for (const e of [...(this.entities?.list || [])]) if (e.kind !== 'player') this.entities.remove(e);
     this.state.seed = seed;
-    this.world = new World(this, { size, seed });
+    this.world = new World(this, { size, seed, height: F.height, sea: F.sea, format: WORLD_FORMATS[format] ? format : 1 });
     this.world.generate();
     progress(0.55, 'Строим ландшафт…');
     await tick();

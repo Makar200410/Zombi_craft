@@ -30,7 +30,7 @@ const CELL = S + GUT * 2;
 
 // Cross-shaped sprite tiles (gutter = clamped edge, not wrapped)
 const SPRITES = new Set(['wheat_0', 'wheat_1', 'wheat_2', 'wheat_3', 'torch', 'tall_grass', 'flower_red',
-  'flower_yellow', 'mushroom', 'dead_bush']);
+  'flower_yellow', 'mushroom', 'dead_bush', 'glow_mushroom', 'reeds', 'cobweb']);
 
 // ------------------------------------------------------------------ palettes (dark -> light, hue shifted)
 const P = {
@@ -1753,6 +1753,176 @@ GEN.torch = (p, r) => {
   });
   p.set(16, 1, hex('#ffcf5a')); p.set(13, 2, hex('#ff9a3a')); p.set(18, 0, hex('#ffd87a'));
 };
+
+
+// ------------------------------------------------------------------ underground & biomes
+GEN.lava = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const crust = tileNoise(r, S, 8);
+  const L = hexes(['#3a0a02', '#6e1604', '#a82a06', '#dc4a0a', '#f8761a', '#ffa83a', '#ffd46a', '#fff2b0']);
+  const h = field(S, S, (x, y) => n(x, y));
+  p.map((x, y) => {
+    const c = crust(x, y);
+    let v = 4.2 + (h.at(x, y) - 0.5) * 5;
+    if (c > 0.66) v = 1.2 + (c - 0.66) * 3;            // dark cooling crust plates
+    else if (c > 0.6) v -= 1.6;
+    return rampDither(L, v, x, y, 0.5);
+  });
+  for (let i = 0; i < 10; i++) p.set(r.int(0, 31), r.int(0, 31), L[7]);
+};
+GEN.chest_side = (p, r) => {
+  const W = P.plank;
+  p.map((x, y) => {
+    const band = y === 0 || y === 31 || x === 0 || x === 31;
+    if (band) return W[0];
+    const row = Math.floor((y - 1) / 6);
+    let v = 4 + (row & 1 ? -0.4 : 0.3) + Math.sin(x * 0.9 + row * 2) * 0.35;
+    if ((y - 1) % 6 === 5) v = 1.5;
+    return rampAt(W, v);
+  });
+  // lid seam, iron bands and the lock
+  for (let x = 1; x < 31; x++) { p.set(x, 11, W[0]); p.set(x, 12, W[2]); }
+  for (const bx of [3, 28]) for (let y = 1; y < 31; y++) { p.set(bx, y, hex('#3c3e44')); p.set(bx + 1, y, hex('#6a6d74')); }
+  for (let y = 9; y < 17; y++) for (let x = 14; x < 18; x++) p.set(x, y, y === 9 || x === 14 ? hex('#fff0a6') : hex('#c8972c'));
+  p.set(15, 13, hex('#2a1a06')); p.set(16, 13, hex('#2a1a06')); p.set(15, 14, hex('#2a1a06'));
+};
+GEN.chest_top = (p, r) => {
+  const W = P.plank;
+  p.map((x, y) => {
+    if (x === 0 || y === 0 || x === 31 || y === 31) return W[0];
+    return rampAt(W, 4.2 + Math.sin(y * 0.8 + (x >> 3)) * 0.4 + ((x % 8) === 0 ? -1.6 : 0));
+  });
+  for (const by of [3, 28]) for (let x = 1; x < 31; x++) { p.set(x, by, hex('#3c3e44')); p.set(x, by + 1, hex('#6a6d74')); }
+};
+GEN.glow_moss_top = (p, r) => {
+  copyInto(p, gen('dark_stone'));
+  const m = tileFbm(r, S, [4, 8, 16], 0.6);
+  const G = hexes(['#0a222c', '#0c3440', '#0f4c56', '#146a6c', '#1e9088', '#5ed8c0']);
+  p.forEach((x, y) => { const v = m(x, y); if (v > 0.5) p.set(x, y, rampDither(G, 0.8 + (v - 0.5) * 9, x, y, 0.6)); });
+  for (let i = 0; i < 18; i++) { const x = r.int(0, 31), y = r.int(0, 31); if (m(x, y) > 0.5) p.set(x, y, hex('#b8fff0')); }
+};
+GEN.glow_moss_side = (p, r) => {
+  copyInto(p, gen('dark_stone'));
+  overhang(p, r, hexes(['#0a222c', '#0c3440', '#0f4c56', '#146a6c', '#1e9088', '#5ed8c0']), 'dark_stone', { min: 2, var: 3, drips: 0.4, top: 3.6 });
+};
+GEN.glow_mushroom = (p, r) => {
+  spriteCanvas(p);
+  const stem = hexes(['#2a5a6a', '#4a8a96', '#7ac0c8', '#c0f0f0']);
+  const cap = hexes(['#06304a', '#0a5a7a', '#1690b0', '#2ac8e0', '#7af0ff', '#d8ffff']);
+  const shroom = (cx, top, rx, ry, sh) => {
+    for (let y = top + ry; y < 32; y++) for (let x = cx - sh; x < cx + sh; x++) p.set(x, y, stem[x === cx - sh ? 3 : x === cx + sh - 1 ? 0 : 2]);
+    for (let y = top; y < top + ry + 1; y++) for (let x = cx - rx; x <= cx + rx; x++) {
+      const dx = (x - cx) / (rx + 0.5), dy = (y - top - ry) / (ry + 0.5);
+      if (dx * dx + dy * dy > 1) continue;
+      p.set(x, y, rampAt(cap, clamp(0.7 - dx * 0.35 - dy * 0.4 - (dx * dx + dy * dy) * 0.3, 0, 1) * 5.5));
+    }
+    for (let i = 0; i < 4; i++) p.set(cx + r.int(-rx + 1, rx - 1), top + r.int(1, ry), cap[5]);
+  };
+  shroom(11, 9, 7, 5, 2);
+  shroom(23, 17, 5, 4, 1);
+  shroom(26, 26, 3, 2, 1);
+};
+GEN.cactus_side = (p, r) => {
+  const C = hexes(['#0c2a10', '#14401a', '#1e5a24', '#2a722e', '#3a8a3a', '#56a24a', '#7cbc62']);
+  p.map((x, y) => {
+    if (x < 2 || x > 29) return [0, 0, 0, 0];                 // inset look
+    const rib = (x - 2) % 7;
+    const v = 3.4 + (rib === 0 ? -1.6 : rib === 1 ? 1.2 : rib === 3 ? 0.5 : 0) + Math.sin(y * 0.6 + x) * 0.25;
+    return [...rampAt(C, v), 255];
+  });
+  for (let i = 0; i < 26; i++) { const x = 3 + ((r.int(0, 3) * 7 + 1) % 28), y = r.int(1, 30); p.set(x, y, hex('#f0e6c0')); p.set(x + 1, y - 1, hex('#bfb48a')); }
+};
+GEN.cactus_top = (p, r) => {
+  const C = hexes(['#14401a', '#1e5a24', '#2a722e', '#3a8a3a', '#56a24a', '#7cbc62', '#a4d488']);
+  p.map((x, y) => {
+    if (x < 2 || x > 29 || y < 2 || y > 29) return [0, 0, 0, 0];
+    const d = Math.hypot(x - 15.5, y - 15.5);
+    return [...rampAt(C, 3.5 - d * 0.08 + (((x + y) & 3) === 0 ? 0.6 : 0)), 255];
+  });
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; p.set(Math.round(15.5 + Math.cos(a) * 6), Math.round(15.5 + Math.sin(a) * 6), hex('#f0e6c0')); }
+};
+GEN.ice = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.5);
+  p.map((x, y) => {
+    const e = Math.min(x, y, 31 - x, 31 - y);
+    const v = n(x, y);
+    if (e === 0) return [...hex(x === 0 || y === 0 ? '#e8f8ff' : '#7aa8d0'), 230];
+    return [...mix(hex('#8cc0ec'), hex('#dff2ff'), v), 150 + Math.round(v * 60)];
+  });
+  const glint = (x0, y0, L) => { for (let k = 0; k < L; k++) p.set(x0 + k, y0 - k, hex('#ffffff'), 210); };
+  glint(5, 14, 8); glint(17, 27, 10);
+  for (let i = 0; i < 5; i++) { let x = r.int(2, 29), y = r.int(2, 29); for (let k = 0; k < 6; k++) { p.set(x, y, hex('#f4fbff'), 200); x += r.sign(); y += r.chance(0.5) ? 1 : 0; } }
+};
+GEN.packed_ice = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.55);
+  const I = hexes(['#4a6e9e', '#5f86b6', '#78a0cc', '#93b8de', '#b0d0ee', '#d0e6fa', '#eef8ff']);
+  const h = field(S, S, (x, y) => n(x, y));
+  p.map((x, y) => rampDither(I, 3.4 + (h.at(x, y) - 0.5) * 4 + emboss(h, x, y, 5), x, y, 0.4));
+  cracks(p, r, 4, I[1], 0.3, [4, 9]);
+};
+GEN.mud = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const M = hexes(['#1e150e', '#2c2016', '#3a2c1e', '#4a3926', '#5a4730', '#6a563a']);
+  const h = field(S, S, (x, y) => n(x, y));
+  p.map((x, y) => rampDither(M, 2.6 + (h.at(x, y) - 0.5) * 4 + emboss(h, x, y, 6), x, y, 0.5));
+  for (let i = 0; i < 6; i++) blob(p, r.range(0, 32), r.range(0, 32), r.range(1.5, 3), r.range(1, 2), hexes(['#24302a', '#34443a', '#4a5e50']), { dither: 0.2 });
+};
+const DRY = hexes(['#4a3a14', '#64501c', '#806a26', '#9a8232', '#b29a40', '#c8b054', '#dac66c', '#e8d88a']);
+GEN.dry_grass_top = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.5);
+  p.map((x, y) => rampAt(DRY, 3 + (n(x, y) - 0.5) * 2.4));
+  for (let i = 0; i < 260; i++) { const x = r.int(0, 31), y = r.int(0, 31), v = 4 + r.range(-1, 2.5); p.set(x, y, rampAt(DRY, v)); p.set(x, y + 1, rampAt(DRY, v - 2)); }
+};
+GEN.dry_grass_side = (p, r) => {
+  copyInto(p, gen('dirt'));
+  overhang(p, r, DRY, 'dirt', { min: 3, var: 3, drips: 0.25, top: 5 });
+};
+GEN.reeds = (p, r) => {
+  spriteCanvas(p);
+  const G = hexes(['#1c3a12', '#2a521a', '#3c6c22', '#54862e', '#70a03a', '#90b84a']);
+  for (let i = 0; i < 9; i++) {
+    const x0 = 3 + i * 3 + r.int(-1, 1), h = r.int(16, 30), lean = r.range(-3, 3);
+    for (let k = 0; k < h; k++) { const t = k / h; p.set(Math.round(x0 + lean * t * t), 31 - k, rampAt(G, 1.5 + t * 3.5)); }
+    if (r.chance(0.55)) { const tx = Math.round(x0 + lean), ty = 31 - h; for (let k = 0; k < 5; k++) { p.set(tx, ty + k, hex(k ? '#5a3a1c' : '#7a5228')); p.set(tx + 1, ty + k, hex('#3e2812')); } }
+  }
+};
+GEN.cobweb = (p, r) => {
+  spriteCanvas(p);
+  const c = [235, 238, 242];
+  const line = (x0, y0, x1, y1) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); for (let i = 0; i <= n; i++) p.set(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), c, 200); };
+  for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; line(16, 16, 16 + Math.cos(a) * 16, 16 + Math.sin(a) * 16); }
+  for (const R of [4, 8, 12]) for (let k = 0; k < 8; k++) {
+    const a = k / 8 * Math.PI * 2, b = (k + 1) / 8 * Math.PI * 2, s = 0.86;
+    line(16 + Math.cos(a) * R, 16 + Math.sin(a) * R, 16 + Math.cos((a + b) / 2) * R * s, 16 + Math.sin((a + b) / 2) * R * s);
+    line(16 + Math.cos((a + b) / 2) * R * s, 16 + Math.sin((a + b) / 2) * R * s, 16 + Math.cos(b) * R, 16 + Math.sin(b) * R);
+  }
+};
+GEN.obsidian = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.65);
+  const O = hexes(['#06040c', '#0e0a1a', '#18122a', '#22183a', '#30224e', '#46346a', '#6a5296']);
+  const h = field(S, S, (x, y) => n(x, y));
+  p.map((x, y) => rampDither(O, 2.2 + (h.at(x, y) - 0.5) * 5 + emboss(h, x, y, 8), x, y, 0.3));
+  for (let i = 0; i < 8; i++) p.set(r.int(0, 31), r.int(0, 31), O[6]);
+};
+GEN.amethyst = (p, r) => {
+  const A = hexes(['#2a0e4a', '#46186e', '#6a2a9a', '#8e44c0', '#b06ce0', '#d4a0f8', '#f2dcff']);
+  const pts = [];
+  for (let i = 0; i < 9; i++) pts.push({ x: r.range(0, 32), y: r.range(0, 32), id: i, v: r(), t: r() });
+  const vor = voronoiFromPoints(pts, S, 1, 1.2);
+  p.map((x, y) => {
+    const o = vor(x + 0.5, y + 0.5);
+    if (o.d2 - o.d1 < 1.1) return A[0];
+    let dx = o.p.x - (x + 0.5), dy = o.p.y - (y + 0.5);
+    if (dx > 16) dx -= 32; if (dx < -16) dx += 32; if (dy > 16) dy -= 32; if (dy < -16) dy += 32;
+    return rampAt(A, 3 + o.p.v * 1.6 + (dx + dy) * 0.12);
+  });
+  for (let i = 0; i < 10; i++) p.set(r.int(0, 31), r.int(0, 31), A[6]);
+};
+GEN.red_sand = (p, r) => {
+  copyInto(p, gen('sand'));
+  p.forEach((x, y) => p.tint(x, y, hex('#c2582a'), 0.45));
+};
+GEN.acacia_leaves = (p, r) => leafTile(p, r, hexes(['#1e2a0c', '#2c3c10', '#3e5216', '#52681c', '#687e24', '#80942e', '#9aaa3c', '#b4c050', '#cad466']));
 
 // ------------------------------------------------------------------ overlays
 const DESTROY_COUNTS = [3, 6, 10, 15, 21, 28];

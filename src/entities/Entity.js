@@ -50,7 +50,7 @@ export class Entity {
       this._burnAcc = (this._burnAcc || 0) + dt;
       if (this._burnAcc > 0.5) { this._burnAcc = 0; this.damage(2, null, { kind: 'fire', silent: true }); }
       if (Math.random() < dt * 20) this.game.particles?.emit({ pos: this.center, box: 0.3, count: 1, colors: [0xffa030, 0xff5020, 0xffe070], additive: true, speed: 0.5, dir: { x: 0, y: 2, z: 0 }, gravity: -1, life: 0.5, size: 0.2 });
-      if (this.inWater) this.burnTimer = 0;
+      if (this.inWater && !this.inLava) this.burnTimer = 0;
     }
   }
   get speedMul() { return (this.slowTimer > 0 ? 0.5 : 1) * (this.stunTimer > 0 ? 0 : 1); }
