@@ -3,19 +3,33 @@
 import { B } from '../core/blocks.js';
 import { ITEMS, RESOURCE_LABELS } from '../core/items.js';
 
-/** Depth layers, measured in blocks below sea level. */
+/** Depth layers (format-2 worlds: blocks below sea level). */
 export const LAYERS = [
   { id: 'surface', min: -Infinity, name: 'Поверхность' },
   { id: 'under', min: 8, name: 'Подземелье', text: 'пещеры, уголь и железо' },
   { id: 'caverns', min: 20, name: 'Пещерный ярус', text: 'огромные гроты, золото, грибные пещеры, озёра' },
   { id: 'depths', min: 32, name: 'Глубины', text: 'лава, кристаллы, аметисты и богатые сундуки' },
 ];
+// Terraria-deep worlds (format 3): the layers by height
+const LAYERS3 = [
+  { id: 'surface', name: 'Поверхность' },
+  { id: 'under', name: 'Подземелье', text: 'туннели, заброшенные шахты, уголь и железо' },
+  { id: 'caverns', name: 'Пещерный ярус', text: 'огромные пещеры: грибные рощи, подземные джунгли, ледяные гроты, озёра, золото и кристаллы' },
+  { id: 'depths', name: 'Глубокие пещеры', text: 'лава, аметистовые жеоды, старые хижины с сундуками' },
+  { id: 'hell', name: 'Преисподняя', text: 'море лавы, острова пепла и руины с богатыми сундуками. Осторожно!' },
+];
 export function layerAt(world, y) {
+  if (world.format >= 3) {
+    const sea = world.sea;
+    const i = y > sea - 8 ? 0 : y > sea - 40 ? 1 : y > 160 ? 2 : y > 92 ? 3 : 4;
+    return LAYERS3[i];
+  }
   const d = world.sea - y;
   let l = LAYERS[0];
   for (const x of LAYERS) if (d >= x.min) l = x;
   return l;
 }
+const ORDER = ['surface', 'under', 'caverns', 'depths', 'hell'];
 
 // loot by layer: resources [min, max] and the chance / pool of a rare item
 const LOOT = {
@@ -23,6 +37,7 @@ const LOOT = {
   under: { res: { coal: [5, 10], iron_ore: [4, 8], food: [4, 8], wood: [6, 12] }, item: 0.15, pool: ['shovel', 'bow', 'pickaxe_iron'] },
   caverns: { res: { iron: [4, 8], gold_ore: [3, 6], coal: [6, 10], crystal: [1, 3] }, item: 0.3, pool: ['sword_iron', 'crossbow', 'battle_axe', 'staff_fire', 'pickaxe_iron'] },
   depths: { res: { gold: [4, 8], crystal: [4, 9], iron: [6, 10], gold_ore: [4, 8] }, item: 0.5, pool: ['sword_crystal', 'staff_frost', 'staff_storm', 'staff_life', 'battle_axe', 'crossbow'] },
+  hell: { res: { gold: [8, 16], crystal: [8, 16], iron: [8, 14], coal: [10, 20] }, item: 0.7, pool: ['sword_crystal', 'staff_storm', 'tome_meteor', 'staff_fire', 'staff_frost', 'staff_life'] },
 };
 const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
@@ -74,12 +89,12 @@ export class Underground {
     if (l.id === this._layer) { this._pendingLayer = null; return; }
     if (this._pendingLayer !== l.id) { this._pendingLayer = l.id; this._pendingT = 1.2; return; }
     if ((this._pendingT -= dt) > 0) return;
-    const deeper = LAYERS.indexOf(l) > LAYERS.findIndex(x => x.id === this._layer);
+    const deeper = ORDER.indexOf(l.id) > ORDER.indexOf(this._layer);
     this._layer = l.id; this._pendingLayer = null;
     if (!deeper || !l.text) return;
     const now = g.time;
     if (this._told[l.id] && now - this._told[l.id] < 90) return;
     this._told[l.id] = now;
-    g.bus.emit('toast', { text: `${l.name} — ${l.text}`, kind: l.id === 'depths' ? 'warn' : 'info' });
+    g.bus.emit('toast', { text: `${l.name} — ${l.text}`, kind: l.id === 'depths' || l.id === 'hell' ? 'warn' : 'info' });
   }
 }

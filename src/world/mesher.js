@@ -1,7 +1,7 @@
 // Builds chunk geometry buffers (world-space positions) with smooth lighting + ambient occlusion.
 // Output buckets: solid (opaque + cutout cubes), plants (cross sprites, double sided), water, glass.
 import { BLOCKS, B } from '../core/blocks.js';
-import { CHUNK, LIGHT_BLOCKING } from './World.js';
+import { CHUNK, SECTION, LIGHT_BLOCKING } from './World.js';
 
 // face: n (normal), u, v (tangent axes, u×v=n), base corner
 const FACES = [
@@ -43,33 +43,40 @@ class Bucket {
   }
 }
 
-export function meshChunk(world, cx, cz, atlas, opts = {}) {
+/** Geometry of one section (SECTION blocks high) of a chunk. Returns the buckets and whether any sky light reaches it. */
+export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
   const fancyLeaves = opts.fancyLeaves !== false;
   const lowDetail = !!opts.lowDetail;
-  const size = world.size, blocks = world.blocks, light = world.light, HEIGHT = world.height;
+  const size = world.size, HEIGHT = world.height, N = world.chunksX, cols = world.cols, lcols = world.lcols;
   const solid = new Bucket(), plants = new Bucket(), water = new Bucket(), glass = new Bucket();
   const x0 = cx * CHUNK, z0 = cz * CHUNK;
   const x1 = Math.min(size, x0 + CHUNK), z1 = Math.min(size, z0 + CHUNK);
+  const y0 = sy * SECTION, y1 = Math.min(HEIGHT, y0 + SECTION);
+  const own = cols[cz * N + cx];
   const uvCache = new Map();
   const uvOf = (name) => { let r = uvCache.get(name); if (!r) { r = atlas.uv(name); uvCache.set(name, r); } return r; };
+  if (!own) return { solid: null, plants: null, water: null, glass: null, sky: true };
 
   const get = (x, y, z) => {
     if (y < 0) return B.BEDROCK;
     if (y >= HEIGHT || x < 0 || z < 0 || x >= size || z >= size) return 0;
-    return blocks[x + size * (z + size * y)];
+    const c = cols[(z >> 4) * N + (x >> 4)];
+    return c ? c[(x & 15) + 16 * ((z & 15) + 16 * y)] : 0;
   };
   const lightAt = (x, y, z) => {
     if (y >= HEIGHT) return 0xF0;
     if (y < 0 || x < 0 || z < 0 || x >= size || z >= size) return 0xF0;
-    return light[x + size * (z + size * y)];
+    const c = lcols[(z >> 4) * N + (x >> 4)];
+    return c ? c[(x & 15) + 16 * ((z & 15) + 16 * y)] : 0;
   };
   const occ = (x, y, z) => LIGHT_BLOCKING[get(x, y, z)];
 
   const P = new Array(12), UV = new Array(8), L = new Array(16);
   const aoArr = [0, 0, 0, 0];
+  let skySeen = 0;
 
-  for (let y = 0; y < HEIGHT; y++) for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
-    const id = blocks[x + size * (z + size * y)];
+  for (let y = y0; y < y1; y++) for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+    const id = own[(x & 15) + 16 * ((z & 15) + 16 * y)];
     if (id === 0) continue;
     const shape = SHAPE[id], render = RENDER[id];
     const def = BLOCKS[id];
@@ -111,7 +118,7 @@ export function meshChunk(world, cx, cz, atlas, opts = {}) {
         const ao = (s1 && s2) ? 0 : 3 - (s1 + s2 + cc);
         aoArr[c] = ao;
         let sky = 0, blk = 0, cnt = 0;
-        const l0 = lightAt(nx, ny, nz); sky += l0 >> 4; blk += l0 & 15; cnt++;
+        const l0 = lightAt(nx, ny, nz); sky += l0 >> 4; blk += l0 & 15; cnt++; skySeen |= l0 >> 4;
         if (!s1) { const l = lightAt(nx + su0, ny + su1, nz + su2); sky += l >> 4; blk += l & 15; cnt++; }
         if (!s2) { const l = lightAt(nx + sv0, ny + sv1, nz + sv2); sky += l >> 4; blk += l & 15; cnt++; }
         if (!cc && !(s1 && s2)) { const l = lightAt(nx + su0 + sv0, ny + su1 + sv1, nz + su2 + sv2); sky += l >> 4; blk += l & 15; cnt++; }
@@ -154,5 +161,5 @@ export function meshChunk(world, cx, cz, atlas, opts = {}) {
     }
   }
 
-  return { solid: solid.result(), plants: plants.result(), water: water.result(), glass: glass.result() };
+  return { solid: solid.result(), plants: plants.result(), water: water.result(), glass: glass.result(), sky: skySeen > 0 };
 }

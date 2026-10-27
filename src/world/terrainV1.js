@@ -2,7 +2,7 @@
 // of the generated terrain) stay valid. New worlds use terrain.js.
 import { B } from '../core/blocks.js';
 import { Simplex, mulberry32, hash2 } from '../core/rng.js';
-import { oak, birch, spruce } from './terrain.js';
+import { oak, birch, spruce } from './trees.js';
 
 const SEA_LEVEL = 20;
 
@@ -60,9 +60,9 @@ export class TerrainGenV1 {
     const world = this.world, size = world.size, height = world.height, seed = this.seed;
     const { n, n2, n3 } = this;
     const x0 = ccx * CH, z0 = ccz * CH, x1 = Math.min(size, x0 + CH), z1 = Math.min(size, z0 + CH);
-    const heights = world.heights, biome = world.biome, blocks = world.blocks;
+    const heights = world.heights, biome = world.biome, blocks = world.colAt(x0, z0, true);
     const rnd = mulberry32((seed ^ Math.imul(ccx + 7919, 73856093) ^ Math.imul(ccz + 104729, 19349663)) >>> 0);
-    const idx = (x, y, z) => x + size * (z + size * y);
+    const idx = (x, y, z) => (x - x0) + 16 * ((z - z0) + 16 * y);     // this chunk's own column array
     const dists = new Float32Array(CH * CH);
     for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
       const c = this.column(x, z);

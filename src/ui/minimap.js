@@ -13,6 +13,7 @@ const NAME_COLORS = {
   mushroom: 0x5f9a3a, dead_bush: 0xb09a60, birch_log: 0xd8d0c0, birch_leaves: 0x6a9a3a,
   lava: 0xf06818, chest: 0xa07040, glow_moss: 0x2ab0a8, cactus: 0x2e7a30, ice: 0xa8d0f0, packed_ice: 0x90b4dc, mud: 0x4a3a28,
   dry_grass: 0xb09a44, obsidian: 0x22183a, amethyst: 0x9a5cd0, red_sand: 0xc8743a, acacia_leaves: 0x6a802a, sandstone: 0xd8b878,
+  ash: 0x45403f, magma: 0xd0501a, jungle_grass: 0x3a8c2a,
 };
 const COL = new Uint32Array(256);
 const SKIP = new Uint8Array(256);   // look through (air, plants)
@@ -68,22 +69,24 @@ export class Minimap {
     if (x < r.x0) r.x0 = x; if (z < r.z0) r.z0 = z; if (x > r.x1) r.x1 = x; if (z > r.z1) r.z1 = z;
   }
   _colHeight(x, z) {
-    const w = this.world, S = w.size, bl = w.blocks, H = w.height;
-    for (let y = H - 1; y >= 0; y--) { const id = bl[x + S * (z + S * y)]; if (!SKIP[id]) return y; }
+    const w = this.world, H = w.height, c = w.colAt(x, z);
+    if (!c) return 0;
+    const base = (x & 15) + 16 * (z & 15);
+    for (let y = H - 1; y >= 0; y--) { if (!SKIP[c[base + 256 * y]]) return y; }
     return 0;
   }
   _shade(x, z) {
     const w = this.world, S = w.size, i = x + z * S;
     const y = this.heights[i];
-    const id = w.blocks[x + S * (z + S * y)];
+    const id = w.rawGet(x, y, z);
     let c = COL[id];
     let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
     if (id === 7) {   // water: darker with depth
-      let d = 0; for (let yy = y - 1; yy > 0 && d < 8 && w.blocks[x + S * (z + S * yy)] === 7; yy--) d++;
+      let d = 0; for (let yy = y - 1; yy > 0 && d < 8 && w.rawGet(x, yy, z) === 7; yy--) d++;
       const k = 1.1 - d * 0.07; r *= k; g *= k; b *= k;
     } else {
       const hw = x > 0 ? this.heights[i - 1] : y, hn = z > 0 ? this.heights[i - S] : y;
-      const k = 1 + ((y - hw) + (y - hn)) * 0.07 + (y - 24) * 0.008;
+      const k = 1 + ((y - hw) + (y - hn)) * 0.07 + (y - w.sea - 4) * 0.008;
       const kk = Math.max(0.6, Math.min(1.35, k));
       r *= kk; g *= kk; b *= kk;
     }

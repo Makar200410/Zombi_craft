@@ -185,6 +185,14 @@ export class Renderer {
       const fc = this._flashC || (this._flashC = new THREE.Color(0xc4ccff));
       for (const k of ['top', 'horizon', 'fog', 'cloud']) c[k].lerp(fc, Math.min(0.85, flash * 0.9));
     }
+    // underground the sky is gone: dark fog (glowing red in the underworld) instead of the horizon colour
+    const cave = this._caveFactor(dt);
+    if (cave > 0.001) {
+      const hell = this._hell || 0;
+      const dark = this._caveC || (this._caveC = new THREE.Color());
+      dark.setRGB(0.028 + hell * 0.12, 0.03 + hell * 0.03, 0.038 - hell * 0.02);
+      for (const k of ['top', 'horizon', 'bottom', 'fog', 'cloud']) c[k].lerp(dark, cave);
+    }
     const amb = a.amb + (b.amb - a.amb) * f, sunI = a.sunI + (b.sunI - a.sunI) * f, moonI = a.moonI + (b.moonI - a.moonI) * f;
     // sun travels east → west; tilt a bit so shadows are never perfectly axis aligned
     const ang = (t - 0.25) * Math.PI * 2;
@@ -211,6 +219,7 @@ export class Renderer {
       const d = this.camera.position.distanceTo(this.shadowFocus);
       fogFar = Math.max(fogFar, d + 45);
     }
+    if (cave > 0.001) fogFar = fogFar + (Math.min(fogFar, 72) - fogFar) * cave;
     // weather fog: rain shortens the view, real fog closes it right in (less so from the strategy camera)
     const fogK = this.game.mode === 'command' ? 0.45 : 1;
     this.scene.fog.near = (Math.min(30, fogFar * 0.45) - night * 10) * (1 - fogW * 0.8 * fogK);
@@ -218,8 +227,30 @@ export class Renderer {
     worldUniforms.uSkyLight.value = 1 - night * 0.7;
     worldUniforms.uBlockLightStrength.value = 1.1 + night * 0.6;
     this.renderer.toneMappingExposure = 1.0 + night * 0.25;
+    this.sky.baseY = (this.game.world?.sea ?? 20) - 20;      // cloud decks sit at the same height above the sea in every world
     this.sky.update(dt, this.camera.position, this.sunDir, c, night, this.game.time, W);
+    this.sky.group.visible = cave < 0.95;
+    worldUniforms.uLamp.value = cave;
+    if (cave > 0) worldUniforms.uLampPos.value.copy(this.camera.position);
     if (this.bloom) this.bloom.strength = 0.25 + night * 0.35;
+  }
+
+  /** 0 on the surface … 1 deep underground (eased), from how far the camera is below the ground of its column. */
+  _caveFactor(dt) {
+    const w = this.game.world, cam = this.camera.position;
+    let target = 0, hell = 0;
+    if (w && this.game.mode !== 'command') {
+      const x = Math.floor(cam.x), z = Math.floor(cam.z);
+      if (x >= 0 && z >= 0 && x < w.size && z < w.size) {
+        const depth = w.heights[z * w.size + x] - cam.y;
+        target = Math.min(1, Math.max(0, (depth - 5) / 10));
+        if (w.format >= 3 && cam.y < 92) hell = 1;
+      }
+    }
+    const k = Math.min(1, dt * 1.5);
+    this._cave = (this._cave || 0) + (target - (this._cave || 0)) * k;
+    this._hell = (this._hell || 0) + (hell - (this._hell || 0)) * k;
+    return this._cave;
   }
 
   render(dt) {

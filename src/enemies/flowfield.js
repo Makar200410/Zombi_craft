@@ -90,8 +90,8 @@ export class FlowField {
 
   /** Recompute the stand height / obstacle cost for one column. */
   _column(x, z) {
-    const w = this.world, S = w.size, blocks = w.blocks;
-    const at = (y) => (y < 0 ? B.BEDROCK : y >= w.height ? 0 : blocks[x + S * (z + S * y)]);
+    const w = this.world, S = w.size, col = w.colAt(x, z), base = (x & 15) + 16 * (z & 15);
+    const at = (y) => (y < 0 ? B.BEDROCK : y >= w.height || !col ? 0 : col[base + 256 * y]);
     let y = w.height - 1;
     while (y > 0 && !SOLID[at(y)]) y--;
     // descend through built blocks and trees to the natural ground

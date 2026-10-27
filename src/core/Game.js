@@ -103,7 +103,7 @@ export class Game {
     // mesh the area around the village now (same amount of work as the old small map); the rest of the
     // big world is meshed in the background as the camera approaches it
     const c = size / 2, R = 88;
-    const keys = [...this.world.dirty].filter(k => { const [cx, cz] = k.split(',').map(Number); return Math.hypot(cx * 16 + 8 - c, cz * 16 + 8 - c) < R; });
+    const keys = [...this.world.dirty].filter(k => { const [cx, cz, sy] = k.split(',').map(Number); return Math.hypot(cx * 16 + 8 - c, cz * 16 + 8 - c) < R && !this.chunkRenderer._underground(cx, cz, sy); });
     for (let i = 0; i < keys.length; i++) {
       this.chunkRenderer.rebuild(keys[i]);
       this.world.dirty.delete(keys[i]);

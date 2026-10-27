@@ -9,6 +9,8 @@ export const worldUniforms = {
   uWind: { value: 1 },
   uWet: { value: 0 },               // 0..1 rain-soaked ground (darker, cooler)
   uSnowCover: { value: 0 },         // 0..1 snow settled on surfaces open to the sky
+  uLampPos: { value: new THREE.Vector3() },   // the player's miner's lamp underground
+  uLamp: { value: 0 },              // 0..1 its strength (0 on the surface)
 };
 
 /**
@@ -24,11 +26,13 @@ function patch(mat, { sway = false, water = false } = {}) {
 attribute vec4 light;
 varying vec4 vLight;
 varying float vUp;
+varying vec3 vPos;
 uniform float uTime;
 uniform float uWind;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vLight = light;
 vUp = normal.y;
+vPos = position;
 ${sway ? `
 float sw = light.w < 1.5 ? light.w : 0.0;
 float ph = position.x * 0.7 + position.z * 0.9;
@@ -40,6 +44,9 @@ if (normal.y > 0.5) transformed.y += (sin(uTime * 1.6 + position.x * 0.9) * 0.03
       .replace('#include <common>', `#include <common>
 varying vec4 vLight;
 varying float vUp;
+varying vec3 vPos;
+uniform vec3 uLampPos;
+uniform float uLamp;
 uniform float uWet;
 uniform float uSnowCover;
 uniform float uSkyLight;
@@ -66,6 +73,12 @@ ${water ? '' : `
   reflectedLight.indirectDiffuse *= (0.08 + 0.92 * sky) * ao;
   reflectedLight.indirectDiffuse += diffuseColor.rgb * uBlockLightColor * blk * uBlockLightStrength * ao * (1.0 - 0.55 * skyVis);
   reflectedLight.indirectDiffuse += diffuseColor.rgb * 0.03 * ao;    // cave minimum so it's never pitch black
+  if (uLamp > 0.0) {
+    // the miner's lamp: a soft warm light around the player in caves
+    float ld = distance(vPos, uLampPos);
+    float lk = clamp(1.0 - ld / 15.0, 0.0, 1.0);
+    reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(1.0, 0.86, 0.66) * lk * lk * uLamp * 0.75 * ao * (1.0 - sky);
+  }
   if (vLight.w > 1.5) totalEmissiveRadiance += diffuseColor.rgb * 0.9;
   // foliage translucency: light scattering through leaves so canopies don't turn black in their own shadow
   if (vLight.w > 0.2 && vLight.w < 0.3) reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.4, 0.46, 0.3) * sky * uSkyLight * ao;

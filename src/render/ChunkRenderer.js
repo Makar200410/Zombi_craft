@@ -1,24 +1,49 @@
 import * as THREE from 'three';
-import { CHUNK } from '../world/World.js';
+import { CHUNK, SECTION } from '../world/World.js';
 import { meshChunk } from '../world/mesher.js';
 import { createChunkMaterials } from './chunkMaterials.js';
 
-/** Owns chunk meshes; rebuilds dirty chunks within a per-frame time budget, nearest first. */
+const KINDS = ['solid', 'plants', 'water', 'glass'];
+// sections no sky light reaches (deep caves) are drawn only when the camera is about this close to them vertically
+const CAVE_VIEW = 56;
+
+/**
+ * Owns the terrain meshes, one per chunk section (16 × SECTION × 16). Rebuilds dirty sections within a per-frame
+ * time budget, nearest first; caves deep underground are meshed and drawn only when the camera gets near them.
+ */
 export class ChunkRenderer {
   constructor(game) {
     this.game = game;
     this.world = game.world;
     this.group = new THREE.Group();
     this.group.name = 'chunks';
-    this.meshes = new Map();   // key -> {solid, plants, water, glass}
+    this.meshes = new Map();   // 'cx,cz,sy' -> {solid, plants, water, glass, sky, y0, y1}
     this.materials = createChunkMaterials(game.atlas.texture);
+    this._minH = new Map();    // chunk -> lowest surface height in it
     game.scene.add(this.group);
+    game.bus?.on('chunk:generated', ({ cx, cz }) => this._minH.delete(cx + ',' + cz));
+    game.bus?.on('chunk:unloaded', ({ cx, cz }) => this.dropChunk(cx, cz));
   }
-  /** Mesh only the chunks around a point now; the rest stay dirty and are meshed lazily as the camera approaches. */
+  /** Lowest surface in a chunk: sections well below it are underground. */
+  minSurface(cx, cz) {
+    const k = cx + ',' + cz;
+    let v = this._minH.get(k);
+    if (v === undefined) {
+      const w = this.world, S = w.size;
+      v = w.height;
+      for (let z = cz * CHUNK; z < Math.min(S, cz * CHUNK + CHUNK); z++) for (let x = cx * CHUNK; x < Math.min(S, cx * CHUNK + CHUNK); x++) v = Math.min(v, w.heights[z * S + x]);
+      this._minH.set(k, v);
+    }
+    return v;
+  }
+  /** Is a section deep underground (below the chunk's surface by more than a cave mouth)? */
+  _underground(cx, cz, sy) { return (sy + 1) * SECTION < this.minSurface(cx, cz) - 24; }
+  /** Mesh only the sections around a point now (and not the deep caves); the rest are meshed lazily. */
   buildNear(x, z, radius = 88) {
     const r2 = radius * radius;
     for (const k of [...this.world.dirty]) {
-      if (dist(k, { x, z }) > r2) continue;
+      const [cx, cz, sy] = parse(k);
+      if (hdist(cx, cz, x, z) > r2 || this._underground(cx, cz, sy)) continue;
       this.rebuild(k); this.world.dirty.delete(k);
     }
   }
@@ -27,12 +52,14 @@ export class ChunkRenderer {
     this.buildNear(c.x, c.z);
   }
   rebuild(key) {
-    const [cx, cz] = key.split(',').map(Number);
-    const data = meshChunk(this.world, cx, cz, this.game.atlas, { fancyLeaves: this.game.quality !== 'low', lowDetail: this.game.quality === 'low' });
+    const [cx, cz, sy] = parse(key);
+    const data = meshChunk(this.world, cx, cz, sy, this.game.atlas, { fancyLeaves: this.game.quality !== 'low', lowDetail: this.game.quality === 'low' });
     let slot = this.meshes.get(key);
-    if (!slot) { slot = {}; this.meshes.set(key, slot); }
+    if (!KINDS.some(k => data[k])) { if (slot) this._drop(key, slot); return; }
+    if (!slot) { slot = { y0: sy * SECTION, y1: (sy + 1) * SECTION }; this.meshes.set(key, slot); }
+    slot.sky = data.sky;
     const shadows = this.game.quality !== 'low';
-    for (const kind of ['solid', 'plants', 'water', 'glass']) {
+    for (const kind of KINDS) {
       const d = data[kind];
       let mesh = slot[kind];
       if (!d) { if (mesh) { this.group.remove(mesh); mesh.geometry.dispose(); slot[kind] = null; } continue; }
@@ -42,7 +69,7 @@ export class ChunkRenderer {
       g.setAttribute('uv', new THREE.BufferAttribute(d.uv, 2));
       g.setAttribute('light', new THREE.BufferAttribute(d.light, 4));
       g.setIndex(new THREE.BufferAttribute(d.index, 1));
-      g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CHUNK, 0, cz * CHUNK), new THREE.Vector3(cx * CHUNK + CHUNK, this.world.height, cz * CHUNK + CHUNK));
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CHUNK, slot.y0 - 1, cz * CHUNK), new THREE.Vector3(cx * CHUNK + CHUNK, slot.y1 + 1, cz * CHUNK + CHUNK));
       g.boundingSphere = new THREE.Sphere(); g.boundingBox.getBoundingSphere(g.boundingSphere);
       if (mesh) { mesh.geometry.dispose(); mesh.geometry = g; }
       else {
@@ -59,37 +86,68 @@ export class ChunkRenderer {
         slot[kind] = mesh;
       }
     }
+    this._applyVis(key, slot);
   }
-  /** Hide chunks that are fully inside the fog (big win on phones, especially in the high command camera). */
-  cullDistant() {
+  _drop(key, slot) {
+    for (const kind of KINDS) if (slot[kind]) { this.group.remove(slot[kind]); slot[kind].geometry.dispose(); }
+    this.meshes.delete(key);
+  }
+  /** Removes the meshes of an unloaded chunk. */
+  dropChunk(cx, cz) {
+    for (let sy = 0; sy < this.world.sections; sy++) { const k = cx + ',' + cz + ',' + sy; const s = this.meshes.get(k); if (s) this._drop(k, s); }
+    this._minH.delete(cx + ',' + cz);
+  }
+  _visible(key, slot) {
     const cam = this.game.camera.position;
     const fog = this.game.scene.fog;
     const far = (fog ? fog.far : 200) + (this.game.quality === 'low' ? 10 : 20);
-    const far2 = far * far;
-    for (const [key, slot] of this.meshes) {
-      const vis = dist(key, cam) < far2;
-      for (const kind of ['solid', 'plants', 'water', 'glass']) if (slot[kind]) slot[kind].visible = vis;
-    }
+    const [cx, cz] = parse(key);
+    if (hdist(cx, cz, cam.x, cam.z) > far * far) return false;
+    if (slot.sky) return true;
+    // a dark cave section: only when the camera is near it in height
+    const dy = cam.y < slot.y0 ? slot.y0 - cam.y : cam.y > slot.y1 ? cam.y - slot.y1 : 0;
+    return dy < CAVE_VIEW;
+  }
+  _applyVis(key, slot) {
+    const vis = this._visible(key, slot);
+    for (const kind of KINDS) if (slot[kind]) slot[kind].visible = vis;
+  }
+  /** Hide sections inside the fog or deep below / above the camera (big win on phones). */
+  cullDistant() {
+    for (const [key, slot] of this.meshes) this._applyVis(key, slot);
   }
   update() {
-    if ((this._cullT = (this._cullT || 0) + 1) % 15 === 0) this.cullDistant();
+    if ((this._cullT = (this._cullT || 0) + 1) % 10 === 0) this.cullDistant();
     // the big world is generated lazily: make terrain ahead of the player / camera within the fog + margin
     const w = this.world, g = this.game;
     if (w.pumpGeneration) {
       const fogFar = g.scene.fog ? g.scene.fog.far : 120;
       const p = g.mode === 'command' ? g.camera.position : (g.player?.position || g.camera.position);
       w.pumpGeneration(p.x, p.z, fogFar + 24, g.quality === 'low' ? 2.5 : 4);
+      // tall worlds: forget what is far behind (it is generated again, with its edits, when we come back)
+      if (w.format >= 3 && (this._unloadT = (this._unloadT || 0) + 1) % 180 === 0) {
+        const c = g.village?.townHall?.center || { x: w.size / 2, z: w.size / 2 };
+        w.unloadFar(p.x, p.z, fogFar + 140, c.x, c.z);
+      }
     }
     const dirty = this.world.dirty;
     if (!dirty.size) return;
     const cam = this.game.camera.position;
-    // only chunks that could actually be seen (inside the fog + margin); far ones wait until we get closer
+    // only sections that could be seen (inside the fog + margin; deep caves only near the camera)
     const fog = this.game.scene.fog;
     const reach = (fog ? fog.far : 200) + 32, r2 = reach * reach;
-    const keys = [];
-    for (const k of dirty) if (dist(k, cam) < r2) keys.push(k);
+    const keys = [], dd = new Map();
+    for (const k of dirty) {
+      const [cx, cz, sy] = parse(k);
+      const h2 = hdist(cx, cz, cam.x, cam.z);
+      if (h2 > r2) continue;
+      const y0 = sy * SECTION, y1 = y0 + SECTION;
+      const dy = cam.y < y0 ? y0 - cam.y : cam.y > y1 ? cam.y - y1 : 0;
+      if (dy > CAVE_VIEW + 8 && this._underground(cx, cz, sy)) continue;
+      keys.push(k); dd.set(k, h2 + dy * dy * 2);
+    }
     if (!keys.length) return;
-    keys.sort((a, b) => dist(a, cam) - dist(b, cam));
+    keys.sort((a, b) => dd.get(a) - dd.get(b));
     const t0 = performance.now();
     for (const k of keys) {
       this.rebuild(k);
@@ -101,8 +159,11 @@ export class ChunkRenderer {
     for (const slot of this.meshes.values()) for (const kind of ['solid', 'plants']) if (slot[kind]) { slot[kind].castShadow = on; slot[kind].receiveShadow = on; }
   }
 }
-function dist(key, p) {
-  const i = key.indexOf(',');
-  const x = +key.slice(0, i) * CHUNK + 8 - p.x, z = +key.slice(i + 1) * CHUNK + 8 - p.z;
-  return x * x + z * z;
+function parse(key) {
+  const a = key.indexOf(','), b = key.indexOf(',', a + 1);
+  return [+key.slice(0, a), +key.slice(a + 1, b < 0 ? undefined : b), b < 0 ? 0 : +key.slice(b + 1)];
+}
+function hdist(cx, cz, x, z) {
+  const dx = cx * CHUNK + 8 - x, dz = cz * CHUNK + 8 - z;
+  return dx * dx + dz * dz;
 }

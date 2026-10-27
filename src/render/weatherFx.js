@@ -111,8 +111,10 @@ export class WeatherFx {
   _scanColumn(x, z) {
     const w = this.game.world, S = w.size;
     if (x < 0 || z < 0 || x >= S || z >= S) return 0;
-    const b = w.blocks, step = S * S, base = x + S * z;
-    for (let y = w.height - 1; y >= 0; y--) if (b[base + step * y]) return y + 1;
+    const c = w.colAt(x, z);
+    if (!c) return 0;
+    const base = (x & 15) + 16 * (z & 15);
+    for (let y = w.height - 1; y >= 0; y--) if (c[base + 256 * y]) return y + 1;
     return 0;
   }
   _updateOcc(force) {

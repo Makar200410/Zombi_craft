@@ -1,7 +1,11 @@
 import { B } from '../core/blocks.js';
 import { Simplex, mulberry32, hash2 } from '../core/rng.js';
+import { TerrainGenV2 } from './terrainV2.js';
+import { oak, birch, spruce, acacia, swampOak, cactus, setTreeClip } from './trees.js';
 
-/** Sea level of the first (format 1) worlds; deep worlds keep theirs in world.sea. */
+export { oak, birch, spruce, acacia, swampOak, cactus };
+
+/** Sea level of the first (format 1) worlds; deeper worlds keep theirs in world.sea. */
 export const SEA_LEVEL = 20;
 
 // biomes (world.biome): 0 plains, 1 forest, 2 hills/spruce, 3 beach, 4 blight, 5 birch,
@@ -9,108 +13,171 @@ export const SEA_LEVEL = 20;
 export const BIOME = { PLAINS: 0, FOREST: 1, HILLS: 2, BEACH: 3, BLIGHT: 4, BIRCH: 5, DESERT: 6, SAVANNA: 7, SWAMP: 8, TUNDRA: 9 };
 export const BIOME_NAMES = ['Луга', 'Лес', 'Горы', 'Побережье', 'Мёртвые земли', 'Березняк', 'Пустыня', 'Саванна', 'Болото', 'Тундра'];
 
+/** The underground layers of a format-3 world (y ranges, see TerrainGen). */
+export function layersOf(world) {
+  const sea = world.sea;
+  return { cavTop: sea - 40, cavBot: 96, deep: 160, hellTop: 92, lavaSea: 18 };
+}
+
+// cavern zones under the surface
+const Z_NONE = 0, Z_MUSH = 1, Z_JUNGLE = 2, Z_ICE = 3, Z_SAND = 4, Z_GEM = 5, Z_SPIDER = 6;
+
 /**
- * Chunk-by-chunk terrain generator of deep worlds (the world is too big to generate at once; chunks are made on
- * demand). Surface: a meadow plateau at the center for the village, temperate forests and hills around it and,
- * further out, deserts with mesas and pyramids, savannas, swamps and snowy tundra; a blighted rim at the map edge.
- * Underground, Terraria-style layers (depth below sea level):
- *   ~0–20  tunnels and mineshafts, coal and iron;
- *   ~20–32 the cavern layer: huge grottos, underground lakes, glowing mushroom caves, gold;
- *   below  the depths: dark stone, lava lakes with obsidian, amethyst geodes, crystals and the richest chests.
- * Deterministic per seed, independent of chunk order.
+ * Terrain of deep worlds (format 3, ~384 blocks high): the surface of format 2 (biomes, the village meadow,
+ * pyramids…) over a Terraria-sized underground, about 320 blocks deep:
+ *   the underground (~40 blocks): winding tunnels, abandoned mineshafts, coal and iron;
+ *   the cavern layer (~190 blocks): huge open caves joined by wide tunnels, each region with its own character —
+ *     glowing mushroom groves, an underground jungle of mud and hanging vines, ice caves under the tundra, sandstone
+ *     caves under the desert, crystal grottos, spider nests — stalactites and stalagmites, pools of water and lava,
+ *     forgotten cabins with treasure, gold, crystals and amethyst geodes;
+ *   the underworld (bottom ~90 blocks): a vast hall over a lava sea, ash islands and pillars, glowing magma and the
+ *     ruined towers of a lost people.
+ * Caves come from a 3D density field sampled every 4 blocks and interpolated (fast enough for phones).
+ * Deterministic per seed and independent of chunk order (trees are clipped to their chunk and drawn again by the
+ * neighbours), so chunks can be thrown away and generated again.
  */
-const CH = 16;
-export class TerrainGen {
+const CH = 16, G = 4;
+export class TerrainGen extends TerrainGenV2 {
   constructor(world) {
-    this.world = world;
-    const seed = this.seed = world.seed;
-    this.n = new Simplex(seed); this.n2 = new Simplex(seed + 101); this.n3 = new Simplex(seed + 202);
-    this.n4 = new Simplex(seed + 303); this.n5 = new Simplex(seed + 404);
-    this.cx = world.size / 2; this.cz = world.size / 2;
-    this.sea = world.sea;
-    // ore densities are defined per 192×192 blocks; per chunk that is 256 / 36864 of it
-    this.perChunk = 256 / 36864;
-    // ore boulders around the village (radius ~30–65): visible coal & iron so the player finds ore early
-    const rnd = mulberry32(seed ^ 0x9e3779b9);
-    this.boulders = [];
-    for (let i = 0; i < 28; i++) {
-      const ang = rnd() * Math.PI * 2, r = 30 + rnd() * 35;
-      this.boulders.push({ x: Math.round(this.cx + Math.cos(ang) * r), z: Math.round(this.cz + Math.sin(ang) * r), main: i % 3 === 2 ? B.COAL_ORE : (i % 2 ? B.IRON_ORE : B.COAL_ORE) });
-    }
+    super(world);
+    const seed = this.seed;
+    this.c1 = new Simplex(seed + 505); this.c2 = new Simplex(seed + 606); this.c3 = new Simplex(seed + 707);
+    this.c4 = new Simplex(seed + 808); this.c5 = new Simplex(seed + 909); this.c6 = new Simplex(seed + 1010);
+    this.L = layersOf(world);
+    this.GY = Math.floor(world.height / G) + 1;
   }
 
-  /** Climate at a column: temperature and humidity (about -0.7..0.7), tamed to temperate near the village. */
-  climate(x, z, dist) {
-    const calm = smooth(110, 200, dist);
-    return { temp: this.n4.fbm2(x / 320 + 11, z / 320 - 7, 2) * 1.25 * calm, hum: this.n5.fbm2(x / 260 - 40, z / 260 + 90, 2) * 1.25 * calm };
-  }
-
-  /** Height and biome of a column. */
-  column(x, z) {
-    const { n, n2, n3 } = this, size = this.world.size, height = this.world.height, SEA = this.sea;
-    const dx = x - this.cx, dz = z - this.cz;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    const edge = Math.min(x, z, size - 1 - x, size - 1 - z);
-    const { temp, hum } = this.climate(x, z, dist);
-    const cont = n.fbm2(x / 140, z / 140, 3);
-    const hills = n2.fbm2(x / 55, z / 55, 4);
-    const detail = n3.fbm2(x / 18, z / 18, 2);
-    const ridge = 1 - Math.abs(n.noise2(x / 80 + 50, z / 80 - 30));
-    const mount = Math.pow(Math.max(0, ridge - 0.55), 2) * 70 * Math.max(0, hills + 0.3);
-    let h = SEA + 3 + cont * 7 + hills * 7 + detail * 2 + mount;
-    // biome weights (smooth, so the land between biomes blends instead of forming cliffs)
-    const hot = smooth(0.2, 0.36, temp), cold = smooth(-0.2, -0.36, temp);
-    const dry = smooth(0.02, -0.14, hum), wet = smooth(0.22, 0.38, hum) * (1 - hot) * (1 - cold);
-    const desertW = hot * dry;
-    if (desertW > 0) {
-      // dunes, and flat-topped mesas where the hills rise
-      const dune = Math.abs(n3.noise2(x / 24, z / 30)) * 4;
-      const mesa = mount > 6 || hills > 0.35 ? Math.round((SEA + 10 + mount * 0.8 + hills * 6) / 4) * 4 : 0;
-      const hd = Math.max(SEA + 3 + cont * 4 + dune, mesa);
-      h = h * (1 - desertW) + hd * desertW;
-    }
-    if (wet > 0) h = h * (1 - wet) + (SEA + 0.4 + detail * 1.4 + cont * 0.8) * wet;     // flat, soggy ground
-    const plateau = SEA + 5;
-    const flat = smooth(28, 48, dist);
-    h = plateau * (1 - flat) + h * flat;
-    const blight = 1 - smooth(6, 22, edge);
-    h += blight * (n3.noise2(x / 9, z / 9) * 3 - 1);
-    h = Math.max(4, Math.min(height - 6, Math.round(h)));
-    let b = 0;
-    const forest = n2.noise2(x / 45 + 100, z / 45);
-    if (blight > 0.55) b = 4;
-    else if (desertW > 0.5) b = 6;
-    else if (wet > 0.5) b = 8;
-    else if (h > SEA + 17) b = 2;
-    else if (cold > 0.5) b = 9;
-    else if (h <= SEA + 1) b = 3;
-    else if (hot > 0.5) b = 7;
-    else if (forest > 0.25 && dist > 30) b = n3.noise2(x / 60, z / 60 + 40) > 0.2 ? 5 : 1;
-    return { h, b, dist };
-  }
-
-  /** Fill one 16×16 chunk column. Trees may spill leaves into neighbouring chunks. */
-  generateChunk(ccx, ccz) {
-    const world = this.world, size = world.size, height = world.height, seed = this.seed, SEA = this.sea;
+  /** Cavern zone of a column (by noise and by the biome above). */
+  zone(x, z, b) {
+    if (b === 9) return Z_ICE;
+    if (b === 6) return Z_SAND;
     const { n, n2, n3 } = this;
+    if (n3.noise2(x / 150 + 70, z / 150) > 0.42) return Z_JUNGLE;
+    if (n2.noise2(x / 115 - 200, z / 115 + 200) > 0.44) return Z_MUSH;
+    if (n.noise2(x / 85 + 33, z / 85 - 71) > 0.52) return Z_GEM;
+    if (this.c6.noise2(x / 60, z / 60) > 0.55) return Z_SPIDER;
+    return Z_NONE;
+  }
+
+  /** Cave density at a point (> 0 = open). h = surface height of the column, dist = distance from the village. */
+  density(X, Y, Z, h, dist) {
+    const L = this.L, sea = this.sea;
+    if (Y <= 2) return -1;
+    // ---- the underworld
+    if (Y < L.hellTop + 6) {
+      const ceil = 70 + 12 * this.c1.noise2(X / 60, Z / 60);
+      const floor = 6 + 4 * this.c2.noise2(X / 40, Z / 40);
+      if (Y < floor) return -1;
+      if (Y > ceil) {
+        // shafts down from the caverns
+        return this.c3.noise2(X / 70, Z / 70) > 0.6 ? 0.6 : -1;
+      }
+      if (this.c5.noise2(X / 9, Z / 9) > 0.84) return -1;                         // pillars
+      const isl = this.c4.noise3(X / 46, Y / 15, Z / 46) - Math.abs(Y - 34) / 60;
+      return isl > 0.36 ? -1 : 1;
+    }
+    // ---- caverns and tunnels
+    const d = h - Y;
+    const mouth = dist > 90 && this.n2.noise2(X / 50 - 70, Z / 50 + 70) > 0.45;
+    if (d < (mouth ? 0 : dist < 70 ? 16 : h <= sea + 1 ? 10 : 6)) return -1;
+    const a = this.c1.noise3(X / 52, Y / 34, Z / 52), b = this.c2.noise3(X / 52 + 200, Y / 34, Z / 52);
+    const spag = 1 - Math.hypot(a, b) / 0.11;
+    const a2 = this.c3.noise3(X / 38 - 90, Y / 26, Z / 38), b2 = this.c4.noise3(X / 38, Y / 26 + 50, Z / 38);
+    const spag2 = Y < sea - 10 ? 1 - Math.hypot(a2, b2) / 0.09 : -1;
+    // big "cheese" caverns, rare near the surface, everywhere in the cavern layer
+    const cav = smooth(L.cavTop + 20, L.cavTop - 30, Y) * smooth(L.cavBot, L.cavBot + 24, Y);
+    const c = this.n.noise3(X / 96, Y / 50, Z / 96) * 0.65 + this.n3.noise3(X / 34, Y / 22, Z / 34) * 0.35;
+    const cheese = (c - (0.6 - 0.34 * cav)) * 4;
+    return Math.max(spag, spag2, cheese);
+  }
+
+  /** Surface block of a column, as the terrain fill makes it (used for trees next to the chunk). */
+  surfaceTop(x, z, h, b) {
+    const SEA = this.sea, seed = this.seed;
+    if (b === 6) return h > SEA + 8 ? B.RED_SAND : B.SAND;
+    if (b === 7) return h < SEA ? B.DIRT : B.DRY_GRASS;
+    if (b === 8) return h <= SEA ? B.MUD : (hash2(x, z, seed + 7) < 0.25 ? B.MUD : B.GRASS);
+    if (b === 9) return h < SEA ? B.GRAVEL : B.SNOW;
+    if (b === 2 && h > SEA + 24) return B.SNOW;
+    if (b === 2 && h > SEA + 21 && hash2(x, z, seed + 6) < 0.5) return B.STONE;
+    if (b === 3 || b === 4) return B.SAND;
+    return h < SEA ? B.DIRT : B.GRASS;
+  }
+  /** The tree growing on a column, if any: a function drawing it. */
+  treeAt(x, z, h, b, top, dist) {
+    const seed = this.seed, world = this.world;
+    const r = hash2(x, z, seed + 77);
+    const trnd = () => mulberry32((seed + x * 374761393 + z * 668265263) >>> 0);
+    if (h + 1 >= world.height - 8 || x < 3 || z < 3 || x >= world.size - 3 || z >= world.size - 3) return null;
+    if (b === 6) return top === B.SAND && r < 0.006 && dist > 40 ? () => { const t = trnd(); cactus(world, x, h + 1, z, 1 + Math.floor(t() * 3)); } : null;
+    if (b === 7) return top === B.DRY_GRASS && r < 0.007 && dist > 30 ? () => acacia(world, x, h + 1, z, trnd()) : null;
+    if (b === 8) return (top === B.GRASS || top === B.MUD) && r < 0.03 && dist > 30 ? () => swampOak(world, x, h + 1, z, trnd()) : null;
+    if (b === 9) return top === B.SNOW && r < 0.012 && dist > 30 ? () => spruce(world, x, h + 1, z, trnd()) : null;
+    if (top !== B.GRASS && top !== B.SNOW) return null;
+    const treeChance = b === 1 ? 0.045 : b === 5 ? 0.04 : b === 2 ? 0.03 : (dist < 26 ? 0 : 0.006);
+    if (r >= treeChance) return null;
+    return () => {
+      const t = trnd();
+      if (b === 2) spruce(world, x, h + 1, z, t);
+      else if (b === 5 || (b === 1 && t() < 0.2)) birch(world, x, h + 1, z, t);
+      else oak(world, x, h + 1, z, t);
+    };
+  }
+
+  generateChunk(ccx, ccz) {
+    const world = this.world, size = world.size, H = world.height, seed = this.seed, SEA = this.sea, L = this.L;
     const x0 = ccx * CH, z0 = ccz * CH, x1 = Math.min(size, x0 + CH), z1 = Math.min(size, z0 + CH);
-    const heights = world.heights, biome = world.biome, blocks = world.blocks;
+    const heights = world.heights, biome = world.biome;
+    const blocks = world.colAt(x0, z0, true);
+    const idx = (x, y, z) => (x - x0) + 16 * ((z - z0) + 16 * y);
+    const inChunk = (x, z) => x >= x0 && z >= z0 && x < x1 && z < z1 && x > 0 && z > 0 && x < size - 1 && z < size - 1;
     const rnd = mulberry32((seed ^ Math.imul(ccx + 7919, 73856093) ^ Math.imul(ccz + 104729, 19349663)) >>> 0);
-    const idx = (x, y, z) => x + size * (z + size * y);
-    const dists = new Float32Array(CH * CH);
-    const DEEP = SEA - 30;            // dark stone below this
-    // ---------------------------------------------------------------- rock, soil and water
+    // ---------------------------------------------------------------- surface columns
+    const cols = [];
     for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
       const c = this.column(x, z);
-      heights[z * size + x] = c.h; biome[z * size + x] = c.b; dists[(z - z0) * CH + (x - x0)] = c.dist;
-      const h = c.h, b = c.b;
-      blocks[idx(x, 0, z)] = B.BEDROCK;
+      heights[z * size + x] = c.h; biome[z * size + x] = c.b;
+      c.zone = this.zone(x, z, c.b);
+      cols[(z - z0) * CH + (x - x0)] = c;
+    }
+    // ---------------------------------------------------------------- the cave field on a coarse grid
+    const GY = this.GY, GN = CH / G + 1;
+    const D = new Float32Array(GN * GN * GY);
+    for (let gz = 0; gz < GN; gz++) for (let gx = 0; gx < GN; gx++) {
+      const X = x0 + gx * G, Z = z0 + gz * G;
+      const c = gx < GN - 1 && gz < GN - 1 ? cols[(gz * G) * CH + gx * G] : this.column(Math.min(size - 1, X), Math.min(size - 1, Z));
+      for (let gy = 0; gy < GY; gy++) D[(gz * GN + gx) * GY + gy] = this.density(X, gy * G, Z, c.h, c.dist);
+    }
+    // ---------------------------------------------------------------- rock, soil, caves and water
+    const colD = new Float32Array(GY);
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+      const c = cols[(z - z0) * CH + (x - x0)], h = c.h, b = c.b, zone = c.zone;
+      // the column's cave field: bilinear on the grid, linear between grid rows below
+      const lx = x - x0, lz = z - z0, gx = lx >> 2, gz = lz >> 2, fx = (lx & 3) / G, fz = (lz & 3) / G;
+      const i00 = (gz * GN + gx) * GY, i10 = (gz * GN + gx + 1) * GY, i01 = ((gz + 1) * GN + gx) * GY, i11 = ((gz + 1) * GN + gx + 1) * GY;
+      for (let gy = 0; gy < GY; gy++) {
+        const a = D[i00 + gy] + (D[i10 + gy] - D[i00 + gy]) * fx, bb = D[i01 + gy] + (D[i11 + gy] - D[i01 + gy]) * fx;
+        colD[gy] = a + (bb - a) * fz;
+      }
       const bed2 = hash2(x, z, seed) < 0.5, bed3 = hash2(x, z, seed + 1) < 0.2;
-      const deepY = DEEP + Math.floor(hash2(x, z, seed + 2) * 3);
+      const deepY = L.deep + Math.floor(hash2(x, z, seed + 2) * 4);
       const mesa = b === 6 && h > SEA + 8;
-      for (let y = 1; y <= h; y++) {
-        if ((y === 1 && bed2) || (y === 2 && bed3)) { blocks[idx(x, y, z)] = B.BEDROCK; continue; }
-        let id = y < deepY ? B.DARK_STONE : B.STONE;
+      const zoneMat = zone === Z_ICE ? B.PACKED_ICE : zone === Z_SAND ? B.SANDSTONE : zone === Z_JUNGLE ? B.MUD : 0;
+      const zTop = h - 14, zBot = L.cavBot + 16;
+      const top = Math.max(h, SEA), base = lx + 16 * lz;
+      let cr = (Math.imul(x, 73856093) ^ Math.imul(z, 19349663) ^ seed) >>> 0;     // cheap per-cell noise (gravel, dirt pockets)
+      for (let y = 0; y <= top; y++) {
+        const i = base + 256 * y;
+        cr = (Math.imul(cr ^ (cr >>> 15), 2246822507) + 0x9e3779b9) >>> 0;
+        const cv = cr / 4294967296;
+        if (y === 0 || (y === 1 && bed2) || (y === 2 && bed3)) { blocks[i] = B.BEDROCK; continue; }
+        if (y > h) { blocks[i] = (y === SEA && b === 9) ? B.ICE : B.WATER; continue; }
+        const gy = y >> 2, dd = colD[gy] + (colD[Math.min(GY - 1, gy + 1)] - colD[gy]) * ((y & 3) / G);
+        if (dd > 0) { blocks[i] = y <= L.lavaSea ? B.LAVA : B.AIR; continue; }
+        let id;
+        if (y < L.hellTop) id = y < 60 ? B.ASH : B.DARK_STONE;
+        else id = y < deepY ? B.DARK_STONE : B.STONE;
+        if (zoneMat && y > zBot && y < zTop) id = zoneMat;
         const depth = h - y;
         if (depth === 0) {
           if (b === 3) id = h < SEA ? (hash2(x, z, seed + 3) < 0.3 ? B.GRAVEL : B.SAND) : B.SAND;
@@ -127,193 +194,158 @@ export class TerrainGen {
           if (b === 6) id = depth < 3 ? (mesa ? B.RED_SAND : B.SAND) : B.SANDSTONE;
           if (b === 8 && depth < 2) id = B.MUD;
           if (b === 2 && h > SEA + 21) id = B.STONE;
-        } else if (b === 6 && depth < 9) id = B.SANDSTONE;
-        if (mesa && depth > 0 && y > SEA) id = (y % 5) < 2 ? B.RED_SAND : (y % 5 === 2 ? B.SAND : B.SANDSTONE);   // banded mesa cliffs
-        if (id === B.STONE && hash2(x * 7 + y, z * 3 - y, seed + 11) < 0.02) id = B.GRAVEL;
-        if (id === B.STONE && b === 4 && y > h - 8) id = hash2(x, y * 31 + z, seed) < 0.5 ? B.DARK_STONE : B.MOSSY_COBBLE;
-        blocks[idx(x, y, z)] = id;
-      }
-      for (let y = h + 1; y <= SEA; y++) blocks[idx(x, y, z)] = (y === SEA && b === 9) ? B.ICE : B.WATER;
-    }
-    const inChunk = (x, z) => x >= x0 && z >= z0 && x < x1 && z < z1 && x > 0 && z > 0 && x < size - 1 && z < size - 1;
-    const isWaterish = (id) => id === B.WATER || id === B.ICE;
-    // ---------------------------------------------------------------- caves
-    // tunnels (3D noise worms) everywhere below the surface, caverns in their layer; cave mouths open to the
-    // surface only away from the village
-    const CAV0 = SEA - 33, CAV1 = SEA - 13;        // cavern layer
-    for (let z = Math.max(1, z0); z < Math.min(size - 1, z1); z++) for (let x = Math.max(1, x0); x < Math.min(size - 1, x1); x++) {
-      const h = heights[z * size + x];
-      const dist = dists[(z - z0) * CH + (x - x0)];
-      const tunnels = n3.noise2(x / 38 + 300, z / 38 - 300) > -0.25;
-      const mouth = dist > 90 && n2.noise2(x / 50 - 70, z / 50 + 70) > 0.45;      // where tunnels may break the surface
-      const roof = dist < 60 ? h - 12 : mouth ? h + 1 : h - 4;
-      let cv = 1, cw = 1, cav = 0, deep = 0;
-      for (let y = 3; y < Math.min(roof, h + 1); y++) {
-        let open = false;
-        if (tunnels) {
-          if (!(y & 1) || y === 3) { cv = n.noise3(x / 24, y / 12, z / 24); cw = n2.noise3(x / 24, y / 12, z / 24); }
-          if (cv * cv + cw * cw < 0.011 + (y < SEA - 20 ? 0.006 : 0)) open = true;
-        }
-        if (y >= CAV0 && y <= CAV1) {
-          if (!(y & 1) || y === CAV0) cav = n.noise3(x / 42, y / 16, z / 42) * 0.75 + n3.noise3(x / 15, y / 9, z / 15) * 0.25;
-          const taper = Math.min(y - CAV0, CAV1 - y) / 6;          // caverns close up at the top and bottom of the layer
-          if (cav > 0.5 - Math.min(1, taper) * 0.2) open = true;
-        }
-        if (y <= DEEP + 3) {
-          // the depths: low, wide halls whose floors are lakes of lava
-          if (!(y & 1) || y === 3) deep = n2.noise3(x / 36, y / 9, z / 36) * 0.8 + n.noise3(x / 12, y / 7, z / 12) * 0.2;
-          if (deep > 0.4 + Math.max(0, y - DEEP) * 0.05) open = true;
-        }
-        if (!open) continue;
-        const i = idx(x, y, z);
-        if (isWaterish(blocks[i]) || isWaterish(blocks[idx(x, y + 1, z)]) || blocks[i] === B.BEDROCK) continue;
-        blocks[i] = B.AIR;
+        } else if (b === 6 && depth < 12) id = B.SANDSTONE;
+        else if (depth < 9 && cv < 0.5 - depth * 0.05) id = B.DIRT;      // dirt pockets just below the soil
+        if (mesa && depth > 0 && y > SEA) id = (y % 5) < 2 ? B.RED_SAND : (y % 5 === 2 ? B.SAND : B.SANDSTONE);
+        if (id === B.STONE && cv > 0.98) id = B.GRAVEL;
+        if (id === B.STONE && b === 4 && y > h - 8) id = cv < 0.5 ? B.DARK_STONE : B.MOSSY_COBBLE;
+        blocks[i] = id;
       }
     }
-    // the floors of the caves: lava pools in the depths, lakes and mushroom groves in the cavern layer
-    const LAVA_Y = 6;
+    // ---------------------------------------------------------------- cave decoration (floors, ceilings, pools)
+    const ROCK = new Uint8Array(256);
+    for (const id of [B.STONE, B.DARK_STONE, B.MUD, B.PACKED_ICE, B.SANDSTONE, B.DIRT, B.ASH, B.GRAVEL]) ROCK[id] = 1;
+    const solidRock = (id) => ROCK[id] === 1;
     for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
-      const h = heights[z * size + x];
-      const lake = n3.noise2(x / 70 + 500, z / 70) > 0.32;
-      const shrooms = n2.noise2(x / 90 - 200, z / 90 + 200) > 0.38;
-      for (let y = 2; y < Math.min(h - 3, CAV1 + 2); y++) {
-        const i = idx(x, y, z);
+      const c = cols[(z - z0) * CH + (x - x0)], h = c.h, zone = c.zone;
+      const wet = this.c5.noise2(x / 34 + 9, z / 34) , hot = this.c6.noise2(x / 30 - 40, z / 30 + 12);
+      const yMax = Math.min(h - 3, H - 2), base = (x - x0) + 16 * (z - z0);
+      for (let y = 3; y < yMax; y++) {
+        const i = base + 256 * y;
         if (blocks[i] !== B.AIR) continue;
-        if (y <= LAVA_Y) {
-          blocks[i] = B.LAVA;
-          const below = idx(x, y - 1, z);
-          if ((blocks[below] === B.DARK_STONE || blocks[below] === B.STONE) && hash2(x * 3, z * 5 + y, seed + 21) < 0.35) blocks[below] = B.OBSIDIAN;
+        const below = blocks[i - 256], above = blocks[i + 256];
+        if (below === B.AIR && above === B.AIR && zone !== Z_SPIDER) continue;
+        const hv = hash2(x * 13 + y, z * 7 - y, seed + 120);
+        const inCav = y > L.hellTop + 6;
+        // ---- floors
+        if (solidRock(below)) {
+          if (inCav && y < 150 && hot > 0.5) { blocks[i] = B.LAVA; if (hot > 0.66 && blocks[idx(x, y + 1, z)] === B.AIR) blocks[idx(x, y + 1, z)] = B.LAVA; continue; }
+          if (inCav && wet > 0.45) { blocks[i] = B.WATER; if (wet > 0.6 && above === B.AIR) blocks[idx(x, y + 1, z)] = B.WATER; continue; }
+          if (!inCav) {
+            // underworld floors: ash, glowing cracks
+            if (below === B.ASH && hv < 0.05) blocks[idx(x, y - 1, z)] = B.MAGMA;
+            continue;
+          }
+          if (zone === Z_MUSH) { blocks[idx(x, y - 1, z)] = B.GLOW_MOSS; if (hv < 0.15) blocks[i] = B.GLOW_MUSHROOM; continue; }
+          if (zone === Z_JUNGLE) { if (below === B.MUD) blocks[idx(x, y - 1, z)] = B.JUNGLE_GRASS; if (hv < 0.3) blocks[i] = B.TALL_GRASS; else if (hv < 0.33) blocks[i] = B.GLOW_MUSHROOM; continue; }
+          if (zone === Z_ICE) { if (hv < 0.5) blocks[idx(x, y - 1, z)] = B.SNOW; continue; }
+          if (zone === Z_SAND) { blocks[idx(x, y - 1, z)] = B.SAND; if (hv < 0.03) blocks[i] = B.DEAD_BUSH; continue; }
+          if (zone === Z_GEM && hv < 0.12) { blocks[idx(x, y - 1, z)] = B.AMETHYST; continue; }
+          if (hv < 0.035) {
+            // stalagmite
+            const len = 1 + Math.floor(hash2(x, z + y, seed + 121) * 3);
+            for (let k = 0; k < len && y + k < yMax; k++) { const j = idx(x, y + k, z); if (blocks[j] !== B.AIR) break; blocks[j] = below; }
+            continue;
+          }
+          if (hv > 0.97) blocks[idx(x, y - 1, z)] = B.GRAVEL;
           continue;
         }
-        if (lake && y <= CAV0 + 5 && y > LAVA_Y + 2) { blocks[i] = B.WATER; continue; }
-        if (shrooms && y >= CAV0 - 6) {
-          const below = idx(x, y - 1, z);
-          const bid = blocks[below];
-          if ((bid === B.STONE || bid === B.DARK_STONE || bid === B.DIRT || bid === B.GRAVEL) && n3.noise2(x / 7 + y, z / 7) > -0.35) {
-            blocks[below] = B.GLOW_MOSS;
-            if (hash2(x, z * 7 + y, seed + 31) < 0.13) blocks[i] = B.GLOW_MUSHROOM;
+        // ---- ceilings
+        if (solidRock(above) || above === B.PACKED_ICE) {
+          if (!inCav) { if (hv < 0.04) blocks[idx(x, y + 1, z)] = B.MAGMA; continue; }
+          if (zone === Z_JUNGLE && hv < 0.14) {
+            const len = 1 + Math.floor(hash2(x, z * 3 + y, seed + 122) * 6);
+            for (let k = 0; k < len && y - k > 3; k++) { const j = idx(x, y - k, z); if (blocks[j] !== B.AIR) break; blocks[j] = B.LEAVES; }
+            continue;
           }
-          const above = idx(x, y + 1, z);
-          if ((blocks[above] === B.STONE || blocks[above] === B.DARK_STONE) && hash2(x * 5 + y, z, seed + 32) < 0.3) blocks[above] = B.GLOW_MOSS;
+          if (zone === Z_MUSH && hv < 0.3) { blocks[idx(x, y + 1, z)] = B.GLOW_MOSS; continue; }
+          if (zone === Z_SPIDER && hv < 0.25 && inCav) { blocks[i] = B.COBWEB; continue; }
+          const len = zone === Z_ICE ? (hv < 0.1 ? 1 + Math.floor(hv * 30) : 0) : (hv < 0.045 ? 1 + Math.floor(hash2(x, z - y, seed + 123) * 4) : 0);
+          for (let k = 0; k < len && y - k > 3; k++) { const j = idx(x, y - k, z); if (blocks[j] !== B.AIR) break; blocks[j] = zone === Z_ICE ? B.ICE : above; }
+          continue;
         }
+        // spider nests: webs strung in corners next to the walls
+        if (zone === Z_SPIDER && inCav && hv < 0.08 && x > x0 && x < x1 - 1 && z > z0 && z < z1 - 1 &&
+          (ROCK[blocks[i - 1]] + ROCK[blocks[i + 1]] + ROCK[blocks[i - 16]] + ROCK[blocks[i + 16]]) >= 2) blocks[i] = B.COBWEB;
       }
     }
     // ---------------------------------------------------------------- ores (veins stay inside the chunk)
-    const ore = (id, perMap, minY, maxY, vein, hosts = [B.STONE, B.DARK_STONE]) => {
+    const STONES = [B.STONE, B.DARK_STONE];
+    const ore = (id, perMap, minY, maxY, vein, hosts = STONES) => {
       const e = perMap * this.perChunk;
       const count = Math.floor(e) + (rnd() < e - Math.floor(e) ? 1 : 0);
       for (let i = 0; i < count; i++) {
         let x = x0 + Math.floor(rnd() * CH), y = minY + Math.floor(rnd() * (maxY - minY)), z = z0 + Math.floor(rnd() * CH);
         for (let k = 0; k < vein; k++) {
-          if (inChunk(x, z) && y > 1 && y < height) { const j = idx(x, y, z); if (hosts.includes(blocks[j])) blocks[j] = id; }
+          if (inChunk(x, z) && y > 2 && y < H) { const j = idx(x, y, z); if (hosts.includes(blocks[j])) blocks[j] = id; }
           x += Math.round(rnd() * 2 - 1); y += Math.round(rnd() * 2 - 1); z += Math.round(rnd() * 2 - 1);
         }
       }
     };
-    ore(B.COAL_ORE, 300, 12, SEA + 22, 9);
-    ore(B.IRON_ORE, 140, 6, SEA - 4, 5);            // iron is a real resource: fewer, smaller veins
-    ore(B.GOLD_ORE, 80, 3, SEA - 18, 5);
-    ore(B.CRYSTAL_ORE, 55, 2, SEA - 28, 4);
+    ore(B.COAL_ORE, 1300, 190, SEA + 30, 9);
+    ore(B.IRON_ORE, 700, 110, SEA - 4, 5);
+    ore(B.GOLD_ORE, 450, 60, 240, 5);
+    ore(B.CRYSTAL_ORE, 330, 20, 170, 4);
+    ore(B.MAGMA, 500, 3, L.hellTop + 4, 8, [B.ASH, B.DARK_STONE]);
+    ore(B.OBSIDIAN, 120, 3, L.hellTop, 6, [B.ASH, B.DARK_STONE]);
+    if (cols[0].zone === Z_GEM) ore(B.CRYSTAL_ORE, 400, L.cavBot, L.cavTop, 5);
     // surface outcrops in the hills so early iron/coal is visible
     if (rnd() < 40 * this.perChunk * 1.5) {
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);
       if (inChunk(x, z) && biome[z * size + x] === 2) blocks[idx(x, heights[z * size + x], z)] = rnd() < 0.8 ? B.COAL_ORE : B.IRON_ORE;
     }
-    // amethyst geodes in the depths
-    if (rnd() < 0.07) {
-      const cx = x0 + 4 + Math.floor(rnd() * 8), cz = z0 + 4 + Math.floor(rnd() * 8), cy = 9 + Math.floor(rnd() * (DEEP - 8)), R = 3 + rnd() * 1.2;
-      if (cy + R < heights[cz * size + cx] - 6) {
-        for (let y = Math.floor(cy - R - 1); y <= cy + R + 1; y++) for (let z = cz - 5; z <= cz + 5; z++) for (let x = cx - 5; x <= cx + 5; x++) {
-          if (!inChunk(x, z) || y < 3) continue;
-          const d = Math.hypot(x - cx, (y - cy) * 1.15, z - cz), i = idx(x, y, z);
-          if (blocks[i] === B.LAVA || blocks[i] === B.BEDROCK) continue;
-          if (d < R - 1.1) blocks[i] = hash2(x * 3 + y, z, seed + 41) < 0.12 && d > R - 2.2 ? B.CRYSTAL_ORE : B.AIR;
-          else if (d < R) blocks[i] = B.AMETHYST;
-          else if (d < R + 0.9 && blocks[i] !== B.AIR) blocks[i] = B.OBSIDIAN;
-        }
+    // amethyst geodes
+    for (let g = 0; g < 2; g++) {
+      if (rnd() > (cols[0].zone === Z_GEM ? 0.5 : 0.1)) continue;
+      const cx = x0 + 4 + Math.floor(rnd() * 8), cz = z0 + 4 + Math.floor(rnd() * 8), cy = L.hellTop + 10 + Math.floor(rnd() * (L.cavTop - L.hellTop - 30)), R = 3 + rnd() * 1.5;
+      for (let y = Math.floor(cy - R - 1); y <= cy + R + 1; y++) for (let z = cz - 5; z <= cz + 5; z++) for (let x = cx - 5; x <= cx + 5; x++) {
+        if (!inChunk(x, z)) continue;
+        const d = Math.hypot(x - cx, (y - cy) * 1.15, z - cz), i = idx(x, y, z);
+        if (blocks[i] === B.LAVA || blocks[i] === B.BEDROCK || blocks[i] === B.WATER) continue;
+        if (d < R - 1.1) blocks[i] = hash2(x * 3 + y, z, seed + 41) < 0.14 && d > R - 2.2 ? B.CRYSTAL_ORE : B.AIR;
+        else if (d < R) blocks[i] = B.AMETHYST;
+        else if (d < R + 0.9 && blocks[i] !== B.AIR) blocks[i] = B.OBSIDIAN;
       }
     }
-    // ---------------------------------------------------------------- abandoned mineshafts
-    this._mineshafts(x0, z0, x1, z1, idx, inChunk, dists, rnd);
-    // ---------------------------------------------------------------- treasure chests in caves
-    const tries = 2 + (rnd() < 0.5 ? 1 : 0);
-    for (let t = 0; t < tries; t++) {
-      if (rnd() > 0.32) continue;
+    // ---------------------------------------------------------------- structures
+    this._mineshafts3(x0, z0, x1, z1, idx, inChunk, cols, blocks);
+    if (rnd() < 0.09) this._cabin(x0, z0, idx, rnd, blocks, cols);
+    if (rnd() < 0.09) this._ruin(x0, z0, idx, rnd, blocks);
+    // treasure chests on cave floors
+    for (let t = 0; t < 5; t++) {
+      if (rnd() > 0.3) continue;
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);
-      if (!inChunk(x, z) || dists[(z - z0) * CH + (x - x0)] < 50) continue;
-      const h = heights[z * size + x];
-      const start = 4 + Math.floor(rnd() * Math.max(1, h - 12));
-      for (let y = start; y < h - 8; y++) {
+      const c = cols[(z - z0) * CH + (x - x0)];
+      if (!inChunk(x, z) || c.dist < 50) continue;
+      const start = 4 + Math.floor(rnd() * Math.max(1, c.h - 20));
+      for (let y = start; y < c.h - 10; y++) {
         const i = idx(x, y, z), below = blocks[idx(x, y - 1, z)];
-        if (blocks[i] === B.AIR && blocks[idx(x, y + 1, z)] === B.AIR && (below === B.STONE || below === B.DARK_STONE || below === B.GLOW_MOSS || below === B.DIRT || below === B.GRAVEL || below === B.OBSIDIAN)) {
+        if (blocks[i] === B.AIR && blocks[idx(x, y + 1, z)] === B.AIR && solidRock(below) || (blocks[i] === B.AIR && (below === B.GLOW_MOSS || below === B.JUNGLE_GRASS || below === B.OBSIDIAN || below === B.SNOW))) {
           blocks[i] = B.CHEST;
           break;
         }
       }
     }
-    // ---------------------------------------------------------------- vegetation
-    for (let z = Math.max(3, z0); z < Math.min(size - 3, z1); z++) for (let x = Math.max(3, x0); x < Math.min(size - 3, x1); x++) {
-      const h = heights[z * size + x];
-      const top = blocks[idx(x, h, z)];
-      const b = biome[z * size + x];
-      const r = hash2(x, z, seed + 77);
-      const dist = dists[(z - z0) * CH + (x - x0)];
-      if (h + 1 >= height - 8) continue;
-      const above = idx(x, h + 1, z);
-      if (blocks[above] !== B.AIR) continue;
-      const trnd = () => mulberry32((seed + x * 374761393 + z * 668265263) >>> 0);
-      if (b === 6) {
-        if (top === B.SAND && r < 0.006 && dist > 40) { const t = trnd(); cactus(world, x, h + 1, z, 1 + Math.floor(t() * 3)); }
-        else if (r > 0.985) blocks[above] = B.DEAD_BUSH;
-        continue;
-      }
-      if (b === 7) {
-        if (top !== B.DRY_GRASS) continue;
-        if (r < 0.007 && dist > 30) { acacia(world, x, h + 1, z, trnd()); continue; }
-        const r2 = hash2(x, z, seed + 78);
-        if (r2 < 0.14) blocks[above] = B.TALL_GRASS;
-        else if (r2 < 0.16) blocks[above] = B.DEAD_BUSH;
-        continue;
-      }
-      if (b === 8) {
-        if ((top === B.GRASS || top === B.MUD) && r < 0.03 && dist > 30) { swampOak(world, x, h + 1, z, trnd()); continue; }
-        const r2 = hash2(x, z, seed + 78);
-        if (h >= SEA && r2 < 0.2 && (top === B.MUD || top === B.GRASS)) blocks[above] = B.REEDS;
-        else if (top === B.GRASS && r2 < 0.32) blocks[above] = B.TALL_GRASS;
-        else if (r2 < 0.335) blocks[above] = B.MUSHROOM;
-        continue;
-      }
-      if (b === 9) {
-        if (top === B.SNOW && r < 0.012 && dist > 30) spruce(world, x, h + 1, z, trnd());
-        continue;
-      }
-      if (top === B.GRASS || top === B.SNOW) {
-        const treeChance = b === 1 ? 0.045 : b === 5 ? 0.04 : b === 2 ? 0.03 : (dist < 26 ? 0 : 0.006);
-        if (r < treeChance) {
-          const t = trnd();
-          if (b === 2) spruce(world, x, h + 1, z, t);
-          else if (b === 5 || (b === 1 && t() < 0.2)) birch(world, x, h + 1, z, t);
-          else oak(world, x, h + 1, z, t);
-          continue;
-        }
-        if (top === B.GRASS) {
-          const r2 = hash2(x, z, seed + 78);
+    // ---------------------------------------------------------------- vegetation (trees of the columns around are drawn clipped)
+    setTreeClip([x0, z0, x1, z1]);
+    try {
+      for (let z = Math.max(0, z0 - 3); z < Math.min(size, z1 + 3); z++) for (let x = Math.max(0, x0 - 3); x < Math.min(size, x1 + 3); x++) {
+        const own = x >= x0 && x < x1 && z >= z0 && z < z1;
+        const c = own ? cols[(z - z0) * CH + (x - x0)] : this.column(x, z);
+        const top = this.surfaceTop(x, z, c.h, c.b);
+        const tree = this.treeAt(x, z, c.h, c.b, top, c.dist);
+        if (tree) { if (!own || blocks[idx(x, c.h, z)] === top) tree(); continue; }
+        if (!own) continue;
+        // small plants on the chunk's own columns
+        const h = c.h, b = c.b, above = idx(x, h + 1, z);
+        if (h + 2 >= H || blocks[above] !== B.AIR || blocks[idx(x, h, z)] !== top) continue;
+        const r = hash2(x, z, seed + 77), r2 = hash2(x, z, seed + 78);
+        if (b === 6) { if (r > 0.985) blocks[above] = B.DEAD_BUSH; }
+        else if (b === 7) { if (r2 < 0.14) blocks[above] = B.TALL_GRASS; else if (r2 < 0.16) blocks[above] = B.DEAD_BUSH; }
+        else if (b === 8) { if (h >= SEA && r2 < 0.2) blocks[above] = B.REEDS; else if (top === B.GRASS && r2 < 0.32) blocks[above] = B.TALL_GRASS; else if (r2 < 0.335) blocks[above] = B.MUSHROOM; }
+        else if (b === 4) { if (r < 0.04) blocks[above] = B.DEAD_BUSH; }
+        else if (top === B.GRASS) {
           if (r2 < 0.16) blocks[above] = B.TALL_GRASS;
           else if (r2 < 0.175) blocks[above] = B.FLOWER_RED;
           else if (r2 < 0.19) blocks[above] = B.FLOWER_YELLOW;
           else if (r2 < 0.193 && b === 1) blocks[above] = B.MUSHROOM;
         }
-      } else if (b === 4 && (top === B.DIRT || top === B.GRAVEL) && r < 0.04) {
-        blocks[above] = B.DEAD_BUSH;
-      } else if (b === 4 && r > 0.995) {
-        const ph = 2 + Math.floor(hash2(x, z, seed + 90) * 4);
-        for (let y = 1; y <= ph; y++) blocks[idx(x, h + y, z)] = hash2(x, y, seed + z) < 0.5 ? B.MOSSY_COBBLE : B.DARK_STONE;
       }
-    }
+    } finally { setTreeClip(null); }
     // ---------------------------------------------------------------- desert pyramids
     if (rnd() < 0.05) {
       const cx = x0 + 8, cz = z0 + 8;
-      const c = this.column(cx, cz);
+      const c = cols[8 * CH + 8];
       if (c.b === 6 && c.h > SEA + 1 && c.dist > 120 && cx + 6 < size - 3 && cz + 6 < size - 3) this._pyramid(cx, c.h, cz, idx, rnd);
     }
     // ---------------------------------------------------------------- ore boulders near the village
@@ -328,40 +360,34 @@ export class TerrainGen {
         if (dy === 2 && (Math.abs(dx) + Math.abs(dz) > 1 || hr < 0.3)) continue;
         if (Math.abs(dx) + Math.abs(dz) === 2 && hash2(x, z, seed + 56) < 0.5) continue;
         const y = heights[z * size + x] + dy;
-        if (y >= height - 2) continue;
-        for (let yy = y; yy < y + 6 && yy < height; yy++) { const k = idx(x, yy, z); const id = blocks[k]; if (id === B.LOG || id === B.LEAVES || id === B.BIRCH_LOG || id === B.BIRCH_LEAVES || id === B.SPRUCE_LOG || id === B.SPRUCE_LEAVES || id === B.TALL_GRASS) blocks[k] = B.AIR; }
+        if (y >= H - 2) continue;
+        for (let yy = y; yy < y + 6 && yy < H; yy++) { const k = idx(x, yy, z); const id = blocks[k]; if (id === B.LOG || id === B.LEAVES || id === B.BIRCH_LOG || id === B.BIRCH_LEAVES || id === B.SPRUCE_LOG || id === B.SPRUCE_LEAVES || id === B.TALL_GRASS) blocks[k] = B.AIR; }
         const roll = hash2(x + dy * 17, z, seed + 57);
         blocks[idx(x, y, z)] = roll < 0.3 ? bo.main : roll < 0.38 ? (bo.main === B.IRON_ORE ? B.COAL_ORE : B.IRON_ORE) : (roll < 0.8 ? B.STONE : B.MOSSY_COBBLE);
       }
     }
   }
 
-  /**
-   * Abandoned mineshafts: the world is split into 96×96 regions; some of them hold a grid of 3×3 corridors at one
-   * depth (every chunk draws its own part, so the network is seamless). Wooden frames every 4 blocks, planks over
-   * gaps, cobwebs, a rare torch and treasure chests.
-   */
-  _mineshafts(x0, z0, x1, z1, idx, inChunk, dists, rnd) {
-    const world = this.world, size = world.size, blocks = world.blocks, heights = world.heights, seed = this.seed, SEA = this.sea;
-    const R = 96;
+  /** Abandoned mineshafts in the upper underground (a grid of 3×3 corridors per 96×96 region, drawn per chunk). */
+  _mineshafts3(x0, z0, x1, z1, idx, inChunk, cols, blocks) {
+    const seed = this.seed, SEA = this.sea, R = 96;
     for (let rz = Math.floor(z0 / R); rz <= Math.floor((z1 - 1) / R); rz++) for (let rx = Math.floor(x0 / R); rx <= Math.floor((x1 - 1) / R); rx++) {
-      if (hash2(rx, rz, seed + 61) > 0.42) continue;
-      const fy = SEA - 10 - Math.floor(hash2(rx, rz, seed + 62) * 14);       // corridor floor
+      if (hash2(rx, rz, seed + 61) > 0.5) continue;
+      const fy = SEA - 16 - Math.floor(hash2(rx, rz, seed + 62) * 26);
       const ox = rx * R + 8 + Math.floor(hash2(rx, rz, seed + 63) * 12), oz = rz * R + 8 + Math.floor(hash2(rx, rz, seed + 64) * 12);
       const lines = 4, step = 20;
-      const corridor = (x, z, along) => {
-        if (!inChunk(x, z) || dists[(z - z0) * CH + (x - x0)] < 70) return;
-        if (fy + 4 >= heights[z * size + x] - 3) return;                    // never break the surface
-        const u = along === 'x' ? x : z;
-        const frame = (u % 4) === 0;
-        const across = along === 'x' ? z : x;
-        const side = across === (along === 'x' ? cz : cx) - 1 || across === (along === 'x' ? cz : cx) + 1;
+      const corridor = (x, z, along, lc) => {
+        if (!inChunk(x, z)) return;
+        const c = cols[(z - z0) * CH + (x - x0)];
+        if (c.dist < 70 || fy + 4 >= c.h - 4) return;                       // never break the surface
+        const u = along === 'x' ? x : z, frame = (u % 4) === 0;
+        const side = (along === 'x' ? z : x) !== lc;
         for (let y = fy; y <= fy + 2; y++) {
           const i = idx(x, y, z);
           if (blocks[i] === B.WATER || blocks[i] === B.LAVA) return;
           blocks[i] = B.AIR;
-          if (frame && side && y < fy + 2) blocks[i] = B.LOG;                 // posts
-          if (frame && y === fy + 2) blocks[i] = B.PLANKS;                    // beam
+          if (frame && side && y < fy + 2) blocks[i] = B.LOG;
+          if (frame && y === fy + 2) blocks[i] = B.PLANKS;
         }
         const fl = idx(x, fy - 1, z);
         if (blocks[fl] === B.AIR || blocks[fl] === B.WATER || blocks[fl] === B.LAVA || hash2(x, z, seed + 65) < 0.35) blocks[fl] = B.PLANKS;
@@ -369,141 +395,76 @@ export class TerrainGen {
         if (!frame && side && r < 0.08) blocks[idx(x, fy + 2, z)] = B.COBWEB;
         if (frame && !side && r > 0.9) blocks[idx(x, fy + 1, z)] = B.COBWEB;
         if (!frame && side && r > 0.985) blocks[idx(x, fy, z)] = B.CHEST;
-        if (frame && side && r > 0.8 && r < 0.9) blocks[idx(x, fy + 1, z)] = B.TORCH;           // the miners' old torches
+        if (frame && side && r > 0.8 && r < 0.9) blocks[idx(x, fy + 1, z)] = B.TORCH;
       };
-      let cx = 0, cz = 0;
       for (let j = 0; j < lines; j++) {
-        cz = oz + j * step;
+        const cz = oz + j * step;
         if (hash2(rx * 5 + j, rz, seed + 67) < 0.25) continue;
-        for (let x = Math.max(x0, ox); x < Math.min(x1, ox + (lines - 1) * step + 1); x++) for (let z = cz - 1; z <= cz + 1; z++) corridor(x, z, 'x');
+        for (let x = Math.max(x0, ox); x < Math.min(x1, ox + (lines - 1) * step + 1); x++) for (let z = cz - 1; z <= cz + 1; z++) corridor(x, z, 'x', cz);
       }
       for (let i = 0; i < lines; i++) {
-        cx = ox + i * step;
+        const cx = ox + i * step;
         if (hash2(rx, rz * 5 + i, seed + 68) < 0.25) continue;
-        for (let z = Math.max(z0, oz); z < Math.min(z1, oz + (lines - 1) * step + 1); z++) for (let x = cx - 1; x <= cx + 1; x++) corridor(x, z, 'z');
+        for (let z = Math.max(z0, oz); z < Math.min(z1, oz + (lines - 1) * step + 1); z++) for (let x = cx - 1; x <= cx + 1; x++) corridor(x, z, 'z', cx);
       }
     }
   }
 
-  /** A small sandstone pyramid with a hidden treasure room. */
-  _pyramid(cx, gy, cz, idx, rnd) {
-    const world = this.world, blocks = world.blocks;
-    const H = 6;
-    for (let k = 0; k <= H; k++) {
-      const r = H - k;
-      for (let z = cz - r; z <= cz + r; z++) for (let x = cx - r; x <= cx + r; x++) {
-        const edge = Math.max(Math.abs(x - cx), Math.abs(z - cz)) === r;
-        const inner = k >= 1 && k <= 3 && Math.max(Math.abs(x - cx), Math.abs(z - cz)) <= Math.min(2, r - 1);
-        blocks[idx(x, gy + k, z)] = inner ? B.AIR : (edge && (x + z + k) % 7 === 0 ? B.SAND : B.SANDSTONE);
-      }
-      // fill down to the dunes so it doesn't float
-      if (k === 0) for (let z = cz - H; z <= cz + H; z++) for (let x = cx - H; x <= cx + H; x++) for (let y = gy - 1; y > gy - 5; y--) { const i = idx(x, y, z); if (blocks[i] === B.AIR || blocks[i] === B.WATER) blocks[i] = B.SANDSTONE; }
+  /** A forgotten miner's cabin in the cavern layer: a wooden room with a chest, a workbench and a lantern. */
+  _cabin(x0, z0, idx, rnd, blocks, cols) {
+    const L = this.L;
+    const ax = x0 + 2 + Math.floor(rnd() * 4), az = z0 + 2 + Math.floor(rnd() * 5);       // 9 × 7 room inside the chunk
+    const c = cols[(az - z0 + 3) * CH + (ax - x0 + 4)];
+    if (c.dist < 80) return;
+    // set it into an open cave if there is one in this column, otherwise carve it out of the rock
+    let fy = L.cavBot + 10 + Math.floor(rnd() * (Math.min(L.cavTop, c.h - 30) - L.cavBot - 10));
+    for (let y = fy; y < fy + 40 && y < c.h - 20; y++) if (blocks[idx(ax + 4, y, az + 3)] === B.AIR && blocks[idx(ax + 4, y - 1, az + 3)] !== B.AIR) { fy = y; break; }
+    if (fy < L.cavBot || fy + 6 >= c.h - 12) return;
+    const W = 9, Dd = 7, Hh = 5;
+    for (let y = fy - 1; y <= fy + Hh; y++) for (let z = az; z < az + Dd; z++) for (let x = ax; x < ax + W; x++) {
+      const edgeX = x === ax || x === ax + W - 1, edgeZ = z === az || z === az + Dd - 1;
+      let id = B.AIR;
+      if (y === fy - 1 || y === fy + Hh) id = B.PLANKS;
+      else if (edgeX && edgeZ) id = B.LOG;
+      else if (edgeX || edgeZ) id = y === fy + 2 && (x + z) % 3 === 0 ? B.GLASS : B.PLANKS;
+      blocks[idx(x, y, z)] = id;
     }
-    // entrance tunnel from the south and the treasure room
-    for (let z = cz + 2; z <= cz + H; z++) { blocks[idx(cx, gy + 1, z)] = B.AIR; blocks[idx(cx, gy + 2, z)] = B.AIR; }
-    blocks[idx(cx, gy + 1, cz - 1)] = B.CHEST;
-    blocks[idx(cx - 2, gy + 1, cz - 2)] = B.TORCH; blocks[idx(cx + 2, gy + 1, cz - 2)] = B.TORCH;
-    blocks[idx(cx, gy + H + 1, cz)] = B.GOLD_ORE;
-    if (rnd() < 0.5) blocks[idx(cx + 1, gy + 1, cz - 1)] = B.CHEST;
+    // doorways on both short sides, furniture
+    for (const x of [ax, ax + W - 1]) { blocks[idx(x, fy, az + 3)] = B.AIR; blocks[idx(x, fy + 1, az + 3)] = B.AIR; }
+    blocks[idx(ax + 1, fy, az + 1)] = B.CHEST;
+    blocks[idx(ax + 2, fy, az + 1)] = B.WORKBENCH;
+    blocks[idx(ax + W - 2, fy, az + 1)] = B.BOOKSHELF; blocks[idx(ax + W - 2, fy + 1, az + 1)] = B.BOOKSHELF;
+    blocks[idx(ax + W - 2, fy, az + Dd - 2)] = B.BED;
+    blocks[idx(ax + 4, fy + Hh - 1, az + 3)] = B.LANTERN;
+    if (rnd() < 0.5) blocks[idx(ax + 1, fy, az + Dd - 2)] = B.CHEST;
+    if (rnd() < 0.6) blocks[idx(ax + 3, fy, az + Dd - 2)] = B.FURNACE;
+  }
+
+  /** A ruined tower in the underworld, standing on an island or on a pillar out of the lava sea. */
+  _ruin(x0, z0, idx, rnd, blocks) {
+    const L = this.L;
+    const ax = x0 + 3 + Math.floor(rnd() * 5), az = z0 + 3 + Math.floor(rnd() * 5);
+    let base = L.lavaSea + 1;
+    for (let y = L.lavaSea + 1; y < 60; y++) { const id = blocks[idx(ax + 2, y, az + 2)]; if (id === B.AIR && blocks[idx(ax + 2, y - 1, az + 2)] !== B.AIR && blocks[idx(ax + 2, y - 1, az + 2)] !== B.LAVA) { base = y; break; } }
+    const Hh = 7 + Math.floor(rnd() * 6);
+    if (base + Hh > 68) return;
+    for (let x = ax; x < ax + 5; x++) for (let z = az; z < az + 5; z++) {
+      const edge = x === ax || x === ax + 4 || z === az || z === az + 4, corner = (x === ax || x === ax + 4) && (z === az || z === az + 4);
+      for (let y = 4; y < base; y++) { const i = idx(x, y, z); if (blocks[i] === B.LAVA || blocks[i] === B.AIR) blocks[i] = B.OBSIDIAN; }   // foundation
+      for (let y = base; y < base + Hh; y++) {
+        const broken = y > base + Hh - 4 && hash2(x * 5 + y, z, this.seed + 140) < 0.45;
+        let id = B.AIR;
+        if (corner) id = B.OBSIDIAN;
+        else if (edge) id = broken ? B.AIR : (y % 4 === 2 && (x + z) % 2 === 0 ? B.AIR : (hash2(x, y * 3 + z, this.seed + 141) < 0.3 ? B.MAGMA : B.STONE_BRICKS));
+        if (y === base || (y - base) % 5 === 4) id = edge ? (corner ? B.OBSIDIAN : B.STONE_BRICKS) : B.OBSIDIAN;
+        blocks[idx(x, y, z)] = id;
+      }
+    }
+    blocks[idx(ax + 2, base + 1, az)] = B.AIR; blocks[idx(ax + 2, base + 2, az)] = B.AIR;     // doorway
+    blocks[idx(ax + 2, base + 1, az + 2)] = B.CHEST;
+    blocks[idx(ax + 2, base + 1, az + 3)] = B.LANTERN;
+    if (rnd() < 0.5) blocks[idx(ax + 1, base + 6, az + 1)] = B.CHEST;
   }
 }
 
 function smooth(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
-
-function put(world, x, y, z, id, onlyAir = true) {
-  if (x < 0 || z < 0 || x >= world.size || z >= world.size || y < 0 || y >= world.height) return;
-  const i = world.index(x, y, z);
-  const cur = world.blocks[i];
-  if (onlyAir && cur !== B.AIR && cur !== B.TALL_GRASS) return;
-  world.blocks[i] = id;
-}
-
-export function oak(world, x, y, z, rnd) {
-  const h = 4 + Math.floor(rnd() * 3);
-  for (let i = 0; i < h; i++) put(world, x, y + i, z, B.LOG, false);
-  const top = y + h;
-  for (let dy = -2; dy <= 1; dy++) {
-    const r = dy >= 0 ? 1 : 2;
-    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
-      if (Math.abs(dx) === r && Math.abs(dz) === r && (dy === 1 || rnd() < 0.5)) continue;
-      put(world, x + dx, top + dy, z + dz, B.LEAVES);
-    }
-  }
-  put(world, x, top + 1, z, B.LEAVES);
-}
-export function birch(world, x, y, z, rnd) {
-  const h = 5 + Math.floor(rnd() * 3);
-  for (let i = 0; i < h; i++) put(world, x, y + i, z, B.BIRCH_LOG, false);
-  const top = y + h;
-  for (let dy = -3; dy <= 1; dy++) {
-    const r = dy >= 0 || dy === -3 ? 1 : 2;
-    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
-      if (Math.abs(dx) === r && Math.abs(dz) === r && rnd() < 0.6) continue;
-      put(world, x + dx, top + dy, z + dz, B.BIRCH_LEAVES);
-    }
-  }
-}
-export function spruce(world, x, y, z, rnd) {
-  const h = 6 + Math.floor(rnd() * 4);
-  for (let i = 0; i < h; i++) put(world, x, y + i, z, B.SPRUCE_LOG, false);
-  let r = 2;
-  for (let yy = y + 2; yy <= y + h + 1; yy++) {
-    const rr = Math.max(0, r);
-    for (let dx = -rr; dx <= rr; dx++) for (let dz = -rr; dz <= rr; dz++) {
-      if (Math.abs(dx) + Math.abs(dz) > rr + (rr > 1 ? 1 : 0)) continue;
-      put(world, x + dx, yy, z + dz, B.SPRUCE_LEAVES);
-    }
-    r = (yy - y) % 2 === 0 ? r - 1 : r; if (r < 0) r = 1;
-    if (yy > y + h - 2) r = 0;
-  }
-  put(world, x, y + h + 1, z, B.SPRUCE_LEAVES);
-  put(world, x, y + h + 2, z, B.SPRUCE_LEAVES);
-}
-/** Savanna acacia: a leaning trunk that forks into flat, wide canopies. */
-export function acacia(world, x, y, z, rnd) {
-  const h = 4 + Math.floor(rnd() * 2);
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const [ax, az] = dirs[Math.floor(rnd() * 4)];
-  let tx = x, tz = z;
-  for (let i = 0; i < h; i++) {
-    if (i >= 2 && i < h - 1 && rnd() < 0.6) { tx += ax; tz += az; }
-    put(world, tx, y + i, tz, B.LOG, false);
-  }
-  const canopy = (cx, cy, cz, r) => {
-    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
-      if (Math.abs(dx) === r && Math.abs(dz) === r) continue;
-      put(world, cx + dx, cy, cz + dz, B.ACACIA_LEAVES);
-    }
-    for (let dx = -r + 1; dx <= r - 1; dx++) for (let dz = -r + 1; dz <= r - 1; dz++) if (Math.abs(dx) + Math.abs(dz) < r) put(world, cx + dx, cy + 1, cz + dz, B.ACACIA_LEAVES);
-  };
-  canopy(tx, y + h, tz, 3);
-  if (rnd() < 0.6) {
-    const bx = x - ax * 2, bz = z - az * 2;
-    put(world, x - ax, y + 2, z - az, B.LOG, false); put(world, bx, y + 3, bz, B.LOG, false);
-    canopy(bx, y + 4, bz, 2);
-  }
-}
-/** Swamp oak: an oak with a wide, drooping crown. */
-export function swampOak(world, x, y, z, rnd) {
-  const h = 4 + Math.floor(rnd() * 3);
-  for (let i = 0; i < h; i++) put(world, x, y + i, z, B.LOG, false);
-  const top = y + h;
-  for (let dy = -1; dy <= 1; dy++) {
-    const r = dy === 1 ? 1 : 3;
-    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
-      if (Math.abs(dx) === r && Math.abs(dz) === r) continue;
-      if (dy === -1 && Math.abs(dx) < 3 && Math.abs(dz) < 3) continue;
-      put(world, x + dx, top + dy, z + dz, B.LEAVES);
-    }
-  }
-  // hanging curtains of leaves
-  for (let k = 0; k < 8; k++) {
-    const a = rnd() * Math.PI * 2, hx = x + Math.round(Math.cos(a) * 3), hz = z + Math.round(Math.sin(a) * 3);
-    const L = 1 + Math.floor(rnd() * 3);
-    for (let i = 1; i <= L; i++) put(world, hx, top - 1 - i, hz, B.LEAVES);
-  }
-}
-/** A cactus column. */
-export function cactus(world, x, y, z, h) {
-  for (let i = 0; i < h; i++) put(world, x, y + i, z, B.CACTUS);
-}

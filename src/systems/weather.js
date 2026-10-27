@@ -137,7 +137,10 @@ export class Weather {
     const inside = g.mode !== 'command' && roof > cam.y + 0.6 ? 1 : 0;
     this.indoor = lerp(this.indoor, inside, Math.min(1, dt * 4));
 
-    this.fx.update(dt, { rain: rainVis, snow: snowVis, wind: this.wind });
+    // deep in a cave nothing falls from the sky and the weather is barely heard
+    const cave = g.renderer?._cave || 0;
+    this.indoor = Math.max(this.indoor, cave);
+    this.fx.update(dt, { rain: rainVis * (1 - cave), snow: snowVis * (1 - cave), wind: this.wind });
     this._lightning(dt);
     this._gusts(dt);
     g.audio?.setWeather?.({ rain: rainVis, snow: snowVis, wind: this.windAmt, storm: this.storm, indoor: this.indoor });

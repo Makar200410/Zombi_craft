@@ -1922,6 +1922,29 @@ GEN.red_sand = (p, r) => {
   copyInto(p, gen('sand'));
   p.forEach((x, y) => p.tint(x, y, hex('#c2582a'), 0.45));
 };
+GEN.ash = (p, r) => {
+  const n = tileFbm(r, S, [4, 8, 16], 0.6);
+  const A = hexes(['#1e1c1e', '#2a2729', '#373335', '#444042', '#524d4e', '#615b5b', '#716a69']);
+  const h = field(S, S, (x, y) => n(x, y));
+  p.map((x, y) => rampDither(A, 3 + (h.at(x, y) - 0.5) * 4 + emboss(h, x, y, 4), x, y, 0.9));
+  for (let i = 0; i < 14; i++) p.set(r.int(0, 31), r.int(0, 31), hex(r.chance(0.5) ? '#8a3a1e' : '#1a1416'));
+};
+GEN.magma = (p, r) => {
+  copyInto(p, gen('dark_stone'));
+  const n = tileFbm(r, S, [4, 8], 0.6);
+  const L = hexes(['#4a0c04', '#8a1e06', '#c8400c', '#f07018', '#ffb040', '#ffe08a']);
+  p.forEach((x, y) => { const v = n(x, y); if (v > 0.55) p.set(x, y, rampDither(L, (v - 0.55) * 14, x, y, 0.5)); else if (v > 0.5) p.tint(x, y, hex('#6a1a08'), 0.5); });
+};
+GEN.jungle_grass_top = (p, r) => {
+  const n = tileFbm(r, S, [8, 16], 0.5);
+  const J = hexes(['#0e2a0c', '#164012', '#1e5818', '#2a7220', '#3a8c2a', '#52a634', '#74c046']);
+  p.map((x, y) => rampAt(J, 3 + (n(x, y) - 0.5) * 2.6));
+  for (let i = 0; i < 200; i++) { const x = r.int(0, 31), y = r.int(0, 31); p.set(x, y, J[r.int(4, 6)]); p.set(x, y + 1, J[1]); }
+};
+GEN.jungle_grass_side = (p, r) => {
+  copyInto(p, gen('mud'));
+  overhang(p, r, hexes(['#0e2a0c', '#164012', '#1e5818', '#2a7220', '#3a8c2a', '#52a634', '#74c046']), 'mud', { min: 3, var: 4, drips: 0.45, dripLen: [2, 6], top: 5 });
+};
 GEN.acacia_leaves = (p, r) => leafTile(p, r, hexes(['#1e2a0c', '#2c3c10', '#3e5216', '#52681c', '#687e24', '#80942e', '#9aaa3c', '#b4c050', '#cad466']));
 
 // ------------------------------------------------------------------ overlays

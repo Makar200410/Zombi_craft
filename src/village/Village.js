@@ -1,7 +1,7 @@
 // Village: buildings, villagers, jobs, construction, population, selection, save/load.
 import * as THREE from 'three';
 import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
-import { oak, birch, spruce } from '../world/terrain.js';
+import { oak, birch, spruce } from '../world/trees.js';
 import { mulberry32 } from '../core/rng.js';
 import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS, setEraTier } from './buildings.js';
 import { Building } from './Building.js';
@@ -179,7 +179,7 @@ export class Village {
     for (const [x, y, z, id] of list) {
       if (!w.inBounds(x, y, z)) continue;
       const i = w.index(x, y, z);
-      w.blocks[i] = id;
+      w.rawSet(x, y, z, id);
       w.changes?.set(i, id);
       w.damage.delete(i);
       chunks.add(Math.floor(x / 16) + ',' + Math.floor(z / 16));
@@ -195,7 +195,7 @@ export class Village {
       const [cx, cz] = k.split(',').map(Number);
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const nx = cx + dx, nz = cz + dz;
-        if (nx >= 0 && nz >= 0 && nx < w.chunksX && nz < w.chunksX) w.dirty.add(nx + ',' + nz);
+        w.dirtyChunk(nx, nz);
       }
     }
     this.bus.emit('world:bulkChanged', { count: list.length });
@@ -1203,7 +1203,7 @@ export class Village {
     const writes = [];
     const fake = {
       size: w.size, height: w.height, index: (a, b, c) => w.index(a, b, c),
-      blocks: new Proxy(w.blocks, { get: (t, k) => t[k], set: (t, k, v) => { writes.push([+k, v]); return true; } }),
+      rawGet: (a, b, c) => w.rawGet(a, b, c), rawSet: (a, b, c, id) => writes.push([w.index(a, b, c), id]),
     };
     const gen = log === B.BIRCH_LOG ? birch : log === B.SPRUCE_LOG ? spruce : oak;
     gen(fake, x, y, z, this.rng);

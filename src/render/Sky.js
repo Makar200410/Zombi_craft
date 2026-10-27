@@ -101,8 +101,8 @@ export class Sky {
     scene.add(this.group);
   }
   update(dt, camPos, sunDir, colors, night, time, weather) {
-    this.group.position.set(camPos.x, 0, camPos.z);
-    this.dome.position.y = camPos.y;
+    this.group.position.set(camPos.x, this.baseY || 0, camPos.z);
+    this.dome.position.y = camPos.y - (this.baseY || 0);
     const u = this.uniforms;
     const cover = weather ? weather.cloud : 0.1;
     u.uTop.value.copy(colors.top); u.uHorizon.value.copy(colors.horizon); u.uBottom.value.copy(colors.bottom);

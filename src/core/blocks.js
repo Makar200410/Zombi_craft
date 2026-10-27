@@ -133,6 +133,10 @@ def(92, 'amethyst', { label: 'Аметистовая жеода', render: 'opaqu
 def(93, 'red_sand', { label: 'Красный песок', hardness: 1, tool: 'shovel' });
 def(94, 'acacia_leaves', { label: 'Листва акации', render: 'cutout', hardness: 0.4, tool: 'axe' });
 def(95, 'packed_ice', { label: 'Плотный лёд', hardness: 2, tool: 'pick' });
+// the underworld and the underground jungle (deep worlds)
+def(96, 'ash', { label: 'Пепел', hardness: 1.4, tool: 'shovel' });
+def(97, 'magma', { label: 'Адский камень', hardness: 6, light: 10, drop: { stone: 1, coal: 1 }, tool: 'pick' });
+def(98, 'jungle_grass', { label: 'Мшистый ил', tiles: { top: 'jungle_grass_top', side: 'jungle_grass_side', bottom: 'mud' }, hardness: 1.2, tool: 'shovel' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
