@@ -512,8 +512,8 @@ export class Zombie extends Entity {
       const foe = rv
         ? (e) => !e.dead && e.kind !== 'projectile' && (e.faction === 'village' ? rv.atWarWithPlayer(this.rivalId) && !e.hidden && !e.invisible
           : e.rivalId != null ? e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId)
-          : !!this.caravan && e.faction === 'undead')            // caravan guards fight off the dead
-        : (e) => (e.faction === 'village' || e.caravan) && e.kind !== 'projectile' && !e.hidden && !e.invisible;     // the dead go for caravans too
+          : (!!this.caravan || rv.fightsDead(this.rivalId)) && e.faction === 'undead')            // caravan guards (and commanded towns) fight off the dead
+        : (e) => (e.faction === 'village' || e.caravan || (e.rivalId != null && game.rivals?.fightsDead(e.rivalId))) && e.kind !== 'projectile' && !e.hidden && !e.invisible;     // the dead go for caravans and commanded towns too
       const cand = game.entities.nearest(pos, foe, range);
       if (cand) {
         const d = cand.position.distanceTo(pos);

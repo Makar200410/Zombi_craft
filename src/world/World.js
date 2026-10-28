@@ -266,7 +266,7 @@ export class World {
    * Tall worlds only: frees chunks far from the player and from the village (keepR blocks around both),
    * so memory stays bounded however far the player wanders.
    */
-  unloadFar(px, pz, keepR, vx, vz, villageR = 200) {
+  unloadFar(px, pz, keepR, vx, vz, villageR = 200, extra = []) {
     if (this.format < 3) return 0;
     const N = this.chunksX, k2 = keepR * keepR, v2 = villageR * villageR;
     let n = 0;
@@ -274,6 +274,7 @@ export class World {
       const cx = k % N, cz = (k - cx) / N;
       const mx = cx * CHUNK + 8, mz = cz * CHUNK + 8;
       if ((mx - px) ** 2 + (mz - pz) ** 2 < k2 || (mx - vx) ** 2 + (mz - vz) ** 2 < v2) continue;
+      if (extra.some(([ex, ez, er]) => (mx - ex) ** 2 + (mz - ez) ** 2 < er * er)) continue;     // around other players (network games)
       if (this.unloadChunk(cx, cz)) n++;
     }
     return n;
@@ -286,20 +287,23 @@ export class World {
     let made = 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (this.ensureChunk(pcx + dx, pcz + dz)) made++;
     const R = Math.ceil(radius / CHUNK);
-    if (!this._ring || this._ringR !== R) {
-      this._ringR = R; this._ring = [];
-      for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) if (dx * dx + dz * dz <= R * R) this._ring.push([dx, dz, dx * dx + dz * dz]);
-      this._ring.sort((a, b) => a[2] - b[2]);
+    const rings = this._rings || (this._rings = new Map());
+    let ring = rings.get(R);
+    if (!ring) {
+      ring = [];
+      for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) if (dx * dx + dz * dz <= R * R) ring.push([dx, dz, dx * dx + dz * dz]);
+      ring.sort((a, b) => a[2] - b[2]);
+      rings.set(R, ring);
     }
     if (this.worker) {
       // the worker makes the ring, nearest first, a few chunks in flight at a time
-      for (const [dx, dz] of this._ring) {
+      for (const [dx, dz] of ring) {
         if (this.requested.size >= 4) break;
         if (this.requestChunk(pcx + dx, pcz + dz)) made++;
       }
       return made;
     }
-    for (const [dx, dz] of this._ring) {
+    for (const [dx, dz] of ring) {
       if (performance.now() - t0 > budgetMs) break;
       if (this.ensureChunk(pcx + dx, pcz + dz)) made++;
     }
@@ -471,14 +475,16 @@ export class World {
   // ---------- lighting ----------
   /** Light every generated chunk (bounding box of the generated area). */
   computeAllLight() {
-    let x0 = Infinity, z0 = Infinity, x1 = -1, z1 = -1;
-    const N = this.chunksX;
+    // loaded chunks can be scattered over a 16 km world (a town far away, the village): relight them in tiles of
+    // 8×8 chunks, never as one box spanning everything between them
+    const N = this.chunksX, tiles = new Map();
     for (const k of this.loaded) {
-      const cx = k % N, cz = (k - cx) / N;
-      if (cx < x0) x0 = cx; if (cz < z0) z0 = cz; if (cx > x1) x1 = cx; if (cz > z1) z1 = cz;
+      const cx = k % N, cz = (k - cx) / N, key = (cx >> 3) + ',' + (cz >> 3);
+      let t = tiles.get(key);
+      if (!t) tiles.set(key, t = [cx, cz, cx, cz]);
+      if (cx < t[0]) t[0] = cx; if (cz < t[1]) t[1] = cz; if (cx > t[2]) t[2] = cx; if (cz > t[3]) t[3] = cz;
     }
-    if (x1 < 0) return;
-    this.relightBox(x0 * CHUNK, z0 * CHUNK, x1 * CHUNK + CHUNK - 1, z1 * CHUNK + CHUNK - 1);
+    for (const [x0, z0, x1, z1] of tiles.values()) this.relightBox(x0 * CHUNK, z0 * CHUNK, x1 * CHUNK + CHUNK - 1, z1 * CHUNK + CHUNK - 1);
   }
   /** Highest light-blocking cell of a column (-1 if none). */
   _colTop(x, z) {

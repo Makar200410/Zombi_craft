@@ -54,8 +54,16 @@ export class Hud {
 
     this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.inventory.close(); ui.craft.toggle(); } },
       h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'));
-    this.rivalsBtn = h('button.zc-mode-btn.zc-rivals-btn.ui-i', { title: 'Соседние деревни: войны, мир, захват (N)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.close(); ui.rivals.toggle(); } },
-      h('span.zc-mode-ico', img(glyph('shield'))), h('span.zc-mode-lbl', 'Соседи'));
+    // a player who joined against the host (siege mode) gets his «Командование» here instead
+    const rivLbl = h('span.zc-mode-lbl', 'Соседи'), rivIco = img(glyph('shield'));
+    this.rivalsBtn = h('button.zc-mode-btn.zc-rivals-btn.ui-i', { title: 'Соседние деревни: войны, мир, захват (N)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.close(); if (ui.siege?.available) ui.siege.toggle(); else ui.rivals.toggle(); } },
+      h('span.zc-mode-ico', rivIco), rivLbl);
+    ui.game.bus.on('siege:role', ({ role }) => {
+      const cmd = role === 'rival' || role === 'horde';
+      rivLbl.textContent = cmd ? 'Командование' : 'Соседи';
+      rivIco.src = glyph(cmd ? 'skull' : 'shield');
+      this.rivalsBtn.title = cmd ? 'Командование: ваша армия (G)' : 'Соседние деревни: войны, мир, захват (N)';
+    });
     this.invBtn = h('button.zc-mode-btn.zc-inv-btn.ui-i', { title: 'Инвентарь: оружие в ячейки (E)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.toggle(); } },
       h('span.zc-mode-ico', img(glyph('sword'))), h('span.zc-mode-lbl', 'Инвентарь'));
 

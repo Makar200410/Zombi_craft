@@ -137,11 +137,20 @@ export class Menus {
     const nameIn = h('input.zc-input', { type: 'text', placeholder: 'Игрок', value: name, maxlength: 20 });
     for (const el of [addrIn, nameIn]) el.addEventListener('keydown', (e) => e.stopPropagation());
     const err = h('div.zc-note.warn');
+    // the side to play: a hero of the host's village, or against it (siege mode)
+    let role = 'hero';
+    try { role = localStorage.getItem('zc_net_role') || 'hero'; } catch (e) { /* ignore */ }
+    const SIDES = [['hero', 'Герой деревни', 'Защищаете деревню вместе с хозяином'], ['rival', 'Командир соседей', 'Ведёте армию соседней деревни на хозяина; ночью мёртвые идут и на вас'], ['horde', 'Повелитель нежити', 'Поднимаете мёртвых и штурмуете деревню хозяина']];
+    const roleHint = h('div.zc-note');
+    const roleRow = h('div.zc-cats');
+    const paint = () => { for (const b of roleRow.children) b.classList.toggle('sel', b.dataset.role === role); roleHint.textContent = SIDES.find(x => x[0] === role)[2]; };
+    for (const [id, label] of SIDES) roleRow.append(h('button.zc-chipbtn.ui-i', { 'data-role': id, onclick: () => { role = id; this.game.audio?.play?.('ui_click'); paint(); } }, label));
+    paint();
     const go = async () => {
       const a = addrIn.value.trim(), n = nameIn.value.trim() || 'Игрок';
-      try { localStorage.setItem('zc_net_addr', a); localStorage.setItem('zc_net_name', n); } catch (e) { /* ignore */ }
+      try { localStorage.setItem('zc_net_addr', a); localStorage.setItem('zc_net_name', n); localStorage.setItem('zc_net_role', role); } catch (e) { /* ignore */ }
       const prog = this.showLoading('Подключение…');
-      const r = await this.game.net.join(a, n, prog);
+      const r = await this.game.net.join(a, n, prog, role);
       if (r.ok) { this.hide(); this.ui._setState?.('play'); }
       else { this.showMain('net'); setTimeout(() => { const e2 = this.card?.querySelector('.zc-note.warn'); if (e2) e2.textContent = r.reason; }, 0); }
     };
@@ -149,6 +158,7 @@ export class Menus {
       h('p.zc-note', 'Играйте вместе в одной Wi-Fi сети: один открывает свой мир, остальные подключаются к нему как герои — исследуют, строят и сражаются в том же мире.'),
       h('label.zc-field', h('span.zc-field-lbl', 'Ваше имя'), nameIn),
       h('label.zc-field', h('span.zc-field-lbl', 'Адрес хозяина (IP компьютера)'), addrIn),
+      h('div.zc-field', h('span.zc-field-lbl', 'За кого играть'), roleRow, roleHint),
       err,
       h('div.zc-row.end', this.btn('Назад', () => this.page('home'), 'ghost'), this.btn('Подключиться', go, 'primary', glyph('play'))),
       h('p.zc-note', window.zcDesktop

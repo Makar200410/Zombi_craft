@@ -162,10 +162,13 @@ export class ChunkRenderer {
       const fogFar = g.renderer?.viewFar || (g.scene.fog ? g.scene.fog.far : 120);
       const p = g.mode === 'command' ? g.camera.position : (g.player?.position || g.camera.position);
       w.pumpGeneration(p.x, p.z, fogFar + 24, g.quality === 'low' ? 2.5 : 4);
+      // hosting: the land around the joined players exists here too (their undead and soldiers walk on it)
+      const others = g.net?.isHost ? [...(g.net.players?.values() || [])].map(rp => [rp.netPos.x, rp.netPos.z, 150]) : [];
+      for (const [ox, oz] of others) w.pumpGeneration(ox, oz, 72, 1.5);
       // tall worlds: forget what is far behind (it is generated again, with its edits, when we come back)
       if (w.format >= 3 && (this._unloadT = (this._unloadT || 0) + 1) % 180 === 0) {
         const c = g.village?.townHall?.center || { x: w.size / 2, z: w.size / 2 };
-        w.unloadFar(p.x, p.z, fogFar + 140, c.x, c.z);
+        w.unloadFar(p.x, p.z, fogFar + 140, c.x, c.z, 200, others);
       }
     }
     // finished meshes from the worker go on screen within a small budget

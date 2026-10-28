@@ -5,7 +5,9 @@
 // WebSocket messages between the host and the players and also serves the game to phones' browsers.
 //   host → player: welcome (world seed + edits + state), blocks (edits), snap (time, resources, nearby undead /
 //                  villagers / other players, 10 times a second), hurt, item, toast
-//   player → host: hello, pos (own hero), set (block edit), hit (damage dealt to an undead), craft
+//   player → host: hello, pos (own hero), set (block edit), hit (damage dealt to an undead), craft, cmd (siege orders)
+// A joining player picks a side (see siege.js): a hero of the village, the commander of a rival town, or the lord
+// of the dead.
 import * as THREE from 'three';
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
@@ -16,6 +18,7 @@ import { B, BLOCKS } from '../core/blocks.js';
 import { encodeChanges, decodeChanges } from '../systems/save.js';
 import { RECIPES } from '../systems/crafting.js';
 import { ITEMS } from '../core/items.js';
+import { Siege, ROLES } from './siege.js';
 
 export const LAN_PORT = 27015;
 const TICK = 0.1;            // snapshot / position rate (s)
@@ -85,6 +88,9 @@ export class Net {
     this.role = null;           // null | 'host' | 'client'
     this.ws = null;
     this._t = 0;
+    this.siege = new Siege(this);
+    this.siegeRole = 'hero';    // a joined player's side
+    this.siegeState = null;
   }
   get isHost() { return this.role === 'host'; }
   get isClient() { return this.role === 'client'; }
@@ -142,7 +148,7 @@ export class Net {
     if (m.sys === 'join') return;                   // waits for the player's hello
     if (m.sys === 'leave') {
       const p = this.players.get(m.id);
-      if (p) { this.players.delete(m.id); g.entities.remove(p); g.bus.emit('toast', { text: `${p.playerName} покинул(а) игру`, kind: 'info' }); g.bus.emit('net:changed', {}); }
+      if (p) { this.siege.release(p); this.players.delete(m.id); g.entities.remove(p); g.bus.emit('toast', { text: `${p.playerName} покинул(а) игру`, kind: 'info' }); g.bus.emit('net:changed', {}); }
       return;
     }
     const id = m.from;
@@ -152,12 +158,13 @@ export class Net {
       case 'hello': {
         const name = String(d.name || 'Игрок').slice(0, 20);
         const rp = new RemotePlayer(g, this, id, name, PLAYER_COLORS[id % PLAYER_COLORS.length]);
-        const sp = this._spawnPoint();
+        const side = this.siege.assign(rp, ROLES[d.role] ? d.role : 'hero');
+        const sp0 = this._spawnPoint(), sp = side.spawn ? { x: side.spawn[0], y: side.spawn[1], z: side.spawn[2] } : sp0;
         rp.setNet(sp.x, sp.y, sp.z, 0);
         g.entities.add(rp);
         this.players.set(id, rp);
         this._sendTo(id, {
-          t: 'welcome', you: id, seed: g.world.seed, size: g.world.size, format: g.world.format,
+          t: 'welcome', you: id, seed: g.world.seed, size: g.world.size, format: g.world.format, role: side.role, town: side.town ?? null,
           changes: encodeChanges(g.world.changes || new Map()), state: g.state.serialize(), spawn: [sp.x, sp.y, sp.z],
           owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0, rivals: g.rivals?.serialize?.(),
         });
@@ -185,6 +192,7 @@ export class Net {
         break;
       }
       case 'craft': this._remoteCraft(id, d.id); break;
+      case 'cmd': if (p) this.siege.command(p, d); break;
     }
   }
   _spawnPoint() {
@@ -199,6 +207,22 @@ export class Net {
     if (!w.inBounds(x, y, z)) return;
     const prev = w.getBlock(x, y, z);
     if (prev === bid) return;
+    const rp = this.players.get(id);
+    // the lord of the dead can't touch the world; a town's commander builds with his town's wealth
+    if (rp?.role === 'horde') { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
+    const town = rp?.role === 'rival' ? g.rivals?.get(rp.town) : null;
+    if (town) {
+      const sum = (o) => Object.values(o || {}).reduce((a, n) => a + n, 0);
+      if (bid === B.AIR) {
+        if (!isFinite(BLOCKS[prev]?.hardness)) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
+        w.breakBlock(x, y, z, null); town.wealth += sum(BLOCKS[prev]?.drop);
+        return;
+      }
+      const cost = sum(BLOCKS[bid]?.cost);
+      if (!BLOCKS[bid] || town.wealth < cost) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); this._sendTo(id, { t: 'toast', text: `Казне «${town.name}» не хватает богатства`, kind: 'bad' }); return; }
+      town.wealth -= cost; w.setBlock(x, y, z, bid);
+      return;
+    }
     if (bid === B.AIR) {
       if (!isFinite(BLOCKS[prev]?.hardness)) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
       w.breakBlock(x, y, z, 'player');
@@ -252,7 +276,7 @@ export class Net {
 
   // ================================================================ joining
   /** Joins a friend's game at "ip[:port]". progress(p, text) shows loading. Returns {ok, reason}. */
-  async join(addr, name, progress = () => {}) {
+  async join(addr, name, progress = () => {}, role = 'hero') {
     const g = this.game;
     if (this.active) this.stop();
     addr = String(addr || '').trim().replace(/^(https?|wss?):\/\//, '').replace(/\/.*$/, '');
@@ -265,7 +289,7 @@ export class Net {
       const tm = setTimeout(() => resolve(null), 15000);
       this.ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.t === 'welcome' || m.t === 'nohost') { clearTimeout(tm); resolve(m); } };
       this.ws.onclose = () => { clearTimeout(tm); resolve(null); };
-      this.ws.send(JSON.stringify({ t: 'hello', name: name || 'Игрок' }));
+      this.ws.send(JSON.stringify({ t: 'hello', name: name || 'Игрок', role }));
     });
     if (!welcome || welcome.t !== 'welcome') { try { this.ws?.close(); } catch (e) { /* ignore */ } this.ws = null; return { ok: false, reason: welcome?.t === 'nohost' ? 'На этом компьютере мир ещё не открыт для сети' : 'Хозяин не ответил' }; }
     // the host's world: same seed, plus every edit made in it
@@ -285,6 +309,7 @@ export class Net {
     if (g.village) g.village.netSpawn = new THREE.Vector3(...welcome.spawn);
     this.role = 'client';
     this.me = welcome.you;
+    this.siegeRole = welcome.role || 'hero'; this.siegeTown = welcome.town; this.siegeState = null;
     this.proxies = new Map();
     this.heroes = new Map();
     // the friend's computer runs the village, the undead, research and saving
@@ -295,13 +320,20 @@ export class Net {
     g.begin({ loaded: true });
     const p = g.player;
     if (p) { p.revive?.(); p.position.set(...welcome.spawn); p.velocity.set(0, 0, 0); }
-    g.bus.emit('toast', { text: 'Вы в мире друга! Деревней управляет хозяин, а вы — герой: исследуйте, стройте, сражайтесь.', kind: 'good' });
+    const hello = {
+      hero: 'Вы в мире друга! Деревней управляет хозяин, а вы — герой: исследуйте, стройте, сражайтесь.',
+      rival: 'Вы — командир соседней деревни и в войне с хозяином! Откройте «Командование» (G): нанимайте воинов, шлите отряды, а ночью держите оборону от мёртвых.',
+      horde: 'Вы — Повелитель нежити! «Командование» (G): копите тёмную силу и поднимайте мёртвых, чтобы взять деревню хозяина. Её стража охотится на вас.',
+    };
+    g.bus.emit('toast', { text: hello[this.siegeRole] || hello.hero, kind: 'good' });
+    g.bus.emit('siege:role', { role: this.siegeRole });
     g.bus.emit('net:changed', {});
     progress(1, '');
     return { ok: true };
   }
   _leave(why) {
     const g = this.game;
+    this.siegeRole = 'hero'; this.siegeState = null; g.bus.emit('siege:role', { role: 'hero' });
     for (const e of this.proxies?.values() || []) g.entities.remove(e);
     for (const e of this.heroes?.values() || []) g.entities.remove(e);
     this.proxies = null; this.heroes = null;
@@ -314,6 +346,8 @@ export class Net {
     if (g.running) { g.ui?.quitToMenu?.(true); g.bus.emit('toast', { text: why, kind: 'warn' }); }
   }
   send(msg) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(msg)); }
+  /** A siege order from a joined commander / lord of the dead (see siege.js). */
+  command(c, extra = {}) { this.send({ t: 'cmd', c, ...extra }); }
   /** A joined player's block edit (applied locally right away, made real by the host). */
   sendSet(x, y, z, id) { this.send({ t: 'set', x, y, z, id }); }
   /** Damage dealt to an undead shown here (the host applies it). */
@@ -340,6 +374,7 @@ export class Net {
         break;
       case 'toast': g.bus.emit('toast', { text: m.text, kind: m.kind }); break;
       case 'rivals': g.rivals?.deserialize(m.s); g.rivals?._restampLoaded(); break;
+      case 'siege': this.siegeState = m; g.bus.emit('siege:state', m); break;
     }
   }
   _applySnap(m) {
@@ -416,6 +451,7 @@ export class Net {
 
   update(dt) {
     if (!this.active) return;
+    if (this.isHost && this.players?.size) this.siege.update(dt);
     this._t += dt;
     if (this._t < TICK) return;
     this._t = 0;

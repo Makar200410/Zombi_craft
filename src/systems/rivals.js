@@ -358,7 +358,7 @@ export class Rivals {
       r.warT -= dt;
       if (r.warT > 0) continue;
       r.warT = 60 + Math.random() * 90;
-      if (r.owner !== null) continue;              // vassals follow their master
+      if (r.owner !== null || r.commander != null) continue;              // vassals follow their master, commanded towns their commander
       // on the player: aggressive towns that feel strong enough (not before the third day)
       if (r.rel === 'peace' && g.state.day >= 3 && Math.random() < r.aggro * 0.25 && this.power(r) > this.playerDefense() * 0.6) {
         this.declareWar(r, `«${r.name}» объявляет вам войну! Их отряды придут с ${dirFrom(r.x - g.world.size / 2, r.z - g.world.size / 2)}.`);
@@ -440,16 +440,24 @@ export class Rivals {
       }
       return;
     }
+    if (r.commander != null) return;            // its commander decides when to march
     r.raidT -= dt;
     if (r.raidT > 0 || r.army < 3) return;
     // a war party when they think they can win — or out of spite
     if (this.power(r) < this.playerDefense() * 0.5 && Math.random() > r.aggro * 0.4) { r.raidT = 120; return; }
-    const size = Math.max(3, Math.min(14, Math.round(r.army * 0.6)));
+    this.launchRaid(r, Math.max(3, Math.min(14, Math.round(r.army * 0.6))));
+  }
+  /** A war party of `size` sets off for the player's village. */
+  launchRaid(r, size) {
+    const g = this.game;
+    size = Math.max(1, Math.min(Math.floor(r.army), size));
     r.army -= size;
     const c = g.world.size / 2, dist = Math.hypot(r.x - c, r.z - c);
     r.raid = { size, eta: Math.max(45, Math.min(180, dist / 5)), arrived: false, units: [], t: 0, loot: 0 };
     g.bus.emit('toast', { text: `«${r.name}» выслала отряд: ${size} воинов. Они придут с ${dirFrom(r.x - c, r.z - c)} через ~${Math.round(r.raid.eta)} с!`, kind: 'bad' });
   }
+  /** A town led by a joined player (siege mode): its soldiers fight the dead too, and the dead come for it. */
+  fightsDead(i) { return this.list[i]?.commander != null; }
   _raidArrive(r) {
     const g = this.game, W = g.waves, c = g.world.size / 2;
     const raid = r.raid; raid.arrived = true;
@@ -565,12 +573,13 @@ export class Rivals {
     this._unitT = (this._unitT || 0) - dt;
     if (this._unitT > 0) return;
     this._unitT = 1.5;
-    const g = this.game, p = g.player?.position, w = g.world;
-    if (!p) return;
+    const g = this.game, w = g.world;
+    const ps = [g.player?.position, ...[...(g.net?.isHost ? g.net.players?.values() || [] : [])].map(rp => rp.netPos)].filter(Boolean);
+    if (!ps.length) return;
     for (const r of this.list) {
       let list = this.units.get(r.i) || [];
       list = list.filter(u => !u.dead);
-      const d = Math.hypot(p.x - r.x, p.z - r.z);
+      const d = Math.min(...ps.map(p => Math.hypot(p.x - r.x, p.z - r.z)));
       if (d > FAR) {
         // the player left: the townsfolk go back to being numbers (field battles end where they stood)
         for (const u of list) { if (u.attacking !== undefined) { const a = this.list[u.rivalId]; if (a) a.army += 1; } u.dead = true; u.removeAt = 0; u.object3d.visible = false; }
@@ -579,7 +588,7 @@ export class Rivals {
       }
       this.units.set(r.i, list);
       if (d > NEAR || !w.isGenerated(r.x, r.z)) continue;
-      const hostile = this.atWarWithPlayer(r.i) || [...this.wars].some(k => k.split(':').map(Number).includes(r.i));
+      const hostile = r.commander != null || this.atWarWithPlayer(r.i) || [...this.wars].some(k => k.split(':').map(Number).includes(r.i));
       const mine = list.filter(u => u.rivalId === r.i);
       const folk = mine.filter(u => u.type === 'folk').length;
       const soldiers = mine.filter(u => u.type !== 'folk').length;
@@ -650,7 +659,7 @@ export class Rivals {
       list: this.list.map(r => {
         const o = { ...r };
         if (r.raid) { o.army = r.army + (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size); }
-        delete o.raid; delete o.capT; delete o._capMsgT; delete o.next;
+        delete o.raid; delete o.capT; delete o._capMsgT; delete o.next; delete o.commander; delete o.commanderName;
         return o;
       }),
       wars: [...this.wars],
