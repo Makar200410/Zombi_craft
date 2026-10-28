@@ -12,7 +12,8 @@ export class QuestTracker {
     this.list = h('div.zc-qt-list');
     this.head = h('button.zc-qt-head.ui-i', { onclick: () => this.toggle() }, img(glyph('flag')), h('span', 'Задания'), this.arrow = h('b', '▾'));
     this.journalBtn = h('button.zc-qt-journal.ui-i', { title: 'Журнал заданий (J)', onclick: () => { ui.click(); ui.quests.show(); } }, 'Журнал');
-    this.root = h('div.zc-qt.zc-panel.ui-i', h('div.zc-qt-top', this.head, this.journalBtn), this.list);
+    this.chronBtn = h('button.zc-qt-journal.ui-i', { title: 'Летопись: снимки эпох, достижения, статистика (L)', onclick: () => { ui.click(); ui.chronicle.show(); } }, 'Летопись');
+    this.root = h('div.zc-qt.zc-panel.ui-i', h('div.zc-qt-top', this.head, this.journalBtn, this.chronBtn), this.list);
     this._ver = -1;
     this.apply();
   }

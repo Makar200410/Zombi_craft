@@ -208,6 +208,7 @@ export class SaveSystem {
       caravans: safe(g.caravans),
       kinetics: safe(g.kinetics),
       electric: safe(g.electric),
+      chronicle: safe(g.chronicle),
       blueprints: g.blueprints?.forSave?.() || [],
       camera: safe(g.cameraRig),
       mode: g.mode,
@@ -274,6 +275,7 @@ export class SaveSystem {
       safe(g.caravans, o.caravans);
       safe(g.kinetics, o.kinetics);
       safe(g.electric, o.electric);
+      safe(g.chronicle, o.chronicle);
       safe(g.cameraRig, o.camera);
       if (g.mode !== 'explore') g.setMode('explore');
       g.begin({ loaded: true });

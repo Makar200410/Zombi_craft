@@ -254,6 +254,7 @@ export class Caravans {
     const g = this.game, r = this.townOf(c), R = this.rivals;
     const reward = c.esc > 40 && c.units ? 10 + c.tier * 6 : 0;
     if (reward) {
+      g.state.stats.escorts = (g.state.stats.escorts || 0) + 1;
       g.state.add('gold', reward);
       r.favor = Math.min(5, (r.favor || 0) + 1);
       g.bus.emit('toast', { text: `Вы проводили караван «${r.name}»: +${reward} золота, «${r.name}» доверяет вам больше (скидка ${r.favor * 4}%)`, kind: 'good' });
@@ -342,6 +343,7 @@ export class Caravans {
       const loot = { gold: 15 + c.tier * 8 };
       for (const [res, n, , t] of SELLS) if (r && r.tier >= t) loot[res] = Math.round(n * 0.6);
       g.state.addAll(loot);
+      g.state.stats.robberies = (g.state.stats.robberies || 0) + 1;
       g.bus.emit('toast', { text: `Караван ограблен: ${Object.entries(loot).map(([k, n]) => `${RESOURCE_LABELS[k] || k} +${n}`).join(', ')}`, kind: 'warn' });
     } else if (r) g.bus.emit('toast', { text: `Торговец «${r.name}» погиб в дороге`, kind: 'warn' });
     for (const o of c.units || []) if (o !== u && !o.dead && !o.target) { o.dead = true; o.removeAt = 0; o.object3d.visible = false; }
@@ -368,7 +370,7 @@ export class Caravans {
     if (!o || r.tier < o[3] || this.whyNoTrade(r) || !(r.stock?.['s_' + res] > 0)) return false;
     const price = this.sellPrice(r, o[2]);
     if (!st.spend({ gold: price })) { this.game.bus.emit('toast', { text: 'Не хватает золота', kind: 'bad' }); return false; }
-    st.add(res, o[1]); r.stock['s_' + res]--; r.wealth += price;
+    st.add(res, o[1]); r.stock['s_' + res]--; r.wealth += price; st.stats.trades = (st.stats.trades || 0) + 1;
     this.game.audio?.play?.('coins', { volume: 0.6 });
     return true;
   }
@@ -378,7 +380,7 @@ export class Caravans {
     if (!o || r.tier < o[3] || this.whyNoTrade(r) || !(r.stock?.['b_' + res] > 0)) return false;
     if (!st.spend({ [res]: o[1] })) { this.game.bus.emit('toast', { text: `Не хватает: ${RESOURCE_LABELS[res] || res}`, kind: 'bad' }); return false; }
     const price = this.buyPrice(r, o[2]);
-    st.add('gold', price); r.stock['b_' + res]--;
+    st.add('gold', price); r.stock['b_' + res]--; st.stats.trades = (st.stats.trades || 0) + 1;
     this.game.audio?.play?.('coins', { volume: 0.6 });
     return true;
   }
