@@ -43,7 +43,11 @@ export class InventoryPanel {
       h('div.zc-rs-title', img(glyph('sword')), h('span', 'Инвентарь')),
       this.hint,
       h('button.zc-iconbtn.zc-close.ui-i', { title: 'Закрыть', onclick: () => this.close() }, glyphImg('close')));
-    this.panel = h('div.zc-rs-panel.zc-panel.ornate', head, this.slotsEl, this.tabsEl, this.grid);
+    // a big switch to crafting, so the crafting window is never hard to find
+    const swap = h('div.zc-swap',
+      h('button.sel.ui-i', { title: 'Инвентарь (E)' }, img(glyph('sword')), 'Инвентарь', h('span.zc-key-badge', 'E')),
+      h('button.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { this.ui.click(); this.close(true); this.ui.craft.show(); } }, img(glyph('hammer')), 'Крафт', h('span.zc-key-badge', 'I')));
+    this.panel = h('div.zc-rs-panel.zc-panel.ornate', head, swap, this.slotsEl, this.tabsEl, this.grid);
     this.root.append(this.panel);
     this.root.addEventListener('pointerdown', (e) => { if (e.target === this.root) this.close(); });
     const bus = this.game.bus;
@@ -60,10 +64,11 @@ export class InventoryPanel {
     this.game.audio?.play?.('ui_open');
     this.render();
   }
-  close() {
+  close(toOther = false) {
     if (!this.open) return;
     this.open = false;
     this.root.classList.remove('open');
+    if (toOther) return;                    // switching to the crafting window: the pointer stays free
     this.game.audio?.play?.('ui_close');
     this.ui.onPanelClosed?.();
   }

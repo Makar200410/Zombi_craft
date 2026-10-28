@@ -50,22 +50,23 @@ export class Hud {
     this.modeIco = img(glyph('castle'));
     this.modeLbl = h('span.zc-mode-lbl', 'Командовать');
     this.modeBtn = h('button.zc-mode-btn.ui-i', { title: 'Переключить режим (Tab)', onclick: () => ui.toggleMode() },
-      h('span.zc-mode-ico', this.modeIco), this.modeLbl);
+      h('span.zc-mode-ico', this.modeIco), this.modeLbl, h('span.zc-key-badge', 'Tab'));
 
     this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.inventory.close(); ui.craft.toggle(); } },
-      h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'));
+      h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'), h('span.zc-key-badge', 'I'));
     // a player who joined against the host (siege mode) gets his «Командование» here instead
-    const rivLbl = h('span.zc-mode-lbl', 'Соседи'), rivIco = img(glyph('shield'));
+    const rivLbl = h('span.zc-mode-lbl', 'Соседи'), rivIco = img(glyph('shield')), rivKey = h('span.zc-key-badge', 'N');
     this.rivalsBtn = h('button.zc-mode-btn.zc-rivals-btn.ui-i', { title: 'Соседние деревни: войны, мир, захват (N)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.close(); if (ui.siege?.available) ui.siege.toggle(); else ui.rivals.toggle(); } },
-      h('span.zc-mode-ico', rivIco), rivLbl);
+      h('span.zc-mode-ico', rivIco), rivLbl, rivKey);
     ui.game.bus.on('siege:role', ({ role }) => {
       const cmd = role === 'rival' || role === 'horde';
       rivLbl.textContent = cmd ? 'Командование' : 'Соседи';
       rivIco.src = glyph(cmd ? 'skull' : 'shield');
+      rivKey.textContent = cmd ? 'G' : 'N';
       this.rivalsBtn.title = cmd ? 'Командование: ваша армия (G)' : 'Соседние деревни: войны, мир, захват (N)';
     });
     this.invBtn = h('button.zc-mode-btn.zc-inv-btn.ui-i', { title: 'Инвентарь: оружие в ячейки (E)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.toggle(); } },
-      h('span.zc-mode-ico', img(glyph('sword'))), h('span.zc-mode-lbl', 'Инвентарь'));
+      h('span.zc-mode-ico', img(glyph('sword'))), h('span.zc-mode-lbl', 'Инвентарь'), h('span.zc-key-badge', 'E'));
 
     // --- resources
     this.chips = {};

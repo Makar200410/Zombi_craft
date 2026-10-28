@@ -1067,6 +1067,14 @@
 .zc-siege-bar { position: absolute; left: 50%; bottom: calc(var(--sb, 0px) + 104px); transform: translateX(-50%); display: none; padding: 5px 14px; border-radius: 8px; background: rgba(20, 10, 24, .78); color: #e8d8ff; font-size: 13px; font-weight: 700; border: 1px solid rgba(170, 110, 255, .5); white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; cursor: pointer; z-index: 5; }
 .zc-siege-bar.on { display: block; }
 .o-compact .zc-siege-bar { zoom: var(--uiz); }
+.zc-key-badge { margin-left: 6px; min-width: 16px; padding: 1px 4px; border-radius: 4px; background: rgba(0, 0, 0, .45); border: 1px solid rgba(255, 220, 140, .55); color: #ffe6a0; font-size: 11px; font-weight: 800; line-height: 14px; text-align: center; }
+.zc-touch .zc-key-badge, .zc-root.o-compact .zc-key-badge { display: none; }
+/* inventory ⇄ crafting: a big switch at the top of both windows */
+.zc-swap { display: flex; gap: 8px; padding: 6px 14px 2px; }
+.zc-swap button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 15px; font-weight: 800; color: #f0e6d0; background: rgba(0, 0, 0, .35); border: 2px solid rgba(255, 210, 120, .25); cursor: pointer; }
+.zc-swap button.sel { background: linear-gradient(#d8a848, #a8782a); color: #2a1a08; border-color: #ffe08a; }
+.zc-swap button img { width: 22px; height: 22px; image-rendering: pixelated; }
+.zc-swap .zc-key-badge { margin-left: 2px; }
 .zc-ach-off { opacity: .55; }
 .zc-rv-empty { color: var(--muted); padding: 20px; }
 /* =====================================================================  phones: compact interface (UI.layout sets --uiz) */

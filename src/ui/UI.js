@@ -80,6 +80,12 @@ export class UI {
     bus.on('mode:changed', ({ mode }) => this.onMode(mode));
     bus.on('ui:pause-request', () => this.requestPause());
     bus.on('game:begin', (p) => this.onBegin(p));
+    // once: where the windows are (keyboard players)
+    bus.on('game:begin', () => {
+      if (g.isTouch) return;
+      try { if (localStorage.getItem('zc_keys_hint2')) return; localStorage.setItem('zc_keys_hint2', '1'); } catch (e) { return; }
+      setTimeout(() => this.toast('Клавиши: E — инвентарь (сверху вкладка «Крафт»), I — крафт, N — соседи, J — журнал, L — летопись, K — мастерская', 'info'), 6000);
+    });
     bus.on('game:paused', ({ paused }) => toggle(this.root, 'st-paused', paused));
     bus.on('wave:start', ({ wave, count } = {}) => {
       this._waveBannerAt = performance.now();
