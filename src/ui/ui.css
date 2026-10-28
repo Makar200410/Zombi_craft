@@ -1034,3 +1034,7 @@
 .zc-world-btns .icon { min-width: 0; padding: 6px 8px; }
 .zc-world-btns .danger img { filter: hue-rotate(-30deg) saturate(1.5); }
 .zc-world .zc-input { font-size: 15px; padding: 4px 8px; }
+
+/* network game box in the pause menu */
+.zc-net-box { padding: 10px 12px; border-radius: 10px; background: rgba(60, 120, 60, 0.18); border: 1px solid rgba(120, 220, 120, 0.35); display: flex; flex-direction: column; gap: 6px; }
+.zc-net-box b { color: #c8ffb0; }

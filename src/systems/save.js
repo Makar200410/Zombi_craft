@@ -212,6 +212,7 @@ export class SaveSystem {
   save({ toast = true } = {}) {
     const g = this.game;
     if (!g.running || !g.world) return false;
+    if (g.net?.isClient) return false;          // a friend's world is saved on their computer
     let obj, data;
     try { obj = this.serialize(); data = JSON.stringify(obj); } catch (e) { console.error('save serialize failed', e); return false; }
     if (!this.worldId) this.createWorld('', { difficulty: g.state.difficulty });

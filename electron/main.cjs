@@ -1,6 +1,16 @@
 // Desktop (Windows) wrapper: opens the built game (dist/) in a native window.
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
+const { startLan } = require('./lan.cjs');
+
+// LAN game server (started from the game's menu)
+let lan = null;
+ipcMain.handle('lan:start', async (e, port) => {
+  if (lan) return { port: lan.port, ips: require('./lan.cjs').lanIps() };
+  lan = await startLan({ port: port || 27015, root: path.join(__dirname, '..', 'dist') });
+  return { port: lan.port, ips: lan.ips };
+});
+ipcMain.handle('lan:stop', () => { lan?.close(); lan = null; return true; });
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -9,7 +19,7 @@ function createWindow() {
     title: 'Zombi Craft',
     autoHideMenuBar: true,
     icon: path.join(__dirname, 'icon.png'),
-    webPreferences: { contextIsolation: true, backgroundThrottling: false },
+    webPreferences: { contextIsolation: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.cjs') },
   });
   Menu.setApplicationMenu(null);
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));

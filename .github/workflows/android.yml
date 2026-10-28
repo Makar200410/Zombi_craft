@@ -35,6 +35,8 @@ jobs:
           npx cap sync android
           # fullscreen immersive game: keep screen on, hide system bars theme
           sed -i 's/android:name=".MainActivity"/android:name=".MainActivity"\n            android:screenOrientation="fullUser"/' android/app/src/main/AndroidManifest.xml
+          # network games on the local network use plain ws:// / http:// to the host's computer
+          grep -q usesCleartextTraffic android/app/src/main/AndroidManifest.xml || sed -i 's/<application /<application android:usesCleartextTraffic="true" /' android/app/src/main/AndroidManifest.xml
       - name: Build debug APK
         working-directory: android
         run: |

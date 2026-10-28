@@ -33,6 +33,8 @@
     "files": [
       "dist/**",
       "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/lan.cjs",
       "electron/icon.png",
       "package.json"
     ],

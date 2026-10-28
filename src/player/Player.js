@@ -212,6 +212,7 @@ export class Player extends Entity {
   /** Walkable spot next to the town hall (or the map center). */
   findSpawn() {
     const g = this.game, w = g.world, v = g.village;
+    if (v?.netSpawn) return v.netSpawn.clone();          // a joined network game: where the host put us
     const th = v?.townHall;
     let cx = w.size / 2, cz = w.size / 2;
     if (th) {

@@ -159,6 +159,7 @@ export class UI {
   }
   quitToMenu(skipSave) {
     const g = this.game;
+    if (g.net?.active) g.net.stop();
     if (!skipSave && g.running && !g.gameOver && !g.player?.dead) g.save?.save?.({ toast: false });
     g.running = false;
     g.setPaused(false);

@@ -269,6 +269,8 @@ export class World {
     if (EMIT[prev] !== EMIT[id] || LIGHT_BLOCKING[prev] !== LIGHT_BLOCKING[id]) this.relight(x, y, z);
     this.markDirty(x, y, z);
     if (!opts.silent && this.game) this.game.bus.emit('block:changed', { x, y, z, id, prev });
+    // on a joined network game our edits are made real by the host
+    if (this.game?.net?.isClient && !opts.fromNet) this.game.net.sendSet(x, y, z, id);
     return true;
   }
 

@@ -319,6 +319,15 @@ export class Zombie extends Entity {
   /** Armour and elemental immunities. */
   damage(amount, source, opts = {}) {
     const T = this.T;
+    if (this.netRemote) {
+      // a joined player's blow: the host decides; show the hit here right away
+      if (this.dead || amount <= 0) return false;
+      this.game.net?.sendHit(this, amount, opts.kind || 'phys');
+      this.model.flash(opts.kind === 'frost' ? 0x66ccff : 0xff3030);
+      this.game.bus.emit('damage:number', { pos: this.eye.clone(), amount: Math.round(amount), kind: opts.kind || 'phys', target: this });
+      this.game.audio?.play('zombie_hurt', { pos: this.eye, pitch: voice(T.groanPitch) });
+      return false;
+    }
     this._lastHitAmt = amount;
     const kind = opts.kind || 'phys';
     if (T.immune && kind === T.immune) {
@@ -334,7 +343,36 @@ export class Zombie extends Entity {
     return super.damage(amount, source, opts);
   }
 
+  /** On a joined network game: a copy of the host's undead, moved by the network. */
+  _netUpdate(dt) {
+    if (this.dead) { this._updateDead(dt); return; }
+    const p = this.position, t = this.netPos;
+    if (t) {
+      const ox = p.x, oz = p.z, k = Math.min(1, dt * 10);
+      if (p.distanceTo(t) > 6) p.copy(t); else p.lerp(t, k);
+      let d = (this.netYaw ?? this.yaw) - this.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      this.yaw += d * k;
+      this._netSpeed = (this._netSpeed || 0) * 0.8 + Math.hypot(p.x - ox, p.z - oz) / Math.max(dt, 1e-3) * 0.2;
+    }
+    const cam = this.game.camera.position;
+    this.camD2 = (cam.x - p.x) ** 2 + (cam.z - p.z) ** 2;
+    this.model.update(dt, this.flyer ? 0 : this._netSpeed || 0);
+    this._postAnim(dt);
+    this._flap(dt);
+    if (this.T.hover && !this.flyer) { this.hoverPhase += dt * 2; this.visual.position.y = this.T.hover + Math.sin(this.hoverPhase) * 0.12; }
+    this.syncObject(dt);
+  }
+  /** Network copy killed on the host: fall and fade like the real one. */
+  netDie() {
+    if (this.dead) return;
+    this.dead = true; this.flying = false;
+    this.removeAt = this.game.time + 2.4;
+    this.model.play('die');
+    this.game.audio?.play('zombie_die', { pos: this.eye, pitch: voice(this.T.groanPitch) });
+  }
+
   update(dt) {
+    if (this.netRemote) { this._netUpdate(dt); return; }
     this._extras(dt);
     const game = this.game;
     if (this.dead) { this._updateDead(dt); return; }

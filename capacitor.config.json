@@ -3,6 +3,10 @@
   "appName": "Zombi Craft",
   "webDir": "dist",
   "android": {
-    "backgroundColor": "#05070d"
+    "backgroundColor": "#05070d",
+    "allowMixedContent": true
+  },
+  "server": {
+    "cleartext": true
   }
 }

@@ -74,6 +74,7 @@ export class Menus {
     if (p === 'home') this._home(c);
     else if (p === 'new') this._newGame(c);
     else if (p === 'worlds') this._worlds(c);
+    else if (p === 'net') this._net(c);
     else if (p === 'settings') this._settings(c, () => this.page('home'));
     else if (p === 'help') this._help(c, () => this.page('home'));
   }
@@ -86,6 +87,7 @@ export class Menus {
     if (n) list.append(this.btn('Мои миры', () => this.page('worlds'), 'big', glyph('home'), `${n} ${n === 1 ? 'мир' : n < 5 ? 'мира' : 'миров'}`));
     list.append(
       this.btn('Новый мир', () => this.page('new'), last ? 'big' : 'primary big', glyph('sword')),
+      this.btn('Сетевая игра', () => this.page('net'), '', glyph('flag'), 'по локальной сети'),
       this.btn('Настройки', () => this.page('settings'), '', glyph('gear')),
       this.btn('Как играть', () => this.page('help'), '', glyph('book')),
     );
@@ -124,6 +126,34 @@ export class Menus {
     c.append(list, h('div.zc-row.end',
       this.btn('Назад', () => this.page('home'), 'ghost'),
       this.btn('Новый мир', () => this.page('new'), 'primary', glyph('sword'))));
+  }
+  /** Network game over the local network: join a friend (anywhere), or how to host (Windows). */
+  _net(c) {
+    c.append(h('h2.zc-h', 'Сетевая игра'));
+    let addr = '', name = '';
+    try { addr = localStorage.getItem('zc_net_addr') || ''; name = localStorage.getItem('zc_net_name') || ''; } catch (e) { /* ignore */ }
+    if (!addr && location.protocol === 'http:' && location.port === '27015') addr = location.hostname + ':27015';   // opened from the host's server
+    const addrIn = h('input.zc-input', { type: 'text', placeholder: '192.168.1.5', value: addr, maxlength: 40 });
+    const nameIn = h('input.zc-input', { type: 'text', placeholder: 'Игрок', value: name, maxlength: 20 });
+    for (const el of [addrIn, nameIn]) el.addEventListener('keydown', (e) => e.stopPropagation());
+    const err = h('div.zc-note.warn');
+    const go = async () => {
+      const a = addrIn.value.trim(), n = nameIn.value.trim() || 'Игрок';
+      try { localStorage.setItem('zc_net_addr', a); localStorage.setItem('zc_net_name', n); } catch (e) { /* ignore */ }
+      const prog = this.showLoading('Подключение…');
+      const r = await this.game.net.join(a, n, prog);
+      if (r.ok) { this.hide(); this.ui._setState?.('play'); }
+      else { this.showMain('net'); setTimeout(() => { const e2 = this.card?.querySelector('.zc-note.warn'); if (e2) e2.textContent = r.reason; }, 0); }
+    };
+    c.append(
+      h('p.zc-note', 'Играйте вместе в одной Wi-Fi сети: один открывает свой мир, остальные подключаются к нему как герои — исследуют, строят и сражаются в том же мире.'),
+      h('label.zc-field', h('span.zc-field-lbl', 'Ваше имя'), nameIn),
+      h('label.zc-field', h('span.zc-field-lbl', 'Адрес хозяина (IP компьютера)'), addrIn),
+      err,
+      h('div.zc-row.end', this.btn('Назад', () => this.page('home'), 'ghost'), this.btn('Подключиться', go, 'primary', glyph('play'))),
+      h('p.zc-note', window.zcDesktop
+        ? 'Открыть свой мир: загрузите мир → пауза → «Открыть мир для сети». Друзьям покажется адрес, с телефона можно играть даже без установки — открыв этот адрес в браузере.'
+        : 'Открыть свой мир для друзей можно в версии игры для Windows (пауза → «Открыть мир для сети»).'));
   }
   _newGame(c) {
     c.append(h('h2.zc-h', 'Новый мир'));
@@ -248,12 +278,33 @@ export class Menus {
         h('span', img(glyph('flag')), 'Волн ', h('b', st.stats.wavesSurvived || 0))),
       h('div.zc-mm-buttons',
         this.btn('Продолжить', () => this.ui.resume(), 'primary big', glyph('play')),
-        this.btn('Сохранить игру', () => { if (this.game.save?.save?.({ toast: true })) this._pausePage('home'); }, '', glyph('book')),
+        this.game.net?.isClient ? null : this.btn('Сохранить игру', () => { if (this.game.save?.save?.({ toast: true })) this._pausePage('home'); }, '', glyph('book')),
+        this._netButton(),
         this.btn('Настройки', () => this._pausePage('settings'), '', glyph('gear')),
         this.btn('Как играть', () => this._pausePage('help'), '', glyph('flag')),
         this.btn('Пройти обучение заново', () => { this.ui.resume(); this.ui.tutorial?.restart(); }, 'ghost', glyph('book')),
         this.btn('Главное меню', () => this.ui.confirm('Выйти в меню?', 'Прогресс будет сохранён.', 'Выйти', () => this.ui.quitToMenu()), 'ghost', glyph('home')),
       ));
+  }
+
+  /** Pause menu: open the world to the network / show who and where to connect / close it. */
+  _netButton() {
+    const net = this.game.net;
+    if (!net || net.isClient) return null;
+    if (net.isHost) {
+      const n = net.players?.size || 0;
+      const box = h('div.zc-net-box',
+        h('div', h('b', 'Мир открыт для сети'), ` · игроков: ${n}`),
+        h('div.zc-note', 'Друзья подключаются: «Сетевая игра» → адрес ', ...(net.addresses?.length ? net.addresses.map(a => h('b', ' ' + a + ' ')) : [h('b', 'IP этого компьютера')])),
+        h('div.zc-note', 'С телефона без установки — в браузере: ', ...(net.addresses || []).map(a => h('b', ' http://' + a + ' '))),
+        this.btn('Закрыть сеть', () => { net.stop(); this._pausePage('home'); }, 'ghost small', glyph('close')));
+      return box;
+    }
+    return this.btn('Открыть мир для сети', async () => {
+      const r = await net.host();
+      if (!r.ok) this.ui.toast(r.reason, 'bad');
+      this._pausePage('home');
+    }, '', glyph('flag'), 'игра с друзьями по Wi-Fi');
   }
 
   // =============================================================== death

@@ -119,6 +119,8 @@ export class Crafting {
   craft(recipeId, n = 1) {
     const r = RECIPES.find(x => x.id === recipeId); if (!r) return false;
     const g = this.game;
+    // a joined network game: the host's village pays and crafts
+    if (g.net?.isClient) { for (let i = 0; i < n; i++) g.net.send({ t: 'craft', id: recipeId }); return true; }
     let done = 0;
     for (let i = 0; i < n; i++) {
       const c = this.check(r);
