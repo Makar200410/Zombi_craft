@@ -559,6 +559,10 @@ export class Player extends Entity {
           if (pressS || this._placeT <= 0) { this._place(ghost); this._placeT = pressS ? 0.3 : 0.2; }
         } else if (pressS) {
           if (this.target.entity && this.target.entity.faction === 'village') g.bus.emit('select:entity', { entity: this.target.entity });
+          else if (this.target.block && BLOCKS[this.target.block.id]?.kinetic && g.kinetics) {
+            const tb = this.target.block;
+            g.bus.emit('toast', { text: g.kinetics.describe(tb.x, tb.y, tb.z), kind: 'info' });
+          }
           else if (this.target.block) this._hint('Выберите «Молот строителя», чтобы ставить блоки. Верстак, печь, железный блок и магический стол открывают крафт');
         }
       } else this._placeT = 0;

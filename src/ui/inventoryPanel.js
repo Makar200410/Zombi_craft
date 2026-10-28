@@ -3,6 +3,7 @@
 // (an item already on the hotbar swaps places with it). Armour goes to the four armour slots instead.
 import { ITEMS, ARMOR_SLOTS, ARMOR_SLOT_NAMES, RESOURCE_LABELS } from '../core/items.js';
 import { BLOCKS } from '../core/blocks.js';
+import { MECH_HELP } from '../systems/kinetics.js';
 import { TECHS } from '../systems/research.js';
 import { AGES } from '../systems/ages.js';
 import { h, img, glyph, glyphImg, itemIcon, clear, toggle, dragScroll } from './dom.js';
@@ -19,19 +20,9 @@ const TECH_RESEARCH = new Set(['gunpowder', 'steam_power', 'machine_guns', 'rock
 const isTech = (it) => it.kind === 'gun' || (it.kind !== 'armor' && TECH_RESEARCH.has(it.research)) || (it.kind === 'block' && !!(BLOCKS[it.blockId]?.kinetic || BLOCKS[it.blockId]?.minAge));
 const KIND_NAMES = { melee: 'Ближний бой', ranged: 'Стрелковое', gun: 'Огнестрельное', spell: 'Магия', tool: 'Инструменты', build: 'Строительство' };
 const KINETIC_NAMES = { source: 'Механизмы: источники', shaft: 'Механизмы: передача', machine: 'Механизмы: машины', undefined: 'Механизмы: корпуса' };
-// mechanisms are placeable blocks for now; the moving parts will come with a kinetics system
-export const MECH_DESC = {
-  shaft: 'Вал механизма.',
-  cogwheel: 'Шестерня механизма.',
-  water_wheel: 'Водяное колесо.',
-  windmill: 'Ветряк.',
-  steam_engine: 'Паровой двигатель.',
-  mech_drill: 'Механический бур.',
-  mech_saw: 'Механическая пила.',
-  crusher: 'Дробилка руды.',
-  mech_fan: 'Вентилятор.',
-  casing: 'Корпус для механизмов.',
-};
+// what each mechanism does (src/systems/kinetics.js); right-clicking a placed one shows its network
+const MECH_DESC = { casing: 'Корпус для механизмов (декор).' };
+for (const [id, text] of Object.entries(MECH_HELP)) MECH_DESC[BLOCKS[id].name] = text;
 
 export class InventoryPanel {
   constructor(ui) {

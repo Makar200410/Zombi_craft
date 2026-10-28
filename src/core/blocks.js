@@ -1,6 +1,6 @@
 // Block registry. IDs are stable (saved games reference them) — only append.
 // tiles: tile names in the texture atlas (see src/art/textures.js, which must draw every name in TILE_NAMES).
-// shape: 'cube' | 'cross' (X-shaped sprite plant) | 'liquid'
+// shape: 'cube' | 'cross' (X-shaped sprite plant) | 'liquid' | 'model' (not meshed: drawn by its own system, e.g. mechanisms)
 // render: 'opaque' | 'cutout' (alpha-tested, e.g. leaves/plants) | 'transparent' (blended, e.g. water/glass)
 // hardness: hits (seconds of mining with bare hand ≈ hardness * 0.5)
 // drop: resources given to the village stockpile when broken
@@ -148,10 +148,10 @@ def(103, 'iron_bars', { label: 'Решётка', render: 'cutout', hardness: 5, 
 // mechanisms (Create-style): power sources, transmission and machines. For now they are placeable blocks with their
 // own look; `kinetic` = 'source' | 'shaft' | 'machine' marks the role a kinetics system will give them, minAge = the
 // age that unlocks them.
-def(104, 'shaft', { label: 'Вал', tiles: 'shaft_block', render: 'cutout', hardness: 1.5, cost: { iron: 1 }, drop: { iron: 1 }, tool: 'pick', kinetic: 'shaft', minAge: 2 });
-def(105, 'cogwheel', { label: 'Шестерня', tiles: 'cogwheel_block', render: 'cutout', hardness: 1.5, cost: { wood: 2, iron: 1 }, drop: { wood: 1 }, tool: 'axe', kinetic: 'shaft', minAge: 2 });
-def(106, 'water_wheel', { label: 'Водяное колесо', tiles: { top: 'casing_top', side: 'water_wheel_side' }, hardness: 2, cost: { wood: 10, iron: 2 }, drop: { wood: 4 }, tool: 'axe', kinetic: 'source', minAge: 2 });
-def(107, 'windmill', { label: 'Ветряк', tiles: { top: 'casing_top', side: 'windmill_side' }, hardness: 2, cost: { wood: 14, iron: 2 }, drop: { wood: 5 }, tool: 'axe', kinetic: 'source', minAge: 2 });
+def(104, 'shaft', { shape: 'model', label: 'Вал', tiles: 'shaft_block', render: 'cutout', hardness: 1.5, cost: { iron: 1 }, drop: { iron: 1 }, tool: 'pick', kinetic: 'shaft', minAge: 2 });
+def(105, 'cogwheel', { shape: 'model', label: 'Шестерня', tiles: 'cogwheel_block', render: 'cutout', hardness: 1.5, cost: { wood: 2, iron: 1 }, drop: { wood: 1 }, tool: 'axe', kinetic: 'shaft', minAge: 2 });
+def(106, 'water_wheel', { shape: 'model', label: 'Водяное колесо', tiles: { top: 'casing_top', side: 'water_wheel_side' }, hardness: 2, cost: { wood: 10, iron: 2 }, drop: { wood: 4 }, tool: 'axe', kinetic: 'source', minAge: 2 });
+def(107, 'windmill', { shape: 'model', label: 'Ветряк', tiles: { top: 'casing_top', side: 'windmill_side' }, hardness: 2, cost: { wood: 14, iron: 2 }, drop: { wood: 5 }, tool: 'axe', kinetic: 'source', minAge: 2 });
 def(108, 'steam_engine', { label: 'Паровой двигатель', tiles: { top: 'casing_top', side: 'steam_engine_side' }, hardness: 5, light: 6, cost: { iron: 8, stone: 6, steel: 2 }, drop: { iron: 3 }, tool: 'pick', kinetic: 'source', minAge: 5 });
 def(109, 'mech_drill', { label: 'Механический бур', tiles: { top: 'casing_top', side: 'drill_side' }, hardness: 3, cost: { iron: 4, stone: 2 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
 def(110, 'mech_saw', { label: 'Механическая пила', tiles: { top: 'casing_top', side: 'saw_side' }, hardness: 3, cost: { iron: 4, wood: 4 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 2 });

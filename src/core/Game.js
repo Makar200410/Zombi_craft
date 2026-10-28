@@ -5,6 +5,7 @@ import { Ambience } from '../systems/ambience.js';
 import { Weather } from '../systems/weather.js';
 import { Underground } from '../systems/underground.js';
 import { Fluids } from '../systems/fluids.js';
+import { Kinetics } from '../systems/kinetics.js';
 import { Net } from '../net/Net.js';
 import { EventBus } from './events.js';
 import { GameState } from './state.js';
@@ -79,12 +80,13 @@ export class Game {
     this.ambience = new Ambience(this);
     this.underground = new Underground(this);
     this.fluids = new Fluids(this);
+    this.kinetics = new Kinetics(this);
     this.net = new Net(this);
     this.weather = new Weather(this);
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.fluids, this.save, this.net];
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.fluids, this.kinetics, this.save, this.net];
     for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.save, this.net, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);
