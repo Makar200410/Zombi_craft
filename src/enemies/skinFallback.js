@@ -9,6 +9,17 @@ const art = artMods['../art/skins.js'] || null;
 const cache = new Map();
 const VARIANTS = 4;
 
+/** A villager skin for the people of rival villages (falls back to the zombie look if the art is missing). */
+export function getHumanSkin(job, seed) {
+  const v = Math.abs(seed | 0) % 6, key = 'human:' + job + ':' + v;
+  let c = cache.get(key);
+  if (c) return c;
+  try { if (art && typeof art.villagerSkin === 'function') c = art.villagerSkin(job, v * 7919 + 31); } catch (e) { c = null; }
+  if (!c) c = drawFallback('walker', v);
+  cache.set(key, c);
+  return c;
+}
+
 export function getZombieSkin(type, seed) {
   const v = Math.abs(seed | 0) % VARIANTS;
   const key = type + ':' + v;

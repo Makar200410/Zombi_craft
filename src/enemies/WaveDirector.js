@@ -251,9 +251,9 @@ export class WaveDirector {
   _standPoint(x, z) {
     const f = this.flow;
     if (!f._ensureWorld()) return null;
-    const S = f.size, ix = Math.floor(x), iz = Math.floor(z);
-    if (ix < 0 || iz < 0 || ix >= S || iz >= S) return null;
-    const i = iz * S + ix;
+    const S = f.size, ix = Math.floor(x), iz = Math.floor(z), lx = ix - f.ox, lz = iz - f.oz;   // the field is a window
+    if (lx < 0 || lz < 0 || lx >= S || lz >= S) return null;
+    const i = lz * S + lx;
     if (f.obst[i] > 0 || f.water[i]) return null;
     const w = this.game.world, y = f.stand[i];
     if (w.isSolid(ix, y, iz) || w.isSolid(ix, y + 1, iz)) return null;

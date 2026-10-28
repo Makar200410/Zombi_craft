@@ -54,6 +54,8 @@ export class Hud {
 
     this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.inventory.close(); ui.craft.toggle(); } },
       h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'));
+    this.rivalsBtn = h('button.zc-mode-btn.zc-rivals-btn.ui-i', { title: 'Соседние деревни: войны, мир, захват (N)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.close(); ui.rivals.toggle(); } },
+      h('span.zc-mode-ico', img(glyph('castle'))), h('span.zc-mode-lbl', 'Соседи'));
     this.invBtn = h('button.zc-mode-btn.zc-inv-btn.ui-i', { title: 'Инвентарь: оружие в ячейки (E)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.toggle(); } },
       h('span.zc-mode-ico', img(glyph('sword'))), h('span.zc-mode-lbl', 'Инвентарь'));
 
@@ -113,7 +115,7 @@ export class Hud {
     this.bottom = h('div.zc-bottom', this.itemName, h('div.zc-palette-wrap', this.paletteLbl, h('div.zc-palette-row', arrow(-1), this.palette, arrow(1))), this.hotbar);
 
     this.fps = h('div.zc-fps');
-    root.append(this.topLeft, this.modeBtn, this.craftBtn, this.invBtn, this.resbar, this.topRight, this.crosshair, this.bottom, this.fps);
+    root.append(this.topLeft, this.modeBtn, this.craftBtn, this.invBtn, this.rivalsBtn, this.resbar, this.topRight, this.crosshair, this.bottom, this.fps);
 
     this._prevRes = { ...this.game.state.resources };
     this._nameT = 0; this._lastSel = -1; this._lastBuild = -1;

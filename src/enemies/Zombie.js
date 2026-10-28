@@ -5,7 +5,7 @@ import { CreatureModel } from './CreatureModel.js';
 import { B, BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
 import { CONSTRUCTION } from './flowfield.js';
-import { getZombieSkin } from './skinFallback.js';
+import { getZombieSkin, getHumanSkin } from './skinFallback.js';
 import { groundBurst, coinBurst, fallbackExplode } from './fx.js';
 
 const SOLID = new Uint8Array(256);
@@ -105,18 +105,23 @@ export class Zombie extends Entity {
 
     // --- model
     this.cave = !!opts.cave || !!T.cave;
-    const helmet = this.sunproof && !this.cave;
+    this.human = !!T.human;                  // people of a rival village (see src/systems/rivals.js)
+    this.rivalId = opts.rivalId ?? null;
+    this.peaceful = !!opts.peaceful;
+    if (opts.name) this.name = opts.name;
+    const helmet = this.sunproof && !this.cave && !this.human;
     const hat = helmet ? 'helmet' : T.hat || null;
-    const hatColor = helmet ? 0x6d6a60 : T.hatColor;
+    const hatColor = helmet ? 0x6d6a60 : opts.hatColor ?? T.hatColor;
     this.model = T.model ? new CreatureModel({ ...T.model, width: T.width / 1.4 })
-      : new HumanoidModel({ skin: getZombieSkin(this.type, seed), height: T.height, zombie: true, width: T.width, hat, hatColor });
+      : new HumanoidModel({ skin: this.human ? getHumanSkin(T.job || 'idle', seed) : getZombieSkin(this.type, seed), height: T.height, zombie: !this.human, width: T.width, hat, hatColor });
+    if (this.human && T.weapon) this.model.setHeld?.(T.weapon);
     // emissive uses the skin texture, so torch glow / night corpse-light keep the pixel detail
     this.model.material.emissiveMap = this.model.material.map;
     this.model.material.needsUpdate = true;
     this.visual = new THREE.Group();          // offset group (emerge / hover / dissolve)
     this.visual.add(this.model.group);
     this.object3d.add(this.visual);
-    this._addEyes();
+    if (this.human) this.eyes = []; else this._addEyes();
     if (this.base === 'necromancer' && !T.model) this._addNecroProps();
     if (T.hunch && !T.model) { this.visual.rotation.x = T.hunch * 0.85; }
     if (T.glow) { this.model.material.emissive.setHex(T.glow); this.model.material.emissiveIntensity = 0.55; }
@@ -325,7 +330,7 @@ export class Zombie extends Entity {
       this.game.net?.sendHit(this, amount, opts.kind || 'phys');
       this.model.flash(opts.kind === 'frost' ? 0x66ccff : 0xff3030);
       this.game.bus.emit('damage:number', { pos: this.eye.clone(), amount: Math.round(amount), kind: opts.kind || 'phys', target: this });
-      this.game.audio?.play('zombie_hurt', { pos: this.eye, pitch: voice(T.groanPitch) });
+      this.game.audio?.play(this.human ? 'villager_hurt' : 'zombie_hurt', { pos: this.eye, pitch: voice(T.groanPitch) });
       return false;
     }
     this._lastHitAmt = amount;
@@ -340,6 +345,7 @@ export class Zombie extends Entity {
       amount *= 1 - T.armor;
       this.game.audio?.play('pick_hit', { pos: this.eye, volume: 0.5, pitch: 1.3 + Math.random() * 0.2 });
     }
+    if (this.rivalId !== null) this.game.rivals?.onHurt(this, source);
     return super.damage(amount, source, opts);
   }
 
@@ -368,7 +374,7 @@ export class Zombie extends Entity {
     this.dead = true; this.flying = false;
     this.removeAt = this.game.time + 2.4;
     this.model.play('die');
-    this.game.audio?.play('zombie_die', { pos: this.eye, pitch: voice(this.T.groanPitch) });
+    this.game.audio?.play(this.human ? 'villager_hurt' : 'zombie_die', { pos: this.eye, pitch: voice(this.T.groanPitch) });
   }
 
   update(dt) {
@@ -428,6 +434,7 @@ export class Zombie extends Entity {
     }
     // ambient groans (spatial, globally rate-limited)
     this.groanT -= dt;
+    if (this.groanT <= 0 && this.human) this.groanT = 1e9;
     if (this.groanT <= 0) {
       this.groanT = 5 + Math.random() * 12;
       if (d2 < 34 * 34 && game.time - lastGroan > 0.7) {
@@ -496,10 +503,16 @@ export class Zombie extends Entity {
     if (this.bTarget && this.bTarget.state === 'destroyed') this.bTarget = null;
 
     this.targetT -= this.far ? 0.6 : 0.2;
+    if (this.peaceful) { this.target = null; return; }
     if (this.targetT <= 0) {
       this.targetT = 1 + Math.random() * 0.5;
       const range = T.aggro * (game.state.isNight ? 1 : 0.8);
-      const cand = game.entities.nearest(pos, (e) => e.faction === 'village' && e.kind !== 'projectile' && !e.hidden && !e.invisible, range);
+      // a rival village's soldiers fight whoever their village is at war with: the player's people and other villages
+      const rv = this.rivalId !== null ? game.rivals : null;
+      const foe = rv
+        ? (e) => !e.dead && e.kind !== 'projectile' && (e.faction === 'village' ? rv.atWarWithPlayer(this.rivalId) && !e.hidden && !e.invisible : e.rivalId != null && e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId))
+        : (e) => e.faction === 'village' && e.kind !== 'projectile' && !e.hidden && !e.invisible;
+      const cand = game.entities.nearest(pos, foe, range);
       if (cand) {
         const d = cand.position.distanceTo(pos);
         let ok = d < 5;
@@ -1061,7 +1074,7 @@ export class Zombie extends Entity {
     const combat = game.combat;
     let done = false;
     if (combat && typeof combat.fireProjectile === 'function') {
-      try { done = !!combat.fireProjectile(proj, this, from, aim, { damage: dmg, faction: 'undead' }); } catch (e) { done = false; }
+      try { done = !!combat.fireProjectile(proj, this, from, aim, { damage: dmg, faction: this.rivalId !== null ? 'rival' : 'undead' }); } catch (e) { done = false; }
     }
     if (!done) game.waves?.projectiles?.fire('acid', this, from, aim, { damage: dmg });
     if (proj === 'arrow') { game.audio?.play('bow_shoot', { pos: from, volume: 0.6, pitch: 0.85 }); this.model.play('shoot'); }
@@ -1137,7 +1150,7 @@ export class Zombie extends Entity {
       if (!this.model.action) this.model.play('hurt');
       if (game.time - (this._hurtSnd || 0) > 0.35 && game.time - lastHurtSnd > 0.08) {
         this._hurtSnd = lastHurtSnd = game.time;
-        game.audio?.play('zombie_hurt', { pos: this.eye, pitch: voice(this.T.groanPitch) * (0.94 + Math.random() * 0.12) });
+        game.audio?.play(this.human ? 'villager_hurt' : 'zombie_hurt', { pos: this.eye, pitch: voice(this.T.groanPitch) * (0.94 + Math.random() * 0.12) });
       }
       if (!this.far) game.particles?.emit({ pos: this.center, box: 0.2, count: 6, colors: [0x5a1a10, 0x3a6a20, 0x2a1008], speed: 2.5, life: 0.5, size: 0.12, gravity: 12 });
       // retaliate against whoever hurt us
@@ -1147,6 +1160,7 @@ export class Zombie extends Entity {
   }
 
   onDeath(source) {
+    if (this.rivalId !== null) this.game.rivals?.onDeath(this, source);
     if (this.flyer) { this.flying = false; if (this.wings) for (const wg of this.wings) wg.rotation.z = wg === this.wings[0] ? -0.9 : 0.9; }
     if (this.T.deathFire && source !== 'sun') {
       const game = this.game, pos = this.center.clone();
@@ -1162,7 +1176,7 @@ export class Zombie extends Entity {
     // blown apart by a huge hit (cannon, rocket, meteor, explosion): wet splatter as well
     if ((this._lastHitAmt || 0) >= this.maxHp * 0.6 && !sunDeath(source, this)) game.audio?.play('zombie_gib', { pos: this.eye, volume: 0.8 });
     const sun = source === 'sun' || (this._sunburn && !source);
-    game.audio?.play('zombie_die', { pos: this.eye, pitch: voice(this.T.groanPitch) });
+    game.audio?.play(this.human ? 'villager_hurt' : 'zombie_die', { pos: this.eye, pitch: voice(this.T.groanPitch) });
     game.bus.emit('zombie:killed', { zombie: this, by: source });
     if (!sun) {
       if (game.state.stats) game.state.stats.kills = (game.state.stats.kills || 0) + 1;

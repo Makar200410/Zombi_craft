@@ -171,7 +171,7 @@ export class Projectiles {
       if (len > 1e-6) {
         _dir.copy(step).divideScalar(len);
         const faction = p.faction;
-        const hitE = g.entities.raycast(p.prev, _dir, len + 0.05, e => e !== p.user && e.faction !== faction && e.kind !== 'projectile' && !e.dead);
+        const hitE = g.entities.raycast(p.prev, _dir, len + 0.05, e => e !== p.user && e.faction !== faction && e.kind !== 'projectile' && !e.dead && !(p.user?.rivalId != null && e.rivalId === p.user.rivalId));
         const hitB = w ? w.raycast(p.prev, _dir, len, { solidOnly: true, throughLeaves: true }) : null;   // arrows fly through foliage
         if (hitE && (!hitB || hitE.dist <= hitB.dist)) {
           p.pos.copy(p.prev).addScaledVector(_dir, hitE.dist);
@@ -269,7 +269,7 @@ export class Projectiles {
         // leave it stuck in the block, slightly buried
         p.obj.position.copy(hit.point).addScaledVector(_dir.copy(p.vel).normalize(), p.type === 'arrow' ? 0.22 : 0.12);
         this.stuck.push({ obj: p.obj, type: p.type, t: 8, bx: hit.x, by: hit.y, bz: hit.z });
-        if (p.user?.faction === 'undead') c._damageBuildingBlock(hit.x, hit.y, hit.z, p.damage * 0.3, p.user);
+        if (p.user?.faction === 'undead' && (p.user.rivalId == null || g.rivals?.atWarWithPlayer(p.user.rivalId))) c._damageBuildingBlock(hit.x, hit.y, hit.z, p.damage * 0.3, p.user);
         return;
       }
       case 'bullet': case 'laser':

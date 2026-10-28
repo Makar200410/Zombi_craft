@@ -94,6 +94,10 @@ export class Net {
     const g = this.game;
     g.bus.on('block:changed', ({ x, y, z, id }) => { if (this.isHost) this._edits.push(x, y, z, id); });
     g.bus.on('toast', (t) => { if (this.isHost && t.share) this._sendAll({ t: 'toast', text: t.text, kind: t.kind }); });
+    g.bus.on('rivals:changed', () => {
+      if (!this.isHost || this._rivT) return;
+      this._rivT = setTimeout(() => { this._rivT = null; if (this.isHost) this._sendAll({ t: 'rivals', s: g.rivals?.serialize?.() }); }, 1500);
+    });
   }
 
   // ================================================================ hosting
@@ -155,7 +159,7 @@ export class Net {
         this._sendTo(id, {
           t: 'welcome', you: id, seed: g.world.seed, size: g.world.size, format: g.world.format,
           changes: encodeChanges(g.world.changes || new Map()), state: g.state.serialize(), spawn: [sp.x, sp.y, sp.z],
-          owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0,
+          owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0, rivals: g.rivals?.serialize?.(),
         });
         g.bus.emit('toast', { text: `${name} присоединился(ась) к игре!`, kind: 'good' });
         g.audio?.play('level_up', { volume: 0.5 });
@@ -276,6 +280,7 @@ export class Net {
     g.state.deserialize(welcome.state || {});
     if (g.crafting) { g.crafting.owned = new Set([...(g.crafting.owned || []), ...(welcome.owned || [])]); g.crafting.queue = []; }
     if (g.waves) g.waves.currentWave = welcome.wave | 0;
+    if (welcome.rivals) g.rivals?.deserialize(welcome.rivals);        // the towns are drawn into the chunks as they appear
     g.village?.reset?.();
     if (g.village) g.village.netSpawn = new THREE.Vector3(...welcome.spawn);
     this.role = 'client';
@@ -334,6 +339,7 @@ export class Net {
         g.audio?.play('level_up', { volume: 0.7 });
         break;
       case 'toast': g.bus.emit('toast', { text: m.text, kind: m.kind }); break;
+      case 'rivals': g.rivals?.deserialize(m.s); g.rivals?._restampLoaded(); break;
     }
   }
   _applySnap(m) {

@@ -144,7 +144,7 @@ export class Underground {
     const g = this.game, p = g.player, w = g.world, W = g.waves;
     if (!W || !p || p.dead) return;
     const pos = p.position;
-    const mine = W.zombies.filter(z => z.cave && !z.dead);
+    const mine = W.zombies.filter(z => z.cave && !z.dead && z.rivalId == null);
     // the far ones go back to the dark
     for (const z of mine) {
       if (z.bossKey) continue;              // dungeon bosses guard their lair

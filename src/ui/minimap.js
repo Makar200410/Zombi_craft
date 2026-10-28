@@ -224,6 +224,25 @@ export class Minimap {
         this._edgeArrow(x, px, v, pulse, dpr);
       }
     }
+    // rival villages: a banner in their colour (red ring = at war with you, gold = your vassal); off-map ones at the edge
+    const R = g.rivals;
+    if (R?.active) {
+      const vcx = x0 + span / 2, vcz = z0 + span / 2;
+      for (const m of R.markers()) {
+        let ex = mx(m.x), ez = mz(m.z);
+        const inside = ex >= 0 && ez >= 0 && ex <= px && ez <= px;
+        if (!inside) {
+          const vx = m.x - vcx, vz = m.z - vcz, l = Math.hypot(vx, vz) || 1, c = px / 2, mg = 7 * dpr;
+          const t = Math.min((c - mg) / Math.max(1e-6, Math.abs(vx / l)), (c - mg) / Math.max(1e-6, Math.abs(vz / l)));
+          ex = c + vx / l * t; ez = c + vz / l * t;
+        }
+        const rr = (inside ? 4.5 : 3.2) * dpr;
+        x.fillStyle = m.color; x.beginPath(); x.arc(ex, ez, rr, 0, Math.PI * 2); x.fill();
+        x.lineWidth = 1.6 * dpr;
+        x.strokeStyle = m.status === 'war' ? 'rgba(255,60,40,' + (0.6 + 0.4 * Math.sin(g.time * 6)).toFixed(2) + ')' : m.status === 'vassal' ? '#ffd35a' : '#1a1208';
+        x.stroke();
+      }
+    }
     // camera focus (command) / player arrow
     const p = g.player;
     if (cmd) {

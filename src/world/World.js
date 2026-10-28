@@ -3,6 +3,7 @@ import { B, BLOCKS, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
 import { TerrainGen, SEA_LEVEL } from './terrain.js';
 import { TerrainGenV1 } from './terrainV1.js';
 import { TerrainGenV2 } from './terrainV2.js';
+import { TerrainGen4 } from './terrain4.js';
 import { findPath } from './pathfinding.js';
 
 export const CHUNK = 16;
@@ -56,6 +57,7 @@ export class World {
     this.dirty = new Set();                                // section keys 'cx,cz,sy' needing remesh
     this.generated = new Uint8Array(N);                    // chunks whose terrain exists
     this.loaded = new Set();                               // chunk keys (cz * chunksX + cx) of generated chunks
+    this.decorators = [];                                  // (cx, cz) => void, run on every newly generated chunk
     this.pending = new Map();                              // chunk key -> [[idx, id]] saved edits waiting for their chunk
     this.gen = null;
     this.damage = new Map();                               // idx -> {dmg, t}
@@ -129,7 +131,7 @@ export class World {
     }
     this.computeAllLight();
   }
-  _makeGen() { return this.format === 1 ? new TerrainGenV1(this) : this.format === 2 ? new TerrainGenV2(this) : new TerrainGen(this); }
+  _makeGen() { return this.format === 1 ? new TerrainGenV1(this) : this.format === 2 ? new TerrainGenV2(this) : this.format === 3 ? new TerrainGen(this) : new TerrainGen4(this); }
 
   isGenerated(x, z) {
     const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
@@ -148,6 +150,7 @@ export class World {
     if (!this.gen) this.gen = this._makeGen();
     this.colAt(cx * CHUNK, cz * CHUNK, true);
     this.gen.generateChunk(cx, cz);
+    for (const d of this.decorators) d(cx, cz);          // structures drawn from game state (rival villages)
     this.generated[k] = 1;
     this.loaded.add(k);
     const key = cx + ',' + cz;
