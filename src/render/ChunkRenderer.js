@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CHUNK, SECTION } from '../world/World.js';
 import { meshChunk } from '../world/mesher.js';
+import { TILE_NAMES } from '../core/blocks.js';
 import { createChunkMaterials } from './chunkMaterials.js';
 
 const KINDS = ['solid', 'plants', 'water', 'glass'];
@@ -23,7 +24,39 @@ export class ChunkRenderer {
     game.scene.add(this.group);
     game.bus?.on('chunk:generated', ({ cx, cz }) => this._minH.delete(cx + ',' + cz));
     game.bus?.on('chunk:unloaded', ({ cx, cz }) => this.dropChunk(cx, cz));
+    this._startMesher();
   }
+  /** Meshing runs in a background worker where there is one (the main thread only builds the GPU buffers). */
+  _startMesher() {
+    this.inflight = new Map();          // section key -> job sent
+    this.ready = [];                    // finished geometry waiting to be put on screen
+    if (typeof Worker === 'undefined') return;
+    try {
+      const w = this.world, uvs = {};
+      for (const n of TILE_NAMES) uvs[n] = this.game.atlas.uv(n);
+      this.mesher = new Worker(new URL('../world/meshWorker.js', import.meta.url), { type: 'module' });
+      this.mesher.onmessage = (e) => { if (e.data?.t === 'mesh') { this.inflight.delete(e.data.key); this.ready.push(e.data); } };
+      this.mesher.onerror = (e) => { console.warn('[chunks] mesh worker failed, meshing on the main thread', e?.message); this.mesher = null; this.inflight.clear(); };
+      this.mesher.postMessage({ t: 'init', size: w.size, height: w.height, chunksX: w.chunksX, uvs });
+    } catch (e) { this.mesher = null; }
+  }
+  /** Sends a section to the mesh worker: its chunk and the 8 around it, only the layers the mesher looks at. */
+  _post(key) {
+    const [cx, cz, sy] = parse(key);
+    const w = this.world, H = w.height, N = w.chunksX;
+    const ya = Math.max(0, sy * SECTION - 2), yb = Math.min(H - 1, (sy + 1) * SECTION + 1);
+    const blocks = [], light = [], transfer = [];
+    for (let i = 0; i < 9; i++) {
+      const x = cx + (i % 3) - 1, z = cz + ((i / 3) | 0) - 1, k = z * N + x;
+      const c = x >= 0 && z >= 0 && x < N && z < N ? w.cols[k] : null;
+      if (!c) { blocks.push(null); light.push(null); continue; }
+      const b = c.slice(256 * ya, 256 * (yb + 1)), l = w.lcols[k].slice(256 * ya, 256 * (yb + 1));
+      blocks.push(b); light.push(l); transfer.push(b.buffer, l.buffer);
+    }
+    this.inflight.set(key, true);
+    this.mesher.postMessage({ t: 'mesh', key, cx, cz, sy, ya, blocks, light, opts: this._opts() }, transfer);
+  }
+  _opts() { return { fancyLeaves: this.game.quality !== 'low', lowDetail: this.game.quality === 'low' }; }
   /** Lowest surface in a chunk: sections well below it are underground. */
   minSurface(cx, cz) {
     const k = cx + ',' + cz;
@@ -53,7 +86,12 @@ export class ChunkRenderer {
   }
   rebuild(key) {
     const [cx, cz, sy] = parse(key);
-    const data = meshChunk(this.world, cx, cz, sy, this.game.atlas, { fancyLeaves: this.game.quality !== 'low', lowDetail: this.game.quality === 'low' });
+    this._apply(key, meshChunk(this.world, cx, cz, sy, this.game.atlas, this._opts()));
+  }
+  /** Puts a section's geometry on screen (replacing what was there). */
+  _apply(key, data) {
+    const [cx, cz, sy] = parse(key);
+    if (!this.world.isGenerated(cx * CHUNK, cz * CHUNK)) return;        // unloaded while it was being meshed
     let slot = this.meshes.get(key);
     if (!KINDS.some(k => data[k])) { if (slot) this._drop(key, slot); return; }
     if (!slot) { slot = { y0: sy * SECTION, y1: (sy + 1) * SECTION }; this.meshes.set(key, slot); }
@@ -130,6 +168,11 @@ export class ChunkRenderer {
         w.unloadFar(p.x, p.z, fogFar + 140, c.x, c.z);
       }
     }
+    // finished meshes from the worker go on screen within a small budget
+    if (this.ready.length) {
+      const t0 = performance.now();
+      while (this.ready.length && performance.now() - t0 < 4) { const r = this.ready.shift(); this._apply(r.key, r.data); }
+    }
     const dirty = this.world.dirty;
     if (!dirty.size) return;
     const cam = this.game.camera.position;
@@ -148,6 +191,24 @@ export class ChunkRenderer {
     }
     if (!keys.length) return;
     keys.sort((a, b) => dd.get(a) - dd.get(b));
+    if (this.mesher) {
+      // right around the camera (the player digging and building) at once, so edits never lag a frame
+      const t0 = performance.now();
+      for (const k of keys) {
+        if (dd.get(k) > 20 * 20 || performance.now() - t0 > 4) break;
+        if (this.inflight.has(k)) continue;
+        this.rebuild(k); dirty.delete(k);
+      }
+      // the rest nearest first, a handful in flight (a section edited again meanwhile is simply sent again later)
+      for (const k of keys) {
+        if (!dirty.has(k)) continue;
+        if (this.inflight.size >= 6) break;
+        if (this.inflight.has(k)) continue;
+        dirty.delete(k);
+        this._post(k);
+      }
+      return;
+    }
     const t0 = performance.now();
     for (const k of keys) {
       this.rebuild(k);

@@ -151,6 +151,7 @@ export class World {
     this.colAt(cx * CHUNK, cz * CHUNK, true);
     this.gen.generateChunk(cx, cz);
     for (const d of this.decorators) d(cx, cz);          // structures drawn from game state (rival villages)
+    this.requested?.delete(k);
     this.generated[k] = 1;
     this.loaded.add(k);
     const key = cx + ',' + cz;
@@ -164,6 +165,75 @@ export class World {
     this.game?.bus?.emit('chunk:generated', { cx, cz });
     return true;
   }
+  // ---------- background generation (format 3+ worlds; see genWorker.js) ----------
+  /** Starts the generation worker (no-op where workers aren't available: everything stays synchronous). */
+  startWorker() {
+    if (this.worker || this.format < 3 || typeof Worker === 'undefined') return;
+    try {
+      this.worker = new Worker(new URL('./genWorker.js', import.meta.url), { type: 'module' });
+      this.worker.onmessage = (e) => { if (e.data?.t === 'chunk') this._install(e.data); };
+      this.worker.onerror = (e) => { console.warn('[world] generation worker failed, generating on the main thread', e?.message); this.worker = null; this.requested?.clear(); };
+      this.worker.postMessage({ t: 'init', size: this.size, seed: this.seed, height: this.height, sea: this.sea, format: this.format });
+      this.requested = new Set();
+    } catch (e) { this.worker = null; }
+  }
+  stopWorker() { try { this.worker?.terminate(); } catch (e) { /* ignore */ } this.worker = null; this.requested?.clear(); }
+  /** Asks the worker for a chunk (or makes it now without one). Returns false if it's already there / on its way. */
+  requestChunk(cx, cz) {
+    if (cx < 0 || cz < 0 || cx >= this.chunksX || cz >= this.chunksX) return false;
+    const k = cz * this.chunksX + cx;
+    if (this.generated[k]) return false;
+    if (!this.worker) return this.ensureChunk(cx, cz);
+    if (this.requested.has(k)) return false;
+    this.requested.add(k);
+    this.worker.postMessage({ t: 'gen', cx, cz });
+    return true;
+  }
+  /** A chunk made by the worker: put it in, add the game's structures and saved edits, stitch the light. */
+  _install(m) {
+    const { cx, cz } = m, k = cz * this.chunksX + cx;
+    if (!this.requested?.has(k)) return;            // cancelled (unloaded / made synchronously meanwhile)
+    this.requested.delete(k);
+    if (this.generated[k]) return;
+    this.cols[k] = new Uint8Array(m.blocks); this.lcols[k] = new Uint8Array(m.light);
+    this.meta[k] = { top: new Int16Array(m.top), h: new Int16Array(m.h), b: new Uint8Array(m.b) };
+    for (const [i, sp] of m.spawners) this.spawners.set(i, sp);
+    for (const [i, t] of m.chests) this.chestTier.set(i, t);
+    let changed = false;
+    for (const d of this.decorators) if (d(cx, cz)) changed = true;
+    this.generated[k] = 1;
+    this.loaded.add(k);
+    const key = cx + ',' + cz;
+    const pend = this.pending.get(key);
+    if (pend) { for (const [i, id] of pend) this.setIdx(i, id); this.pending.delete(key); changed = true; }
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx, nz = cz + dz;
+      if (nx >= 0 && nz >= 0 && nx < this.chunksX && nz < this.chunksX && this.generated[nz * this.chunksX + nx]) this.dirtyChunk(nx, nz);
+    }
+    // its own light came from the worker; edits need a full relight, otherwise only the borders are stitched
+    if (changed) this.relightBox(cx * CHUNK - 15, cz * CHUNK - 15, cx * CHUNK + CHUNK + 14, cz * CHUNK + CHUNK + 14);
+    else this._stitchLight(cx, cz);
+    this.game?.bus?.emit('chunk:generated', { cx, cz });
+  }
+  /** Lets light flow both ways across the borders of a chunk that was lit on its own. */
+  _stitchLight(cx, cz) {
+    const H = this.height, x0 = cx * CHUNK, z0 = cz * CHUNK, x1 = x0 + CHUNK - 1, z1 = z0 + CHUNK - 1;
+    const sq = [], bq = [];
+    const seed = (x, z) => {
+      if (x < 0 || z < 0 || x >= this.size || z >= this.size) return;
+      const lc = this.lcols[(z >> 4) * this.chunksX + (x >> 4)];
+      if (!lc) return;
+      const base = (x & 15) + 16 * (z & 15);
+      for (let y = 0; y < H; y++) { const l = lc[base + 256 * y]; if ((l >> 4) > 1) sq.push(x, y, z); if ((l & 15) > 1) bq.push(x, y, z); }
+    };
+    for (let i = 0; i < CHUNK; i++) {
+      seed(x0 + i, z0); seed(x0 + i, z0 - 1); seed(x0 + i, z1); seed(x0 + i, z1 + 1);
+      seed(x0, z0 + i); seed(x0 - 1, z0 + i); seed(x1, z0 + i); seed(x1 + 1, z0 + i);
+    }
+    const box = [x0 - 15, 0, z0 - 15, x1 + 15, H - 1, z1 + 15];
+    this._spread(sq, 4, box);
+    this._spread(bq, 0, box);
+  }
   /**
    * Frees a generated chunk (tall worlds, far from the player). Its edits stay in world.changes and come back when
    * it is generated again. Returns true if it was unloaded.
@@ -173,6 +243,7 @@ export class World {
     if (!this.generated[k]) return false;
     this.generated[k] = 0;
     this.loaded.delete(k);
+    this.requested?.delete(k);
     this.cols[k] = null; this.lcols[k] = null; this.meta[k] = null;
     const key = cx + ',' + cz;
     // the chunk's saved edits wait for it again
@@ -219,6 +290,14 @@ export class World {
       this._ringR = R; this._ring = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) if (dx * dx + dz * dz <= R * R) this._ring.push([dx, dz, dx * dx + dz * dz]);
       this._ring.sort((a, b) => a[2] - b[2]);
+    }
+    if (this.worker) {
+      // the worker makes the ring, nearest first, a few chunks in flight at a time
+      for (const [dx, dz] of this._ring) {
+        if (this.requested.size >= 4) break;
+        if (this.requestChunk(pcx + dx, pcz + dz)) made++;
+      }
+      return made;
     }
     for (const [dx, dz] of this._ring) {
       if (performance.now() - t0 > budgetMs) break;

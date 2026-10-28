@@ -182,7 +182,8 @@ export class Rivals {
   // ------------------------------------------------------------------ drawing the towns into the world
   /** New chunk: draw every town building that reaches into it (before lighting and the player's saved edits). */
   _decorate(cx, cz) {
-    if (!this.list.length) return;
+    if (!this.list.length) return false;
+    let drawn = false;
     const x0 = cx * 16, z0 = cz * 16, x1 = x0 + 16, z1 = z0 + 16;
     for (const r of this.list) {
       if (Math.abs(r.x - (x0 + 8)) > 90 || Math.abs(r.z - (z0 + 8)) > 90) continue;
@@ -191,8 +192,10 @@ export class Rivals {
         const p = plan[k];
         if (p.x >= x1 || p.z >= z1 || p.x + p.mw <= x0 || p.z + p.md <= z0) continue;
         this._draw(r, p, r.tier, x0, z0, x1, z1);
+        drawn = true;
       }
     }
+    return drawn;
   }
   /** Writes building p (tier t) into the part of the world inside [x0, x1) × [z0, z1). */
   _draw(r, p, t, x0, z0, x1, z1) {

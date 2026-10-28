@@ -102,11 +102,13 @@ export class Game {
     size = size || F.size;
     progress(0.15, 'Генерация мира…');
     await tick();
-    if (this.chunkRenderer) { this.scene.remove(this.chunkRenderer.group); this.chunkRenderer.group.traverse(o => o.geometry?.dispose()); }
+    if (this.chunkRenderer) { this.scene.remove(this.chunkRenderer.group); this.chunkRenderer.group.traverse(o => o.geometry?.dispose()); this.chunkRenderer.mesher?.terminate(); }
     for (const e of [...(this.entities?.list || [])]) if (e.kind !== 'player') this.entities.remove(e);
     this.state.seed = seed;
+    this.world?.stopWorker?.();
     this.world = new World(this, { size, seed, height: F.height, sea: F.sea, format: WORLD_FORMATS[format] ? format : 1 });
     this.world.generate();
+    this.world.startWorker();             // the rest of the world is made in the background
     progress(0.55, 'Строим ландшафт…');
     await tick();
     this.chunkRenderer = new ChunkRenderer(this);
