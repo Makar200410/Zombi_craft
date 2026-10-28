@@ -2015,6 +2015,18 @@ GEN.saw_side = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (
 GEN.crusher_top = (p, r) => { casingFrame(p, r); for (const cx of [10, 22]) for (let x = cx - 5; x <= cx + 5; x++) for (let y = 5; y < 27; y++) p.set(x, y, ((y + (x > 16 ? 2 : 0)) % 4 < 2) ? P.iron[2] : P.iron[4]); };
 GEN.fan_side = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (let y = 4; y < 28; y++) { const d = Math.hypot(x - 15.5, y - 15.5); if (d < 12 && ((x + y) % 4 === 0 || (x - y + 32) % 4 === 0)) p.set(x, y, hex('#2a2c2e')); } };
 
+// conveyor belt: dark rubber with lighter ribs; piston: a plank head with an iron cross / casing sides with a rod
+GEN.belt_top = (p) => { p.map((x, y) => (x < 3 || x > 28) ? P.iron[3] : ((y % 6) < 2 ? hex('#4a4640') : hex((x + y) % 5 ? '#2a2826' : '#34312d'))); };
+GEN.piston_top = (p, r) => { p.map((x, y) => (x < 2 || y < 2 || x > 29 || y > 29) ? P.iron[2] : P.plank[2 + (((y >> 2) + (x >> 4)) & 1)]); for (let k = 6; k < 26; k++) { p.set(k, k, P.iron[4]); p.set(31 - k, k, P.iron[4]); } blob(p, 15.5, 15.5, 3, 3, BRASS, {}); };
+GEN.piston_side = (p, r) => { casingFrame(p, r); for (let x = 2; x < 30; x++) for (let y = 2; y < 8; y++) p.set(x, y, P.plank[2 + ((x >> 3) & 1)]); for (let x = 13; x < 19; x++) for (let y = 8; y < 28; y++) p.set(x, y, rampAt(P.iron, 1 + (x - 13) * 0.9)); };
+GEN.piston_pole = (p) => { p.map((x, y) => (x >= 9 && x < 23) ? (x === 9 || x === 22 ? P.iron[0] : rampAt(P.iron, 1.5 + (x - 9) * 0.35 + ((y % 8) === 0 ? -0.8 : 0))) : [0, 0, 0, 0]); };
+GEN.piston_pole_top = (p) => { p.map((x, y) => (x >= 9 && x < 23 && y >= 9 && y < 23) ? P.iron[x === 9 || y === 9 || x === 22 || y === 22 ? 0 : 3] : [0, 0, 0, 0]); };
+GEN.tunnel_drill_side = (p, r) => {
+  casingFrame(p, r);
+  for (let y = 4; y < 28; y++) for (let x = 4; x < 28; x++) { const d = Math.hypot(x - 15.5, y - 15.5); if (d < 11) p.set(x, y, ((Math.atan2(y - 15.5, x - 15.5) * 3 / Math.PI + d / 3) | 0) % 2 ? P.iron[5] : P.iron[2]); }
+  for (let x = 2; x < 30; x++) { p.set(x, 2, hex(((x >> 2) & 1) ? '#f0c020' : '#202020')); p.set(x, 29, hex(((x >> 2) & 1) ? '#f0c020' : '#202020')); }
+};
+
 // ------------------------------------------------------------------ overlays
 const DESTROY_COUNTS = [3, 6, 10, 15, 21, 28];
 function destroy(p, stage) {

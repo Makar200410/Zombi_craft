@@ -163,6 +163,13 @@ def(113, 'casing', { label: 'Механический корпус', tiles: { to
 for (let l = 1; l <= 7; l++) def(113 + l, 'water_' + l, { label: 'Текущая вода', tiles: 'water', shape: 'liquid', render: 'transparent', solid: false, hardness: 0, placeable: false, replaceable: true });
 def(121, 'water_fall', { label: 'Падающая вода', tiles: 'water', shape: 'liquid', render: 'transparent', solid: false, hardness: 0, placeable: false, replaceable: true });
 
+// Create, next level (see kinetics.js): a conveyor belt (moves whatever stands on it), a mechanical piston that
+// pushes and pulls a glued structure (lifts, drawbridges), its pole, and a tunnel drill that bores its own way to ore.
+def(122, 'belt', { shape: 'model', label: 'Конвейер', tiles: { top: 'belt_top', side: 'casing_side', bottom: 'casing_top' }, render: 'cutout', hardness: 2, cost: { wood: 2, iron: 1 }, drop: { iron: 1 }, tool: 'pick', kinetic: 'shaft', minAge: 2 });
+def(123, 'mech_piston', { shape: 'model', label: 'Механический поршень', tiles: { top: 'piston_top', side: 'piston_side', bottom: 'casing_top' }, hardness: 3, cost: { wood: 4, iron: 4 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 3 });
+def(124, 'piston_pole', { label: 'Шток поршня', tiles: { top: 'piston_pole_top', side: 'piston_pole' }, render: 'cutout', hardness: 2, drop: { iron: 1 }, placeable: false, tool: 'pick' });
+def(125, 'tunnel_drill', { label: 'Бур-проходчик', tiles: { top: 'casing_top', side: 'tunnel_drill_side' }, hardness: 4, light: 4, cost: { iron: 12, steel: 2, stone: 6 }, drop: { iron: 4 }, tool: 'pick', kinetic: 'machine', minAge: 4 });
+
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
   const s = new Set();
@@ -186,7 +193,7 @@ WATER_IDS[B.WATER_FALL] = 1; WATER_LEVEL[B.WATER_FALL] = 0;
 for (let l = 1; l <= 7; l++) { WATER_IDS[B['WATER_' + l]] = 1; WATER_LEVEL[B['WATER_' + l]] = l; }
 export const WATER_FLOW = [B.WATER, B.WATER_1, B.WATER_2, B.WATER_3, B.WATER_4, B.WATER_5, B.WATER_6, B.WATER_7];
 export const isWater = (id) => WATER_IDS[id] === 1;
-export const MECHANISMS = [B.SHAFT, B.COGWHEEL, B.WATER_WHEEL, B.WINDMILL, B.STEAM_ENGINE, B.MECH_DRILL, B.MECH_SAW, B.CRUSHER, B.MECH_FAN, B.CASING];
+export const MECHANISMS = [B.SHAFT, B.COGWHEEL, B.BELT, B.WATER_WHEEL, B.WINDMILL, B.STEAM_ENGINE, B.MECH_DRILL, B.MECH_SAW, B.CRUSHER, B.MECH_FAN, B.MECH_PISTON, B.TUNNEL_DRILL, B.CASING];
 export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL_ORE, B.AMETHYST]);
 // Blocks the player can pick in the build palette (in order).
 export const PALETTE = [

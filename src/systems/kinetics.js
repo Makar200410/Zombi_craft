@@ -4,16 +4,26 @@
 //                       DRILL_RANGE blocks (DRILL_DOWN downwards), everything it breaks goes to the village stock, it shreds zombies;
 //   mechanical saw    — fells the whole tree in front of it, wood to the stock, cuts zombies;
 //   crusher           — grinds iron and gold ore from the stock into metal (with a bonus now and then);
-//   fan               — blows zombies away along its front.
+//   fan               — blows zombies away along its front;
+//   conveyor belt     — carries whatever stands on it (zombies into a saw, the player along a hall), passes rotation on;
+//   mechanical piston — right-click to extend / retract: pushes and pulls the structure glued in front of it (built
+//                       blocks, up to MAX_GLUE), and whoever stands on it — lifts into the mine, drawbridges, gates;
+//   tunnel drill      — bores its own tunnel to the nearest ore within ORE_SEEK blocks, mines the vein, looks for
+//                       the next one; it leaves a shaft behind, so it never loses its power.
+// Belts, pistons and tunnel drills face the way they were placed (kept in `faces`, saved with the world).
 // Blocks touching each other form a network. Every source adds capacity (сила) and a speed (об/мин); every machine
 // adds stress (нагрузка). A network carrying more stress than capacity stalls. Machines take rotation on one side
 // and work on the opposite one. The host runs the work; everyone sees the moving parts.
 import * as THREE from 'three';
-import { B, BLOCKS, WATER_IDS, WATER_LEVEL, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, WATER_IDS, WATER_LEVEL, LOG_BLOCKS, LEAF_BLOCKS, PALETTE, ORE_BLOCKS } from '../core/blocks.js';
 import { RESOURCE_LABELS } from '../core/items.js';
 import { worldUniforms } from '../render/chunkMaterials.js';
 
 const DIR6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+const MAX_EXT = 32;           // piston reach
+const MAX_GLUE = 128;         // blocks a piston can move
+const ORE_SEEK = 20;          // a tunnel drill looks for ore this far
+const TUNNEL_MAX = 160;       // and gives up after boring this many blocks
 const DRILL_RANGE = 24;       // sideways; boring straight down a drill reaches DRILL_DOWN
 const DRILL_DOWN = 64;
 const VIEW = 80;              // moving parts are drawn this far from the camera
@@ -30,6 +40,9 @@ export const KINETIC = {
   [B.MECH_SAW]: { role: 'machine', stress: 3 },
   [B.CRUSHER]: { role: 'machine', stress: 6 },
   [B.MECH_FAN]: { role: 'machine', stress: 2 },
+  [B.BELT]: { role: 'shaft', stress: 0.5 },
+  [B.MECH_PISTON]: { role: 'machine', stress: 4 },
+  [B.TUNNEL_DRILL]: { role: 'machine', stress: 6 },
 };
 export const MECH_HELP = {
   [B.SHAFT]: 'Вал: передаёт вращение соседним механизмам.',
@@ -41,7 +54,13 @@ export const MECH_HELP = {
   [B.MECH_SAW]: 'Механическая пила: валит целое дерево перед собой, древесина на склад. Нагрузка 3.',
   [B.CRUSHER]: 'Дробилка: перемалывает железную и золотую руду со склада в металл. Нагрузка 6.',
   [B.MECH_FAN]: 'Вентилятор: отбрасывает зомби перед собой на 8 блоков. Нагрузка 2.',
+  [B.BELT]: 'Конвейер: везёт всё, что на нём стоит, туда, куда вы смотрели, ставя его; передаёт вращение дальше. Нагрузка 0,5.',
+  [B.MECH_PISTON]: `Механический поршень: ПКМ — выдвинуть / втянуть (нужно вращение). Двигает склеенную постройку перед собой (до ${MAX_GLUE} блоков) и тех, кто на ней стоит: лифт в шахту, выдвижной мост. Смотрит на вас, когда ставите. Нагрузка 4.`,
+  [B.TUNNEL_DRILL]: `Бур-проходчик: сам прокладывает туннель к ближайшей руде (до ${ORE_SEEK} блоков), выбирает жилу на склад и ищет следующую; оставляет за собой вал. Нагрузка 6.`,
 };
+// what a piston can glue and move: built blocks (not the natural ground)
+const GLUE = new Set([...PALETTE, B.CASING].filter(id => ![B.DIRT, B.SAND, B.GRAVEL, B.PATH].includes(id)));
+const FACED = new Set([B.BELT, B.MECH_PISTON, B.TUNNEL_DRILL]);
 const DRILLER = { faction: 'village', kinetic: true };       // breaks blocks for the village (drops go to the stock)
 const NOT_DRILLABLE = new Set([B.BEDROCK, B.SPAWNER, B.CHEST]);
 
@@ -53,15 +72,36 @@ export class Kinetics {
     this.dirty = true;
     this.t = 0; this.srcT = 0;
     this.view = null;
+    this.faces = new Map();     // world index -> DIR6 index, for belts, pistons and tunnel drills
+    this.pistons = new Map();   // world index -> {ext, want, t}
+    this.drills = new Map();    // world index -> tunnel drill state {target, moves, prog, cool}
     const bus = game.bus;
     bus.on('block:changed', ({ x, y, z, id, prev }) => {
       if (!KINETIC[id] && !KINETIC[prev]) return;
       const i = this.game.world.index(x, y, z);
       if (KINETIC[id]) this.nodes.set(i, { x, y, z, id, role: KINETIC[id].role, prog: 0, head: 1 });
-      else this.nodes.delete(i);
+      else { this.nodes.delete(i); if (!this._moving) { this.faces.delete(i); this.pistons.delete(i); this.drills.delete(i); } }
       this.dirty = true;
     });
-    bus.on('game:begin', () => this._scan());
+    bus.on('block:placed', ({ x, y, z, id, by }) => { if (by === 'player' && FACED.has(id)) { this.faces.set(this.game.world.index(x, y, z), this._lookFace(id)); this.dirty = true; } });
+    bus.on('game:begin', ({ loaded } = {}) => { if (!loaded) { this.faces.clear(); this.pistons.clear(); } this.drills.clear(); this._scan(); });
+  }
+  /** Facing of a block the player puts down: belts and drills along the look, pistons toward the player. */
+  _lookFace(id) {
+    const f = this.game.cameraRig?.forward || { x: 0, y: 0, z: 1 };
+    let ax = Math.abs(f.x), ay = Math.abs(f.y), az = Math.abs(f.z);
+    if (id === B.BELT) ay = 0;
+    let k = ax >= ay && ax >= az ? (f.x > 0 ? 0 : 1) : ay >= az ? (f.y > 0 ? 2 : 3) : (f.z > 0 ? 4 : 5);
+    if (id === B.MECH_PISTON) k ^= 1;
+    return k;
+  }
+  faceOf(n) { return this.faces.get(this.game.world.index(n.x, n.y, n.z)) ?? (n.id === B.MECH_PISTON ? 2 : 4); }
+  serialize() {
+    return { faces: [...this.faces], pistons: [...this.pistons].map(([i, p]) => [i, p.ext, p.want ? 1 : 0]) };
+  }
+  deserialize(o) {
+    this.faces = new Map(o?.faces || []);
+    this.pistons = new Map((o?.pistons || []).map(([i, ext, want]) => [i, { ext, want: !!want, t: 0 }]));
   }
 
   /** All mechanisms of the world come from its edits (they are only ever placed). */
@@ -112,7 +152,10 @@ export class Kinetics {
         if (m && m.role !== 'machine' && m.net === n.net) { n.dir = [-dx, -dy, -dz]; break; }
       }
       if (!n.dir && n.id === B.WINDMILL) n.dir = [0, 0, 1];
+      if (FACED.has(n.id) && !n.dir) n.dir = DIR6[this.faceOf(n)];
     }
+    this._hasBelts = false;
+    for (const n of this.nodes.values()) if (n.id === B.BELT) { this._hasBelts = true; break; }
     this.srcT = 0;
     this.view?.invalidate();
   }
@@ -139,7 +182,7 @@ export class Kinetics {
     if (n.id === B.STEAM_ENGINE) {
       // burns coal from the village stock while its network has work to do
       if (n.fuel > 0) { n.fuel -= dt; return { cap: 16, rpm: 64 }; }
-      if (!n.net?.machines.length || g.net?.isClient) return n.burning ? { cap: 16, rpm: 64 } : null;
+      if (!n.net?.nodes.some(q => KINETIC[q.id].stress) || g.net?.isClient) return n.burning ? { cap: 16, rpm: 64 } : null;
       if (g.state.spend({ coal: 1 })) { n.fuel = 20; n.burning = true; return { cap: 16, rpm: 64 }; }
       n.burning = false;
       return null;
@@ -152,7 +195,7 @@ export class Kinetics {
       let cap = 0, rpm = 0;
       for (const s of net.sources) { const p = this._sourcePower(s, dt); s.on = !!p; if (p) { cap += p.cap; rpm = Math.max(rpm, p.rpm); } }
       let stress = 0;
-      for (const m of net.machines) stress += KINETIC[m.id].stress || 0;
+      for (const m of net.nodes) stress += KINETIC[m.id].stress || 0;
       net.cap = cap; net.stress = stress; net.over = stress > cap && cap > 0;
       net.rpm = cap > 0 && !net.over ? rpm : 0;
     }
@@ -165,6 +208,7 @@ export class Kinetics {
     this.srcT -= dt;
     if (this.srcT <= 0) { this.srcT = 1; this._updateSources(1); }
     for (const net of this.nets) net.angle = (net.angle + net.rpm / 60 * Math.PI * 2 * dt) % (Math.PI * 200);
+    this._belts(dt);
     if (!g.net?.isClient) {
       this.t += dt;
       if (this.t >= TICK) { const step = this.t; this.t = 0; this._work(step); }
@@ -184,6 +228,8 @@ export class Kinetics {
         else if (m.id === B.MECH_SAW) this._saw(m, k, dt);
         else if (m.id === B.CRUSHER) this._crush(m, k, dt);
         else if (m.id === B.MECH_FAN) this._fan(m, k, dt);
+        else if (m.id === B.MECH_PISTON) this._piston(m, k, dt);
+        else if (m.id === B.TUNNEL_DRILL) this._tunnel(m, k, dt);
       }
     }
   }
@@ -256,6 +302,188 @@ export class Kinetics {
       z.velocity.x += dx * 22 * k * dt; z.velocity.y += dy * 22 * k * dt; z.velocity.z += dz * 22 * k * dt;
     }
   }
+  // ------------------------------------------------------------------ belts
+  /** Whatever stands on a moving belt rides along (the player on every machine, the rest on the host). */
+  _belts(dt) {
+    const g = this.game, w = g.world;
+    if (!this._hasBelts) return;
+    const host = !g.net?.isClient;
+    for (const e of g.entities.list) {
+      if (e.dead || e.kind === 'projectile' || (!host && e !== g.player) || e.flying || e.fly) continue;
+      const p = e.position, x = Math.floor(p.x), y = Math.floor(p.y - 0.08), z = Math.floor(p.z);
+      if (p.y - (y + 1) > 0.25 || w.getBlock(x, y, z) !== B.BELT) continue;
+      const n = this.nodes.get(w.index(x, y, z));
+      if (!n?.net?.rpm) continue;
+      const [dx, , dz] = DIR6[this.faceOf(n)], s = 2.4 * n.net.rpm / 32 * dt;
+      const nx = p.x + dx * s, nz = p.z + dz * s;
+      if (w.isSolid(Math.floor(nx + dx * (e.radius || 0.3)), Math.floor(p.y + 0.1), Math.floor(nz + dz * (e.radius || 0.3)))) continue;
+      p.x = nx; p.z = nz;
+      // keep riders in the middle of the belt
+      if (dx) p.z += (z + 0.5 - p.z) * Math.min(1, dt * 3); else p.x += (x + 0.5 - p.x) * Math.min(1, dt * 3);
+    }
+  }
+
+  // ------------------------------------------------------------------ pistons
+  /** Right-click on a mechanism: a piston toggles, the others explain themselves. */
+  interact(x, y, z) {
+    const w = this.game.world, i = w.index(x, y, z);
+    if (w.getBlock(x, y, z) !== B.MECH_PISTON) return this.describe(x, y, z);
+    let st = this.pistons.get(i);
+    if (!st) this.pistons.set(i, st = { ext: 0, want: false, t: 0 });
+    st.want = !st.want; st.blocked = null;
+    if (this.dirty) this._rebuild();
+    const n = this.nodes.get(i), on = n?.net?.rpm > 0;
+    this.game.audio?.play('hammer', { pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, volume: 0.5, pitch: 0.7 });
+    return (st.want ? 'Поршень выдвигается' : 'Поршень втягивается') + (on ? '' : ' — когда появится вращение (подведите вал от источника)');
+  }
+  /** Cells of the structure glued to `start` (flood over built blocks), or null if it is too big. */
+  _glue(start, skip) {
+    const w = this.game.world, out = new Map(), stack = [start];
+    while (stack.length) {
+      const [x, y, z] = stack.pop();
+      const i = w.index(x, y, z);
+      if (out.has(i) || i === skip || !w.inBounds(x, y, z)) continue;
+      const id = w.getBlock(x, y, z);
+      if (!GLUE.has(id)) continue;
+      out.set(i, [x, y, z, id]);
+      if (out.size > MAX_GLUE) return null;
+      for (const [dx, dy, dz] of DIR6) stack.push([x + dx, y + dy, z + dz]);
+    }
+    return out;
+  }
+  _free(x, y, z) { const id = this.game.world.getBlock(x, y, z); return id === B.AIR || !!BLOCKS[id]?.replaceable; }
+  _piston(m, k, dt) {
+    const w = this.game.world, i = w.index(m.x, m.y, m.z);
+    const st = this.pistons.get(i);
+    if (!st) return;
+    const dir = st.want && st.ext < MAX_EXT ? 1 : !st.want && st.ext > 0 ? -1 : 0;
+    if (!dir) return;
+    st.t += k * dt;
+    if (st.t < 0.7) return;
+    st.t = 0;
+    const [fx, fy, fz] = DIR6[this.faceOf(m)];
+    const at = (d) => [m.x + fx * d, m.y + fy * d, m.z + fz * d];
+    if (dir > 0) {
+      const front = at(st.ext + 1);
+      if (!w.inBounds(...front) || !w.isGenerated(front[0], front[2])) return;
+      const set = this._free(...front) ? new Map() : this._glue(front, i);
+      if (!set || (!set.size && !this._free(...front))) return this._blocked(st, set ? 'перед поршнем земля или камень — он двигает только постройки' : `постройка больше ${MAX_GLUE} блоков`);
+      for (const [, [x, y, z]] of set) if (!set.has(w.index(x + fx, y + fy, z + fz)) && !this._free(x + fx, y + fy, z + fz)) return this._blocked(st, 'путь перегорожен');
+      this._shift(set, fx, fy, fz);
+      this._set(front[0], front[1], front[2], B.PISTON_POLE);
+      st.ext++;
+    } else {
+      const pole = at(st.ext), head = at(st.ext + 1);
+      const set = this._glue(head, i) || new Map();
+      this._set(pole[0], pole[1], pole[2], B.AIR);
+      this._shift(set, -fx, -fy, -fz);
+      st.ext--;
+    }
+    this.game.audio?.play('hammer', { pos: { x: m.x + 0.5, y: m.y + 0.5, z: m.z + 0.5 }, volume: 0.35, pitch: 0.5 + Math.random() * 0.1 });
+  }
+  _blocked(st, why) {
+    if (st.blocked !== why) { st.blocked = why; this.game.bus.emit('toast', { text: 'Поршень: ' + why, kind: 'bad' }); }
+  }
+  _set(x, y, z, id) { this._moving = true; try { this.game.world.setBlock(x, y, z, id); } finally { this._moving = false; } }
+  /** Moves the glued cells one block along (dx, dy, dz), with the people and zombies standing on them. */
+  _shift(set, dx, dy, dz) {
+    if (!set.size) return;
+    const g = this.game, w = g.world;
+    // riders first: anyone whose feet rest on a moving block goes along
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (const [, [x, y, z]] of set) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); z0 = Math.min(z0, z); x1 = Math.max(x1, x); y1 = Math.max(y1, y); z1 = Math.max(z1, z); }
+    const c = { x: (x0 + x1 + 1) / 2, y: (y0 + y1 + 1) / 2, z: (z0 + z1 + 1) / 2 };
+    for (const e of g.entities.query(c, Math.max(x1 - x0, y1 - y0, z1 - z0) + 4)) {
+      if (e.dead || e.kind === 'projectile') continue;
+      const p = e.position;
+      if (set.has(w.index(Math.floor(p.x), Math.floor(p.y - 0.08), Math.floor(p.z)))) { p.x += dx; p.y += dy; p.z += dz; if (dy > 0 && e.velocity) e.velocity.y = Math.max(0, e.velocity.y); }
+    }
+    this._moving = true;
+    try {
+      for (const [i, [x, y, z]] of set) if (!set.has(w.index(x - dx, y - dy, z - dz))) w.setBlock(x, y, z, B.AIR);
+      for (const [, [x, y, z, id]] of set) w.setBlock(x + dx, y + dy, z + dz, id);
+    } finally { this._moving = false; }
+  }
+
+  // ------------------------------------------------------------------ tunnel drill
+  _ore(id) { return ORE_BLOCKS.has(id); }
+  _findOre(m) {
+    const w = this.game.world;
+    let best = null, bd = Infinity;
+    const R = ORE_SEEK;
+    for (let y = Math.max(2, m.y - R); y <= Math.min(w.height - 2, m.y + R); y++)
+      for (let z = m.z - R; z <= m.z + R; z++) for (let x = m.x - R; x <= m.x + R; x++) {
+        const d = Math.abs(x - m.x) + Math.abs(y - m.y) + Math.abs(z - m.z);
+        if (d >= bd || !this._ore(w.getBlock(x, y, z))) continue;
+        bd = d; best = [x, y, z];
+      }
+    return best;
+  }
+  _drillable(x, y, z) {
+    const w = this.game.world, v = this.game.village, id = w.getBlock(x, y, z);
+    if (!w.inBounds(x, y, z) || !w.isGenerated(x, z) || id === B.LAVA || KINETIC[id] || NOT_DRILLABLE.has(id) || !isFinite(BLOCKS[id]?.hardness) || id === B.PISTON_POLE) return false;
+    try { if (v?.buildingAt?.(x, y, z)) return false; } catch (e) { /* ignore */ }
+    return true;
+  }
+  _tunnel(m, k, dt) {
+    const w = this.game.world, i = w.index(m.x, m.y, m.z);
+    let st = this.drills.get(i);
+    if (!st) this.drills.set(i, st = { target: null, moves: 0, prog: 0, cool: 0 });
+    if (st.done) return;
+    st.prog += k * dt;
+    if (st.prog < 0.9) return;
+    st.prog = 0;
+    if (st.cool > 0) { st.cool -= 0.9; return; }
+    if (!st.target || !this._ore(w.getBlock(...st.target))) {
+      st.target = this._findOre(m);
+      if (!st.target) { st.cool = 8; m.stuck = true; return; }
+    }
+    const [tx, ty, tz] = st.target;
+    const ddx = tx - m.x, ddy = ty - m.y, ddz = tz - m.z;
+    // next to the ore: mine the whole vein into the stock
+    if (Math.abs(ddx) + Math.abs(ddy) + Math.abs(ddz) === 1) {
+      const seen = new Set(), stack = [[tx, ty, tz]];
+      let n = 0;
+      while (stack.length && n < 48) {
+        const [x, y, z] = stack.pop(), key = w.index(x, y, z);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!this._ore(w.getBlock(x, y, z))) continue;
+        w.breakBlock(x, y, z, DRILLER); n++;
+        for (const [a, b, c] of DIR6) stack.push([x + a, y + b, z + c]);
+      }
+      this.game.audio?.play('pick_hit', { pos: { x: tx + 0.5, y: ty + 0.5, z: tz + 0.5 }, volume: 0.7 });
+      st.target = null;
+      return;
+    }
+    // one step toward it: the biggest gap first, around what it can't bore
+    const steps = [[Math.sign(ddx), 0, 0, Math.abs(ddx)], [0, Math.sign(ddy), 0, Math.abs(ddy)], [0, 0, Math.sign(ddz), Math.abs(ddz)]].filter(s => s[3] > 0).sort((a, b) => b[3] - a[3]);
+    for (const [sx, sy, sz] of steps) {
+      const x = m.x + sx, y = m.y + sy, z = m.z + sz;
+      if (!this._drillable(x, y, z)) continue;
+      if (x === tx && y === ty && z === tz) continue;
+      this._moveDrill(m, st, x, y, z, sy === 0);
+      return;
+    }
+    st.target = null; st.cool = 4; m.stuck = true;
+  }
+  _moveDrill(m, st, x, y, z, flat) {
+    const w = this.game.world;
+    if (w.getBlock(x, y, z) !== B.AIR) w.breakBlock(x, y, z, DRILLER);
+    // a walkable tunnel: clear the cell above the new one when boring sideways
+    if (flat && this._drillable(x, y + 1, z) && w.getBlock(x, y + 1, z) !== B.AIR && !this._ore(w.getBlock(x, y + 1, z))) w.breakBlock(x, y + 1, z, DRILLER);
+    const from = w.index(m.x, m.y, m.z), to = w.index(x, y, z);
+    const face = this.faces.get(from);
+    this._moving = true;
+    try { w.setBlock(x, y, z, B.TUNNEL_DRILL); w.setBlock(m.x, m.y, m.z, B.SHAFT); } finally { this._moving = false; }
+    this.drills.delete(from); this.faces.delete(from);
+    if (face !== undefined) this.faces.set(to, face);
+    st.moves++;
+    if (st.moves >= TUNNEL_MAX) { st.done = true; this.game.bus.emit('toast', { text: `Бур-проходчик прошёл ${TUNNEL_MAX} блоков и остановился`, kind: 'info' }); }
+    this.drills.set(to, st);
+    this.game.audio?.play('dig_stone', { pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, volume: 0.6 });
+  }
+
   _hurt(x, y, z, r, dmg) {
     if (dmg <= 0) return;
     for (const zb of this.game.waves?.zombies || []) {
@@ -280,6 +508,7 @@ export class Kinetics {
     if (n.id === B.MECH_DRILL && n.dir) extra = n.stuck ? ` · бур упёрся (глубина ${n.head})` : ` · бурит на глубине ${n.head}`;
     if (n.id === B.CRUSHER) { const st = this.game.state.resources; extra = ` · руда: ${RESOURCE_LABELS.iron_ore} ${Math.floor(st.iron_ore || 0)}, ${RESOURCE_LABELS.gold_ore} ${Math.floor(st.gold_ore || 0)}`; }
     if (n.role === 'machine' && !n.dir) extra = ' · подведите вал с одной стороны';
+    if (n.id === B.TUNNEL_DRILL) { const d = this.drills.get(this.game.world.index(x, y, z)); extra = d?.target ? ` · идёт к руде, пройдено ${d.moves}` : ' · ищет руду'; }
     return `${help} Сеть: ${state}${extra}`;
   }
 }
@@ -296,6 +525,18 @@ function stripes(a, b) {
   for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? a : b; g.fillRect(0, i * 4, 8, 4); }
   const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+let BELT_TEX = null;
+function beltTex() {
+  if (BELT_TEX) return BELT_TEX;
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2a2826'; g.fillRect(0, 0, 16, 16);
+  g.fillStyle = '#4c4842'; for (let y = 0; y < 16; y += 4) g.fillRect(1, y, 14, 1);
+  g.fillStyle = '#8a8e96'; g.fillRect(0, 0, 1, 16); g.fillRect(15, 0, 1, 16);
+  const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return (BELT_TEX = t);
 }
 let SHAFT_MAT = null;
 const shaftMat = () => SHAFT_MAT || (SHAFT_MAT = new THREE.MeshLambertMaterial({ map: stripes('#8a8e96', '#5a5e66') }));
@@ -395,6 +636,28 @@ class KineticsView {
       case B.MECH_SAW: add(front, (g) => { const d = gear(0.5, 0.05, 16, iron); g.add(d); }, 1, fa(0.52)); break;
       case B.MECH_FAN: add(front, (g) => { g.add(cyl(0.08, 0.1, dark, 8)); for (let i = 0; i < 4; i++) { const b = box(0.85, 0.03, 0.22, iron); b.rotation.y = i * Math.PI / 2 + 0.3; b.rotation.x = 0.35; g.add(b); } }, 1, fa(0.53));
         break;
+      case B.BELT: {
+        // a frame with rollers and a moving belt on top, running along its facing
+        const f = DIR6[this.sys.faceOf(n)];
+        root.add(box(1, 0.8, 1, dark, 0, -0.1, 0));
+        root.add(box(1.0, 0.12, 0.12, brass, 0, 0.36, 0).rotateY(f[0] ? Math.PI / 2 : 0).translateZ(0.44));
+        root.add(box(1.0, 0.12, 0.12, brass, 0, 0.36, 0).rotateY(f[0] ? Math.PI / 2 : 0).translateZ(-0.44));
+        const tex = beltTex().clone(); tex.needsUpdate = true;
+        const top = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 1), new THREE.MeshLambertMaterial({ map: tex }));
+        top.rotation.order = 'YXZ'; top.rotation.y = Math.atan2(f[0], f[2]); top.rotation.x = -Math.PI / 2; top.position.y = 0.502;
+        root.add(top);
+        return { obj: root, spins, belt: tex };
+      }
+      case B.MECH_PISTON: {
+        // a casing with a plank head plate on the side it pushes
+        const f = DIR6[this.sys.faceOf(n)], s = new THREE.Group();
+        s.quaternion.setFromUnitVectors(Y, new THREE.Vector3(...f));
+        s.add(box(0.98, 0.74, 0.98, iron, 0, -0.13, 0));
+        s.add(box(1, 0.24, 1, wood, 0, 0.38, 0));
+        s.add(box(0.3, 0.3, 0.3, brass, 0, 0.3, 0));
+        root.add(s);
+        break;
+      }
       case B.CRUSHER:
         add([0, 0, 1], (g) => g.add(gear(0.22, 0.85, 8, iron)), 1, [-0.24, 0.55, 0]);
         add([0, 0, 1], (g) => g.add(gear(0.22, 0.85, 8, iron)), -1, [0.24, 0.55, 0]);
@@ -414,10 +677,10 @@ class KineticsView {
         if (Math.abs(n.x - cam.x) > VIEW || Math.abs(n.z - cam.z) > VIEW || !g.world.isGenerated(n.x, n.z)) continue;
         want.add(n);
       }
-      for (const [n, p] of this.parts) if (!want.has(n) || p.key !== (n.dir || []).join() + this._axisOf(n).join()) { this.group.remove(p.obj); this.parts.delete(n); }
+      for (const [n, p] of this.parts) if (!want.has(n) || p.key !== (n.dir || []).join() + this._axisOf(n).join() + this.sys.faceOf(n)) { this.group.remove(p.obj); this.parts.delete(n); }
       for (const n of want) if (!this.parts.has(n)) {
         const p = this._build(n);
-        p.key = (n.dir || []).join() + this._axisOf(n).join();
+        p.key = (n.dir || []).join() + this._axisOf(n).join() + this.sys.faceOf(n);
         this.parts.set(n, p); this.group.add(p.obj);
       }
       // dim them like the world around (caves are dark)
@@ -431,6 +694,7 @@ class KineticsView {
     for (const [n, p] of this.parts) {
       const a = n.net ? n.net.angle : 0;
       for (const s of p.spins) s.inner.rotation.y = a * s.sign;
+      if (p.belt) p.belt.offset.y = -a * 0.35;
       if (p.drill) {
         // the drill head reaches out to the face it is boring
         const d = Math.max(1, n.head || 1);

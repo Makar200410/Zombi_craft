@@ -569,7 +569,7 @@ export class Player extends Entity {
           else if (this.target.entity && this.target.entity.faction === 'village') g.bus.emit('select:entity', { entity: this.target.entity });
           else if (this.target.block && BLOCKS[this.target.block.id]?.kinetic && g.kinetics) {
             const tb = this.target.block;
-            g.bus.emit('toast', { text: g.kinetics.describe(tb.x, tb.y, tb.z), kind: 'info' });
+            g.bus.emit('toast', { text: g.kinetics.interact(tb.x, tb.y, tb.z), kind: 'info' });
           }
           else if (this.target.block) this._hint('Чтобы строить, положите блок в ячейку через инвентарь (E). Верстак, печь, железный блок и магический стол открывают крафт');
         }
