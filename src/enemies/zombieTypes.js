@@ -136,6 +136,11 @@ export const ZOMBIE_TYPES = {
     height: 1.8, width: 1, radius: 0.3, aggro: 16, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.3,
     human: true, job: 'idle',
   },
+  merchant: {
+    base: 'walker', name: 'Торговец', hp: 45, speed: 1.9, dmg: 3, cd: 1.0, reach: 0.9, blockDps: 0, bldDmg: 0,
+    height: 1.8, width: 1, radius: 0.3, aggro: 12, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.5,
+    human: true, job: 'merchant', hat: 'cap', hatColor: 0x7a3a8a,
+  },
   militia: {
     base: 'walker', name: 'Ополченец', hp: 38, speed: 2.1, dmg: 7, cd: 0.95, reach: 0.95, blockDps: 1.2, bldDmg: 3,
     height: 1.8, width: 1, radius: 0.3, aggro: 22, knock: 3, eye: 0x202020, groanPitch: 1, loot: 0.6,

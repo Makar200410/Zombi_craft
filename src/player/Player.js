@@ -507,6 +507,13 @@ export class Player extends Entity {
     this.target.place = ghost;
 
     let mining = false;
+    // a caravan's merchant: trade with him
+    if (pressS && this.target.entity?.trader) {
+      g.bus.emit('ui:trade', { town: this.target.entity.rivalId });
+      this._prevSecondary = true;
+      this.cursor.update(dt, this.target.block, null);
+      return;
+    }
     // interact with crafting stations (workbench, furnace, anvil, arcane table)
     if (pressS && !building && this.target.block && STATION_OF_BLOCK[this.target.block.id]) {
       g.bus.emit('ui:craft', { station: STATION_OF_BLOCK[this.target.block.id] });

@@ -205,6 +205,7 @@ export class SaveSystem {
       crafting: safe(g.crafting),
       combat: safe(g.combat),
       rivals: safe(g.rivals),
+      caravans: safe(g.caravans),
       camera: safe(g.cameraRig),
       mode: g.mode,
     };
@@ -266,6 +267,7 @@ export class SaveSystem {
       safe(g.waves, o.waves);
       safe(g.combat, o.combat);
       safe(g.rivals, o.rivals);
+      safe(g.caravans, o.caravans);
       safe(g.cameraRig, o.camera);
       if (g.mode !== 'explore') g.setMode('explore');
       g.begin({ loaded: true });

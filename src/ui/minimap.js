@@ -243,6 +243,16 @@ export class Minimap {
         x.stroke();
       }
     }
+    // caravans on the road: a small square in their town's colour (only those inside the map)
+    const CV = g.caravans;
+    if (CV?.list?.length) {
+      for (const c of CV.markers()) {
+        const ex = mx(c.x), ez = mz(c.z), s = 2.6 * dpr;
+        if (ex < 0 || ez < 0 || ex > px || ez > px) continue;
+        x.fillStyle = c.color; x.fillRect(ex - s, ez - s, s * 2, s * 2);
+        x.lineWidth = 1 * dpr; x.strokeStyle = c.home ? '#fff3c0' : '#1a1208'; x.strokeRect(ex - s, ez - s, s * 2, s * 2);
+      }
+    }
     // camera focus (command) / player arrow
     const p = g.player;
     if (cmd) {

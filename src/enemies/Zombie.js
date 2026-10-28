@@ -510,8 +510,10 @@ export class Zombie extends Entity {
       // a rival village's soldiers fight whoever their village is at war with: the player's people and other villages
       const rv = this.rivalId !== null ? game.rivals : null;
       const foe = rv
-        ? (e) => !e.dead && e.kind !== 'projectile' && (e.faction === 'village' ? rv.atWarWithPlayer(this.rivalId) && !e.hidden && !e.invisible : e.rivalId != null && e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId))
-        : (e) => e.faction === 'village' && e.kind !== 'projectile' && !e.hidden && !e.invisible;
+        ? (e) => !e.dead && e.kind !== 'projectile' && (e.faction === 'village' ? rv.atWarWithPlayer(this.rivalId) && !e.hidden && !e.invisible
+          : e.rivalId != null ? e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId)
+          : !!this.caravan && e.faction === 'undead')            // caravan guards fight off the dead
+        : (e) => (e.faction === 'village' || e.caravan) && e.kind !== 'projectile' && !e.hidden && !e.invisible;     // the dead go for caravans too
       const cand = game.entities.nearest(pos, foe, range);
       if (cand) {
         const d = cand.position.distanceTo(pos);
@@ -578,6 +580,11 @@ export class Zombie extends Entity {
         }
         if (d < this.radius + tgt.radius + 0.35) speed = 0;   // in melee range: stop and swing
       }
+    } else if (this.lead) {
+      // a caravan's people keep to their place in the column (src/systems/caravans.js)
+      const L = this.lead;
+      if (Math.hypot(L.x - pos.x, L.z - pos.z) > 0.9) { gx = L.x; gz = L.z; }
+      else speed = 0;
     } else if (this.wanderer) {
       this.wanderT -= dt;
       if (!this.home) this.home = pos.clone();

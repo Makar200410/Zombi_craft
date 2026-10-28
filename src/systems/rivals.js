@@ -34,14 +34,14 @@ const FAR = 190;            // and are sent home beyond this
 const MAX_DEFENDERS = 9;
 
 /** Soldier types a town fields at its tier (weighted pick). */
-function soldierTypes(tier) {
+export function soldierTypes(tier) {
   if (tier <= 2) return [['militia', 3], ['rival_archer', 1]];
   if (tier <= 4) return [['rival_guard', 3], ['rival_archer', 2], ['rival_knight', tier >= 4 ? 1 : 0]];
   if (tier <= 6) return [['rival_knight', 2], ['rival_musketeer', 2], ['rival_guard', 1]];
   if (tier <= 8) return [['rival_rifleman', 3], ['rival_knight', 1]];
   return [['rival_trooper', 2], ['rival_rifleman', 2]];
 }
-function pick(list, rnd = Math.random) { let t = 0; for (const [, w] of list) t += w; let r = rnd() * t; for (const [k, w] of list) if ((r -= w) <= 0) return k; return list[0][0]; }
+export function pick(list, rnd = Math.random) { let t = 0; for (const [, w] of list) t += w; let r = rnd() * t; for (const [k, w] of list) if ((r -= w) <= 0) return k; return list[0][0]; }
 const sector = (dx, dz) => Math.round(((Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360) / 45) % 8;
 /** 'на севере' … */
 const dirName = (dx, dz) => ['севере', 'северо-востоке', 'востоке', 'юго-востоке', 'юге', 'юго-западе', 'западе', 'северо-западе'][sector(dx, dz)];
@@ -627,7 +627,8 @@ export class Rivals {
     const byPlayer = source === g.player || source?.kind === 'player' || source?.owner === g.player || source?.user === g.player;
     if (byPlayer && !this.atWarWithPlayer(r.i) && r.owner !== 'player') this.declareWar(r, `Вы напали на людей «${r.name}» — это война!`);
   }
-  onDeath(u) {
+  onDeath(u, source) {
+    if (u.caravan) { this.game.caravans?.onDeath(u, source); return; }
     const r = this.list[u.rivalId]; if (!r) return;
     if (u.type === 'folk') r.pop = Math.max(4, r.pop - 1);
     else if (!u.raider) r.army = Math.max(0, r.army - 1);

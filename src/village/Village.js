@@ -936,7 +936,8 @@ export class Village {
   // ================================================================ environment helpers used by jobs
   refreshZombies() {
     const out = this.zombies; out.length = 0;
-    for (const e of this.game.entities.list) if (!e.dead && e.faction === 'undead' && e.kind !== 'projectile') out.push(e);
+    const rv = this.game.rivals;
+    for (const e of this.game.entities.list) if (!e.dead && e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.atWarWithPlayer(e.rivalId))) out.push(e);
   }
   nearestZombie(pos, maxDist, los = false) {
     let best = null, bd = maxDist * maxDist;
