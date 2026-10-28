@@ -3,7 +3,7 @@
 // The front (door side) faces +z at rotation 0. rot r turns the building r×90°:
 //   rot0 front +z, rot1 front -x, rot2 front -z, rot3 front +x.
 // blueprint(rot, variant) -> [{dx,dy,dz,id}] ; layout(rot, variant) -> {w, d, height, points, plots, quarry}
-import { B } from '../core/blocks.js';
+import { B, BLOCKS } from '../core/blocks.js';
 
 import { BP } from './bp.js';
 import { tiered, growOf, eraStyled } from './architecture.js';
@@ -1038,7 +1038,7 @@ function def(id, o) {
   // era designs: the type grows and changes materials with every age (see architecture.js)
   const era = tiered(id, t.design);
   if (era) { t.tiered = true; t.design = era; }
-  else if (t.design && !t.wonder && !t.line) {
+  else if (t.design && !t.wonder && !t.line && !t.custom) {
     // no era designs of its own: restyled per tier, crowned and widened (see eraStyled)
     const base = t.design(0);
     t.tiered = true;
@@ -1256,3 +1256,27 @@ export const RESEARCH_LABELS = {
 };
 
 export { rotXZ };
+
+/**
+ * A player's blueprint (src/systems/blueprints.js) as a building type: the village's builders raise it like any
+ * other building, block by block, wherever it is placed. Its cost is what its blocks cost.
+ */
+export function defineCustom(bp) {
+  const id = 'bp_' + bp.id;
+  const cost = {};
+  for (const [, , , bid] of bp.blocks) for (const [k, n] of Object.entries(BLOCKS[bid]?.cost || {})) cost[k] = (cost[k] || 0) + n;
+  for (const k in cost) cost[k] = Math.ceil(cost[k]);
+  if (!Object.keys(cost).length) cost.wood = 5;
+  const design = () => {
+    const p = new BP(bp.w, bp.d);
+    for (const [x, y, z, bid] of bp.blocks) p.set(x, y, z, bid);
+    p.point('door', bp.w >> 1, 1, bp.d - 1);
+    p.point('inside', bp.w >> 1, 1, bp.d >> 1);
+    return p;
+  };
+  for (const k of [...cache.keys()]) if (k.startsWith(id + ':')) cache.delete(k);
+  def(id, { name: bp.name, desc: `Ваш чертёж: ${bp.w}×${bp.d}, высота ${bp.h}, блоков: ${bp.blocks.length}. Строители возведут его где угодно.`,
+    cost, hp: 100 + bp.blocks.length * 4, category: 'custom', custom: true, design });
+  if (!BUILDING_ORDER.includes(id)) BUILDING_ORDER.push(id);
+  return id;
+}

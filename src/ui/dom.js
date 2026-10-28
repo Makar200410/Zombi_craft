@@ -146,7 +146,7 @@ export function resourceIcon(res) {
 export function itemIcon(id) {
   if (id && id.startsWith('blk_')) return blockIcon(+id.slice(4));          // a block carried in the hotbar
   if (id && id.startsWith('armor_')) return canvasURL(armorIcon(id));
-  return canvasURL(tryArt('getItemSprite', id) || fallbackIcon('i_' + id, '#6a5a8a', (id || '?')[0].toUpperCase()));
+  return canvasURL(tryArt('getItemSprite', id) || (id === 'blueprint_frame' ? frameIcon() : null) || fallbackIcon('i_' + id, '#6a5a8a', (id || '?')[0].toUpperCase()));
 }
 const ARMOR_COL = { leather: ['#5a3418', '#8a5a32', '#b88452'], iron: ['#6a6e76', '#c0c4cc', '#f0f2f6'], steel: ['#2a3040', '#5a6272', '#8a94a8'], crystal: ['#3a2080', '#8a70ff', '#d8c8ff'] };
 // 16×16 pixel shapes of the four pieces ('#' main, '+' light, '.' dark outline)
@@ -156,6 +156,20 @@ const ARMOR_SHAPE = {
   legs: ['', '', '   ..........   ', '   .#++#####.   ', '   .########.   ', '   .###..###.   ', '   .##.  .##.   ', '   .#+.  .+#.   ', '   .##.  .##.   ', '   .##.  .##.   ', '   ....  ....   '],
   feet: ['', '', '', '', '', '', '   ...    ...   ', '   .#.    .#.   ', '   .+.    .+.   ', '   .#..   .#..  ', '  .####. .####. ', '  ......  ......'],
 };
+let frameCanvas = null;
+/** The blueprint frame: a rolled-out blue sheet with a white plan on it. */
+function frameIcon() {
+  if (frameCanvas) return frameCanvas;
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1a3a7a'; g.fillRect(1, 2, 14, 12);
+  g.fillStyle = '#2f62c0'; g.fillRect(2, 3, 12, 10);
+  g.fillStyle = '#d8ecff';
+  g.fillRect(4, 5, 8, 1); g.fillRect(4, 10, 8, 1); g.fillRect(4, 5, 1, 6); g.fillRect(11, 5, 1, 6); g.fillRect(7, 5, 1, 3); g.fillRect(4, 8, 4, 1);
+  g.fillStyle = '#f0d890'; g.fillRect(0, 1, 2, 14); g.fillRect(14, 1, 2, 14);
+  frameCanvas = c;
+  return c;
+}
 const armorCache = new Map();
 function armorIcon(id) {
   if (armorCache.has(id)) return armorCache.get(id);

@@ -12,6 +12,7 @@ function item(id, o) { ITEMS[id] = { id, research: null, cooldown: 0.5, damage: 
 // --- tools
 // the builders' hammer: only villagers carry it (the player builds with block items from the inventory)
 item('build_hammer', { name: 'Молот строителя', kind: 'build', hidden: true, desc: 'Инструмент строителей деревни.' });
+item('blueprint_frame', { name: 'Рамка чертежа', kind: 'tool', toolType: 'frame', free: true, damage: 1, cooldown: 0.3, desc: 'Обведите постройку: ЛКМ — первый угол, ЛКМ — второй, ПКМ — сброс. Она станет чертежом, который строители возведут где угодно.' });
 item('pickaxe_stone', { name: 'Каменная кирка', kind: 'tool', toolType: 'pick', speed: 2.0, damage: 3, cooldown: 0.35 });
 item('pickaxe_iron', { name: 'Железная кирка', kind: 'tool', toolType: 'pick', speed: 3.5, damage: 4, cooldown: 0.3, research: 'smithing' });
 item('axe_stone', { name: 'Каменный топор', kind: 'tool', toolType: 'axe', speed: 2.2, damage: 5, cooldown: 0.5 });

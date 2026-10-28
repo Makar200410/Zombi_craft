@@ -15,7 +15,7 @@ export const STATIONS = {
 };
 
 // Items the player starts with.
-export const STARTING_ITEMS = ['sword_wood', 'pickaxe_stone', 'axe_stone'];
+export const STARTING_ITEMS = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'blueprint_frame'];
 
 /** kind: 'smelt' (resource → resource, takes time in the furnace queue) | 'item' (unlocks an item for the hotbar) */
 export const RECIPES = [
@@ -87,6 +87,7 @@ export class Crafting {
   owns(itemId) {
     const it = ITEMS[itemId];
     if (it?.kind === 'block') return (this.game.state.age | 0) >= (it.minAge || 0);     // blocks only cost resources when placed
+    if (it?.free) return true;
     return this.owned.has(itemId);
   }
   researched(itemId) {

@@ -6,7 +6,7 @@ import {
   BUILDING_TYPES, BUILDING_ORDER, JOB_LABELS, JOB_PLURAL, JOB_ORDER, jobIcon, STATE_LABELS, clamp, hscroll,
 } from './dom.js';
 
-const CATS = [['all', 'Все'], ['economy', 'Экономика'], ['military', 'Военное'], ['magic', 'Магия'], ['defense', 'Оборона'], ['wonder', 'Чудеса']];
+const CATS = [['all', 'Все'], ['economy', 'Экономика'], ['military', 'Военное'], ['magic', 'Магия'], ['defense', 'Оборона'], ['wonder', 'Чудеса'], ['custom', 'Чертежи']];
 const ZOMBIE_NAMES = { walker: 'Ходок', runner: 'Бегун', brute: 'Громила', spitter: 'Плевальщик', exploder: 'Взрывун', necromancer: 'Некромант' };
 const CONTINUOUS = new Set(['wall', 'stone_wall']);   // keep placing after each placement
 

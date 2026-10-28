@@ -206,6 +206,7 @@ export class SaveSystem {
       combat: safe(g.combat),
       rivals: safe(g.rivals),
       caravans: safe(g.caravans),
+      blueprints: g.blueprints?.forSave?.() || [],
       camera: safe(g.cameraRig),
       mode: g.mode,
     };
@@ -262,6 +263,7 @@ export class SaveSystem {
       const safe = (sys, data) => { try { if (data != null) sys?.deserialize?.(data); } catch (e) { console.error('deserialize failed', sys?.constructor?.name, e); } };
       safe(g.research, o.research);
       safe(g.crafting, o.crafting);
+      try { g.blueprints?.restore(o.blueprints); } catch (e) { console.error('blueprints', e); }
       safe(g.village, o.village);
       safe(g.player, o.player);
       safe(g.waves, o.waves);

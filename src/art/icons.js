@@ -371,6 +371,17 @@ function laserRifle(p) {
   });
 }
 const ITEM_DRAW = {
+  // the blueprint frame: a sheet of blue paper with a white plan, rolled on two wooden rods
+  blueprint_frame: (p) => {
+    for (let y = 6; y < 27; y++) for (let x = 7; x < 26; x++) p.set(x, y, hex((x + y) % 7 === 0 ? '#2a58b0' : '#2f64c4'));
+    const W = hex('#e0f0ff');
+    for (let x = 10; x < 23; x++) { p.set(x, 9, W); p.set(x, 22, W); }
+    for (let y = 9; y < 23; y++) { p.set(10, y, W); p.set(22, y, W); }
+    for (let y = 9; y < 16; y++) p.set(16, y, W);
+    for (let x = 10; x < 17; x++) p.set(x, 15, W);
+    for (let x = 18; x < 21; x++) p.set(x, 19, hex('#ffd860'));
+    for (let y = 4; y < 29; y++) { p.set(5, y, hex('#b88452')); p.set(6, y, hex('#8a5a32')); p.set(26, y, hex('#b88452')); p.set(27, y, hex('#8a5a32')); }
+  },
   steel_sword: (p) => sword(p, STEEL, GUNM, R.leather, GUNM, true),
   nano_blade: (p) => sword(p, hexes(['#1a4a6a', '#2a8ab8', '#40d0ff', '#9af0ff', '#ffffff']), GUNM, GUNM, hexes(['#30f0ff', '#30f0ff', '#30f0ff', '#9af0ff', '#ffffff']), false),
   rifle: (p) => rifle(p),
