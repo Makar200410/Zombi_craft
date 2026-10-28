@@ -1,29 +1,8 @@
 import * as THREE from 'three';
 import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { BUILDING_TYPES } from './buildings.js';
+import { levelId } from './architecture.js';
 import { ageOf, ageHpBonus } from '../systems/ages.js';
-
-// Every age (and every upgrade) rebuilds buildings in the materials of its time. The style of a building is
-// max(its level, age + 1); the maps below are applied cumulatively to the blueprint's own blocks.
-// Style 1 (stone age) is a special, more primitive take on the blueprints.
-// (Most common buildings have real era designs instead — see architecture.js; these maps restyle the rest.)
-const PRIMITIVE = { [B.ROOF_TILES]: B.THATCH, [B.STONE_BRICKS]: B.COBBLESTONE, [B.PLASTER]: B.WATTLE, [B.TIMBER_FRAME]: B.WATTLE, [B.MARBLE]: B.COBBLESTONE };
-const LEVEL_MATERIALS = [
-  [2, { [B.THATCH]: B.ROOF_TILES, [B.PLASTER]: B.MUDBRICK }],
-  [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS, [B.MUDBRICK]: B.PLASTER }],
-  [4, { [B.LOG]: B.SPRUCE_LOG, [B.BIRCH_LOG]: B.SPRUCE_LOG }],
-  [5, { [B.PLASTER]: B.STUCCO, [B.TIMBER_FRAME]: B.STUCCO, [B.ROOF_TILES]: B.SLATE, [B.SHINGLES]: B.SLATE }],
-  [6, { [B.STONE_BRICKS]: B.BRICK, [B.STUCCO]: B.BRICK, [B.SLATE]: B.CORRUGATED, [B.GLASS]: B.WINDOW, [B.SPRUCE_LOG]: B.CAST_IRON, [B.COBBLESTONE]: B.DARK_STONE }],
-  [7, { [B.BRICK]: B.CONCRETE, [B.CORRUGATED]: B.COPPER_ROOF, [B.LANTERN]: B.LAMP, [B.PLANKS]: B.CONCRETE, [B.CAST_IRON]: B.STEEL_BLOCK }],
-  [8, { [B.CONCRETE]: B.PREFAB, [B.COPPER_ROOF]: B.STEEL_BLOCK, [B.MARBLE]: B.PREFAB, [B.DARK_STONE]: B.CONCRETE }],
-  [9, { [B.PREFAB]: B.ALUMINUM, [B.WINDOW]: B.GLASS_BLUE, [B.GLASS]: B.GLASS_BLUE, [B.LAMP]: B.LED, [B.STEEL_BLOCK]: B.ALUMINUM }],
-  [10, { [B.ALUMINUM]: B.POLYMER, [B.GLASS_BLUE]: B.ENERGY_GLASS, [B.LED]: B.NEON, [B.CONCRETE]: B.NANO, [B.STONE_BRICKS]: B.NANO }],
-];
-function levelId(id, level) {
-  if (level <= 1) return PRIMITIVE[id] ?? id;
-  for (const [lv, map] of LEVEL_MATERIALS) if (level >= lv && map[id] !== undefined) id = map[id];
-  return id;
-}
 
 const CLEAR = 0, FILL = 1, BP = 2;
 

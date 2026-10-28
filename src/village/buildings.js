@@ -6,7 +6,7 @@
 import { B } from '../core/blocks.js';
 
 import { BP } from './bp.js';
-import { tiered, growOf } from './architecture.js';
+import { tiered, growOf, eraStyled } from './architecture.js';
 
 // ---------------------------------------------------------------- designs
 
@@ -1038,6 +1038,12 @@ function def(id, o) {
   // era designs: the type grows and changes materials with every age (see architecture.js)
   const era = tiered(id, t.design);
   if (era) { t.tiered = true; t.design = era; }
+  else if (t.design && !t.wonder && !t.line) {
+    // no era designs of its own: restyled per tier, crowned and widened (see eraStyled)
+    const base = t.design(0);
+    t.tiered = true;
+    t.design = eraStyled(id, t.design, base.w <= 5 && base.d <= 5);
+  }
   // grow: blocks added on every side (era buildings widen after the iron age); default = the tier's full width
   t.blueprint = (rot = 0, variant = 0, tier = eraTier, grow) => compile(t, rot, variant % t.variants, tier, grow).blocks;
   t.layout = (rot = 0, variant = 0, tier = eraTier, grow) => compile(t, rot, variant % t.variants, tier, grow);

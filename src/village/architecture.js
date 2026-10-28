@@ -759,8 +759,8 @@ const GROW = {
 };
 /** How many blocks per side a type grows at a tier. */
 export function growOf(id, t) {
-  if (!DESIGNS[id]) return 0;
-  return (GROW[id] || GROW.default)[Math.max(0, Math.min(10, t | 0))];
+  const table = DESIGNS[id] ? (GROW[id] || GROW.default) : GENERIC_GROW.get(id);
+  return table ? table[Math.max(0, Math.min(10, t | 0))] : 0;
 }
 
 /**
@@ -850,6 +850,82 @@ export function tiered(id, medieval) {
   if (!f) return null;
   return (v, t = 4, grow = growOf(id, t)) => {
     const core = t === 4 && medieval && !OWN_T4.has(id) ? medieval(v) : f(v, t);
+    return grow > 0 ? widen(core, t, grow) : core;
+  };
+}
+
+// ---------------------------------------------------------------- the other buildings
+// Every age (and every upgrade) rebuilds buildings in the materials of its time. The maps below are applied
+// cumulatively to a design's own blocks; style 1 (stone age) is a more primitive take on them. Types without their
+// own era designs (towers, factories, plants …) are restyled this way, crowned with the era's lights and masts,
+// and widened like the others (see eraStyled).
+const PRIMITIVE = { [B.ROOF_TILES]: B.THATCH, [B.STONE_BRICKS]: B.COBBLESTONE, [B.PLASTER]: B.WATTLE, [B.TIMBER_FRAME]: B.WATTLE, [B.MARBLE]: B.COBBLESTONE };
+const LEVEL_MATERIALS = [
+  [2, { [B.THATCH]: B.ROOF_TILES, [B.PLASTER]: B.MUDBRICK }],
+  [3, { [B.COBBLESTONE]: B.STONE_BRICKS, [B.MOSSY_COBBLE]: B.STONE_BRICKS, [B.MUDBRICK]: B.PLASTER }],
+  [4, { [B.LOG]: B.SPRUCE_LOG, [B.BIRCH_LOG]: B.SPRUCE_LOG }],
+  [5, { [B.PLASTER]: B.STUCCO, [B.TIMBER_FRAME]: B.STUCCO, [B.ROOF_TILES]: B.SLATE, [B.SHINGLES]: B.SLATE }],
+  [6, { [B.STONE_BRICKS]: B.BRICK, [B.STUCCO]: B.BRICK, [B.SLATE]: B.CORRUGATED, [B.GLASS]: B.WINDOW, [B.SPRUCE_LOG]: B.CAST_IRON, [B.COBBLESTONE]: B.DARK_STONE }],
+  [7, { [B.BRICK]: B.CONCRETE, [B.CORRUGATED]: B.COPPER_ROOF, [B.LANTERN]: B.LAMP, [B.PLANKS]: B.CONCRETE, [B.CAST_IRON]: B.STEEL_BLOCK }],
+  [8, { [B.CONCRETE]: B.PREFAB, [B.COPPER_ROOF]: B.STEEL_BLOCK, [B.MARBLE]: B.PREFAB, [B.DARK_STONE]: B.CONCRETE }],
+  [9, { [B.PREFAB]: B.ALUMINUM, [B.WINDOW]: B.GLASS_BLUE, [B.GLASS]: B.GLASS_BLUE, [B.LAMP]: B.LED, [B.STEEL_BLOCK]: B.ALUMINUM }],
+  [10, { [B.ALUMINUM]: B.POLYMER, [B.GLASS_BLUE]: B.ENERGY_GLASS, [B.LED]: B.NEON, [B.CONCRETE]: B.NANO, [B.STONE_BRICKS]: B.NANO }],
+];
+/** A block of a design in the materials of style (tier) `level`. */
+export function levelId(id, level) {
+  if (level <= 1) return PRIMITIVE[id] ?? id;
+  for (const [lv, map] of LEVEL_MATERIALS) if (level >= lv && map[id] !== undefined) id = map[id];
+  return id;
+}
+const SOLIDISH = (id) => id !== AIR && id !== B.TORCH && id !== B.BANNER && id !== B.LADDER && id !== B.WATER && id !== B.FLOWER_RED && id !== B.FLOWER_YELLOW;
+
+/** Era lights and masts on top of a design: corner lamps (industrial age on), a flag / mast, antennas, a beacon. */
+function crown(bp, t) {
+  if (t < 6) return;
+  const e = eraOf(t);
+  const tops = new Map();
+  for (const c of bp.cells.values()) { const k = c.dx + ',' + c.dz; if ((tops.get(k)?.dy ?? -1) < c.dy) tops.set(k, c); }
+  const topAt = (x, z) => tops.get(x + ',' + z);
+  let H = 0; for (const c of tops.values()) H = Math.max(H, c.dy);
+  if (H < 3) return;
+  const lamp = isCube(e.light) ? e.light : B.LANTERN;
+  // lamps on the highest corners of the roof outline
+  const cand = [];
+  for (const c of tops.values()) if (c.dy >= Math.max(3, H - 3) && SOLIDISH(c.id)) cand.push(c);
+  const corner = (sx, sz) => cand.reduce((best, c) => (!best || c.dx * sx + c.dz * sz > best.dx * sx + best.dz * sz ? c : best), null);
+  const used = new Set();
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const c = corner(sx, sz); if (!c || used.has(c)) continue;
+    used.add(c);
+    if (bp.get(c.dx, c.dy + 1, c.dz) === AIR) bp.set(c.dx, c.dy + 1, c.dz, lamp);
+  }
+  // a mast on the highest point near the middle: a flag (industrial), a radio mast (electric on), a beacon on top
+  let best = null;
+  const mx = (bp.w - 1) / 2, mz = (bp.d - 1) / 2;
+  for (const c of cand) if (c.dy === H && SOLIDISH(c.id) && (!best || Math.hypot(c.dx - mx, c.dz - mz) < Math.hypot(best.dx - mx, best.dz - mz))) best = c;
+  if (!best) return;
+  const mh = t >= 9 ? 5 : t >= 8 ? 4 : 3;
+  for (let k = 1; k <= mh; k++) if (bp.get(best.dx, best.dy + k, best.dz) !== AIR) return;
+  for (let k = 1; k < mh; k++) bp.set(best.dx, best.dy + k, best.dz, t >= 8 ? e.post : B.LOG);
+  bp.set(best.dx, best.dy + mh, best.dz, t >= 8 ? (t >= 10 ? B.NEON : t >= 9 ? B.LED : B.LAMP) : B.BANNER);
+  if (t >= 8) for (const [ax, az] of [[1, 0], [-1, 0]]) if (bp.get(best.dx + ax, best.dy + mh - 1, best.dz + az) === AIR) bp.set(best.dx + ax, best.dy + mh - 1, best.dz + az, e.post);
+}
+
+const GENERIC_GROW = new Map();     // type id -> grow table of the restyled types
+/**
+ * Design function (variant, tier, grow) for a type without era designs: its own design in the materials of the
+ * tier, crowned with the era's lights and masts and widened (wings or a fenced yard) after the iron age.
+ * small = a compact structure (turrets, lights) that only gets a 1-block yard.
+ */
+export function eraStyled(id, design, small = false) {
+  GENERIC_GROW.set(id, small ? GROW.watchtower : GROW.default);
+  return (v, t = 4, grow = growOf(id, t)) => {
+    const src = design(v), core = new BP(src.w, src.d);
+    for (const c of src.cells.values()) core.set(c.dx, c.dy, c.dz, levelId(c.id, t));
+    for (const k in src.pts) for (const p of src.pts[k]) core.point(k, p.dx, p.dy, p.dz);
+    core.plots = src.plots.slice(); core.quarry = src.quarry;
+    for (const k of Object.keys(src)) if (!(k in core)) core[k] = src[k];
+    crown(core, t);
     return grow > 0 ? widen(core, t, grow) : core;
   };
 }
