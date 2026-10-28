@@ -114,6 +114,15 @@ export class UI {
     toggle(this.root, 'o-portrait', portrait);
     toggle(this.root, 'o-landscape', !portrait);
     toggle(this.root, 'o-short', innerHeight < 500);
+    // phones: the whole interface (not the touch sticks) is drawn smaller, so the world stays visible
+    const small = Math.min(innerWidth, innerHeight);
+    this.uiz = small < 520 ? Math.max(0.62, Math.min(1, small / 520)) : 1;
+    this.root.style.setProperty('--uiz', this.uiz);
+    this.root.style.setProperty('--uiz-panel', Math.min(1, this.uiz * 1.25));
+    toggle(this.root, 'o-compact', this.uiz < 1);
+    // on a phone the quest list starts folded (until the player opens it once)
+    const qt = this.questTracker;
+    if (qt && this.uiz < 1 && !qt.collapsed) { let set = null; try { set = localStorage.getItem('zc_quests_min'); } catch (e) { /* ignore */ } if (set === null) { qt.collapsed = true; qt.apply(); } }
     this.hud.layout();
   }
 

@@ -55,7 +55,7 @@ export class Hud {
     this.craftBtn = h('button.zc-mode-btn.zc-craft-btn.ui-i', { title: 'Крафт и переплавка (I)', onclick: () => { ui.click(); ui.inventory.close(); ui.craft.toggle(); } },
       h('span.zc-mode-ico', img(glyph('hammer'))), h('span.zc-mode-lbl', 'Крафт'));
     this.rivalsBtn = h('button.zc-mode-btn.zc-rivals-btn.ui-i', { title: 'Соседние деревни: войны, мир, захват (N)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.close(); ui.rivals.toggle(); } },
-      h('span.zc-mode-ico', img(glyph('castle'))), h('span.zc-mode-lbl', 'Соседи'));
+      h('span.zc-mode-ico', img(glyph('shield'))), h('span.zc-mode-lbl', 'Соседи'));
     this.invBtn = h('button.zc-mode-btn.zc-inv-btn.ui-i', { title: 'Инвентарь: оружие в ячейки (E)', onclick: () => { ui.click(); ui.craft.close(); ui.inventory.toggle(); } },
       h('span.zc-mode-ico', img(glyph('sword'))), h('span.zc-mode-lbl', 'Инвентарь'));
 
@@ -183,13 +183,15 @@ export class Hud {
 
   /** Lay out hotbar for touch devices so it never covers the joystick / action button zones. */
   layout() {
-    const W = innerWidth, H = innerHeight, touch = this.game.isTouch;
+    // sizes are in the HUD's own (zoomed, see UI.layout) pixels; the touch buttons on the right are not zoomed
+    const z = this.ui.uiz || 1, W = innerWidth, H = innerHeight, touch = this.game.isTouch;
     const portrait = H >= W;
     let slot, cols = 9;
-    if (!touch) slot = W < 700 ? Math.floor((W - 24) / 9) : 54;
-    else if (portrait) slot = Math.min(50, Math.floor((W - 20 - 8 - 16) / 9));
+    if (!touch) slot = W < 700 ? Math.floor((W / z - 24) / 9) : 54;
+    else if (portrait) slot = Math.min(50, Math.floor((W / z - 20 - 8 - 16) / 9));
     else {
-      const gap = W - W * 0.42 - 214 - 8;
+      // phones: the hotbar sits between the move stick (left 30%) and the action buttons (right ~200 px)
+      const gap = z < 1 ? (W * 0.7 - 206) / z : W - W * 0.42 - 214 - 8;
       slot = Math.floor((gap - 16) / 9);
       if (slot < 36) { cols = 5; slot = Math.min(44, Math.floor((gap - 8) / 5)); }
       slot = Math.min(slot, 50);

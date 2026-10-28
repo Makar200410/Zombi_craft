@@ -1058,3 +1058,10 @@
 .zc-rv-line { font-size: 12px; color: #d8cba8; margin-top: 2px; }
 .zc-rv-btns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .zc-rv-empty { color: var(--muted); padding: 20px; }
+/* =====================================================================  phones: compact interface (UI.layout sets --uiz) */
+.zc-root.o-compact .zc-hud, .zc-root.o-compact .zc-toasts, .zc-root.o-compact .zc-banner, .zc-root.o-compact .zc-command,
+.zc-root.o-compact .zc-inspector { zoom: var(--uiz); }
+.zc-root.o-compact .zc-research { zoom: var(--uiz-panel); }
+.zc-root.o-compact .zc-mode-lbl { display: none; }
+.zc-root.o-compact .zc-mode-btn { padding: 0 5px; }
+.zc-root.o-compact.o-landscape.zc-touch .zc-bottom { left: calc(65% - 103px / var(--uiz)); }

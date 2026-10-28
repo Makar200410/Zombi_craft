@@ -17,7 +17,7 @@ export class RivalsPanel {
     this.root = h('div.zc-research.zc-craft.zc-rv.ui-i');
     this.body = h('div.zc-rv-body');
     const head = h('div.zc-rs-head',
-      h('div.zc-rs-title', img(glyph('castle')), h('span', 'Соседи')),
+      h('div.zc-rs-title', img(glyph('shield')), h('span', 'Соседи')),
       this.sum = h('div.zc-inv-hint', ''),
       h('button.zc-iconbtn.zc-close.ui-i', { title: 'Закрыть', onclick: () => this.close() }, glyphImg('close')));
     this.panel = h('div.zc-rs-panel.zc-panel.ornate', head, this.body);
