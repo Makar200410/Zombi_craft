@@ -53,6 +53,7 @@ export class Rivals {
     this.plans = new Map();     // town index -> building plan (deterministic from the seed)
     this.wars = new Set();      // 'a:b' (a < b): towns at war with each other
     this.units = new Map();     // town index -> spawned entities near the player
+    this.jobs = [];             // buildings rising / being rebuilt in the world (see _work)
     this.t = 0;
     this._world = null;
     const bus = game.bus;
@@ -65,7 +66,7 @@ export class Rivals {
   // ------------------------------------------------------------------ setup
   _attach(world) {
     this._world = world;
-    this.list = []; this.plans.clear(); this.wars.clear(); this._clearUnits();
+    this.list = []; this.plans.clear(); this.wars.clear(); this._clearUnits(); this.jobs = [];
     if (world.format < 4) return;
     world.decorators.push((cx, cz) => this._decorate(cx, cz));
   }
@@ -213,6 +214,63 @@ export class Rivals {
     w.relightBox(p.x - 1, p.z - 1, p.x + p.mw, p.z + p.md);
     this.game.bus.emit('rivals:changed', { i: r.i });
   }
+  /**
+   * Town growth in the world goes through a work queue with its own time budget per frame: a new building
+   * rises layer by layer (the old design comes down first when the town enters a new age), so the towns keep
+   * developing in front of the player without a single heavy frame. Chunks that don't exist get the finished
+   * building when they are generated (see _decorate).
+   */
+  _queue(r, k, oldTier, secs) {
+    if (this.jobs.some(j => j.r === r && j.k === k)) return;
+    this.jobs.push({ r, k, oldTier, secs, ops: null, i: 0, lit: 0 });
+  }
+  _prepare(j) {
+    const w = this.game.world, r = j.r, p = this._plan(r)[j.k];
+    j.ops = [];
+    if (!p) return;
+    const keep = new Set();
+    const { L, ox, oz } = this._blocks(r, p, r.tier);
+    for (const b of L.blocks) keep.add((ox + b.dx) + ',' + b.dy + ',' + (oz + b.dz));
+    if (j.oldTier) {
+      const o = this._blocks(r, p, j.oldTier);
+      const old = o.L.blocks.filter(b => b.dy >= 1 && !keep.has((o.ox + b.dx) + ',' + b.dy + ',' + (o.oz + b.dz))).sort((a, b) => b.dy - a.dy);
+      for (const b of old) if (w.isGenerated(o.ox + b.dx, o.oz + b.dz)) j.ops.push([o.ox + b.dx, r.y + b.dy, o.oz + b.dz, 0]);
+    }
+    // the plot (plants cleared, holes filled), then the building from the ground up
+    for (let z = p.z; z < p.z + p.md; z++) for (let x = p.x; x < p.x + p.mw; x++) {
+      if (!w.isGenerated(x, z)) continue;
+      for (let yy = r.y + 1; yy <= r.y + L.height + 1; yy++) { const id = w.rawGet(x, yy, z); if (id && !BLOCKS[id]?.solid && !keep.has(x + ',' + (yy - r.y) + ',' + z)) j.ops.push([x, yy, z, 0]); }
+    }
+    const blocks = [...L.blocks].sort((a, b) => a.dy - b.dy);
+    for (const b of blocks) if (w.isGenerated(ox + b.dx, oz + b.dz)) j.ops.push([ox + b.dx, r.y + b.dy, oz + b.dz, b.id]);
+    // relight just the building (old and new design), not its whole reserved plot
+    let x0 = ox, z0 = oz, x1 = ox + L.w, z1 = oz + L.d;
+    if (j.oldTier) { const o = this._blocks(r, p, j.oldTier); x0 = Math.min(x0, o.ox); z0 = Math.min(z0, o.oz); x1 = Math.max(x1, o.ox + o.L.w); z1 = Math.max(z1, o.oz + o.L.d); }
+    j.rect = [x0 - 1, z0 - 1, x1, z1];
+  }
+  _work(dt) {
+    if (!this.jobs.length) return;
+    const w = this.game.world, t0 = performance.now(), BUDGET = 2.5;       // ms per frame for building work
+    while (this.jobs.length && performance.now() - t0 < BUDGET) {
+      const j = this.jobs[0];
+      if (!j.ops) { this._prepare(j); if (!j.ops.length) { this.jobs.shift(); continue; } }
+      // the building takes about j.secs to rise, whatever the frame rate
+      j.acc = (j.acc || 0) + j.ops.length * dt / j.secs;
+      let n = Math.min(j.ops.length - j.i, Math.max(1, Math.floor(j.acc)));
+      j.acc -= n;
+      while (n-- > 0 && performance.now() - t0 < BUDGET) {
+        const [x, y, z, id] = j.ops[j.i++];
+        if (w.isGenerated(x, z)) { w.rawSet(x, y, z, id); (j.touched || (j.touched = [])).push(x, y, z); }
+      }
+      const done = j.i >= j.ops.length;
+      // the new layers show up a few times a second; the (costly) lighting is redone once, when it stands
+      j.lit += dt;
+      if (j.touched && (done || j.lit > 0.35)) { j.lit = 0; const t = j.touched; j.touched = null; for (let q = 0; q < t.length; q += 3) w.markDirty(t[q], t[q + 1], t[q + 2]); }
+      if (done) w.relightBox(...j.rect);
+      if (done) { this.jobs.shift(); this.game.bus.emit('rivals:changed', { i: j.r.i }); continue; }
+      break;          // one job a frame: the others wait their turn
+    }
+  }
   /** After loading: draw the towns into the chunks that are already there. */
   _restampLoaded() {
     const w = this.game.world; if (!w || !this.list.length) return;
@@ -230,7 +288,9 @@ export class Rivals {
   // ------------------------------------------------------------------ the simulation
   update(dt) {
     const g = this.game;
-    if (!this.list.length || !g.running || g.net?.isClient) return;
+    if (!this.list.length || !g.running) return;
+    this._work(dt);
+    if (g.net?.isClient) return;
     this._units(dt);
     this.t += dt;
     if (this.t < 1) return;
@@ -252,17 +312,22 @@ export class Rivals {
     if (r.built < elig && r.wealth >= cost) {
       r.wealth -= cost; r.built++;
       this._recount(r);
-      this._restamp(r, r.built - 1, 0);
+      this._queue(r, r.built - 1, 0, 14);
     }
     // a new age: never more than one ahead of the player (aggressive towns two)
     r.tierT += dt;
     const cap = Math.min(10, playerTier + (r.aggro > 0.7 ? 2 : 1));
     const tierCost = 200 * r.tier * r.tier;
+    // what the town is saving up for (shown in «Соседи»)
+    const plan = this._plan(r);
+    if (r.built < elig) r.next = { what: BUILDING_TYPES[plan[r.built]?.type]?.name || 'здание', pct: Math.min(99, Math.round(r.wealth / (40 + r.built * 12 * r.tier) * 100)) };
+    else if (r.tier < cap) r.next = { what: 'эпоха «' + (AGES[r.tier]?.name || '') + '»', pct: Math.min(99, Math.round(Math.min(r.wealth / tierCost, r.tierT / 360) * 100)) };
+    else r.next = { what: 'ждёт, пока вы догоните их по эпохе', pct: null };
     if (r.built >= elig && r.tier < cap && r.wealth >= tierCost && r.tierT > 360) {
       r.wealth -= tierCost; r.tierT = 0;
       const old = r.tier; r.tier++;
       this._recount(r);
-      for (let k = 0; k < Math.min(r.built, this._plan(r).length); k++) this._restamp(r, k, old);
+      for (let k = 0; k < Math.min(r.built, this._plan(r).length); k++) this._queue(r, k, old, 5);
       if (this._near(r, 400)) g.bus.emit('toast', { text: `«${r.name}» вступает в эпоху: ${AGES[r.tier - 1]?.name || ''}`, kind: 'info' });
     }
     // train soldiers (not while the player is besieging the town)
@@ -567,7 +632,7 @@ export class Rivals {
       list: this.list.map(r => {
         const o = { ...r };
         if (r.raid) { o.army = r.army + (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size); }
-        delete o.raid; delete o.capT; delete o._capMsgT;
+        delete o.raid; delete o.capT; delete o._capMsgT; delete o.next;
         return o;
       }),
       wars: [...this.wars],

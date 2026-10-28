@@ -62,6 +62,7 @@ export class RivalsPanel {
         `${AGES[r.tier - 1]?.name || ''} · жителей ${Math.round(r.pop)} · войско ${Math.floor(r.army)}/${r.armyCap} (сила ${Math.round(R.power(r))})`,
         `${m.dist} блоков на ${m.dir}`,
       ];
+      if (r.next) lines.push(r.next.pct === null ? `Развитие: ${r.next.what}` : `Строит: ${r.next.what} — ${r.next.pct}%`);
       if (m.status === 'subject') lines.push(`Подчиняется «${R.get(r.owner)?.name || '?'}»`);
       if (foes.length) lines.push(`Воюет с: ${foes.map(n => '«' + n + '»').join(', ')}`);
       if (r.raid && !r.raid.arrived) lines.push(`⚔ Отряд из ${r.raid.size} воинов идёт к вам: ~${Math.round(r.raid.eta)} с`);
