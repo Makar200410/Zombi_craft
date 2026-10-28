@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { Sky } from './Sky.js';
+import { HAZE } from './FarTerrain.js';
 import { worldUniforms } from './chunkMaterials.js';
 
 // Sky color keyframes over timeOfDay (0 midnight, .25 sunrise, .5 noon, .75 sunset)
@@ -223,7 +224,20 @@ export class Renderer {
     // weather fog: rain shortens the view, real fog closes it right in (less so from the strategy camera)
     const fogK = this.game.mode === 'command' ? 0.45 : 1;
     this.scene.fog.near = (Math.min(30, fogFar * 0.45) - night * 10) * (1 - fogW * 0.8 * fogK);
-    this.scene.fog.far = fogFar * (1 - night * 0.25) * (1 - rain * 0.25) * (1 - fogW * 0.62 * fogK);
+    // viewFar: how far the real chunks reach (what the fog used to end at); chunk loading and culling use it
+    this.viewFar = fogFar * (1 - night * 0.25) * (1 - rain * 0.25) * (1 - fogW * 0.62 * fogK);
+    let far = this.viewFar;
+    const ft = this.game.farTerrain;
+    ft?.update(this.viewFar, cave);
+    if (ft?.active) {
+      // the horizon is drawn: a long haze instead of the wall of fog; real fog and caves still close it in
+      const haze = HAZE[ft.quality] * (1 - night * 0.3) * (1 - rain * 0.45);
+      far = haze + (far - haze) * Math.max(cave, Math.min(1, fogW * 1.3));
+      this.scene.fog.near = Math.max(this.scene.fog.near, far * 0.04);
+    }
+    this.scene.fog.far = far;
+    const camFar = ft?.active ? HAZE[ft.quality] + 100 : 800;
+    if (this.camera.far !== camFar) { this.camera.far = camFar; this.camera.updateProjectionMatrix(); }
     worldUniforms.uSkyLight.value = 1 - night * 0.7;
     worldUniforms.uBlockLightStrength.value = 1.1 + night * 0.6;
     this.renderer.toneMappingExposure = 1.0 + night * 0.25;

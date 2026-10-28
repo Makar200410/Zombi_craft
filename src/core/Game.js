@@ -12,6 +12,7 @@ import { EventBus } from './events.js';
 import { GameState } from './state.js';
 import { World, WORLD_FORMATS, WORLD_FORMAT } from '../world/World.js';
 import { Renderer } from '../render/Renderer.js';
+import { FarTerrain } from '../render/FarTerrain.js';
 import { ChunkRenderer } from '../render/ChunkRenderer.js';
 import { Particles } from '../render/particles.js';
 import { EntityManager } from '../entities/EntityManager.js';
@@ -66,6 +67,7 @@ export class Game {
     this.atlas.texture.anisotropy = Math.min(4, this.renderer.renderer.capabilities.getMaxAnisotropy());
     this.scene = this.renderer.scene;
     this.camera = this.renderer.camera;
+    this.farTerrain = new FarTerrain(this);
     this.particles = new Particles(this);
     this.entities = new EntityManager(this);
     this.audio = new Audio(this);
@@ -109,6 +111,7 @@ export class Game {
     this.world = new World(this, { size, seed, height: F.height, sea: F.sea, format: WORLD_FORMATS[format] ? format : 1 });
     this.world.generate();
     this.world.startWorker();             // the rest of the world is made in the background
+    this.farTerrain.setWorld(this.world);  // and the horizon beyond it
     progress(0.55, 'Строим ландшафт…');
     await tick();
     this.chunkRenderer = new ChunkRenderer(this);

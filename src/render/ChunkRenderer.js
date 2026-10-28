@@ -138,7 +138,7 @@ export class ChunkRenderer {
   _visible(key, slot) {
     const cam = this.game.camera.position;
     const fog = this.game.scene.fog;
-    const far = (fog ? fog.far : 200) + (this.game.quality === 'low' ? 10 : 20);
+    const far = (this.game.renderer?.viewFar || (fog ? fog.far : 200)) + (this.game.quality === 'low' ? 10 : 20);
     const [cx, cz] = parse(key);
     if (hdist(cx, cz, cam.x, cam.z) > far * far) return false;
     if (slot.sky) return true;
@@ -159,7 +159,7 @@ export class ChunkRenderer {
     // the big world is generated lazily: make terrain ahead of the player / camera within the fog + margin
     const w = this.world, g = this.game;
     if (w.pumpGeneration) {
-      const fogFar = g.scene.fog ? g.scene.fog.far : 120;
+      const fogFar = g.renderer?.viewFar || (g.scene.fog ? g.scene.fog.far : 120);
       const p = g.mode === 'command' ? g.camera.position : (g.player?.position || g.camera.position);
       w.pumpGeneration(p.x, p.z, fogFar + 24, g.quality === 'low' ? 2.5 : 4);
       // tall worlds: forget what is far behind (it is generated again, with its edits, when we come back)
@@ -178,7 +178,7 @@ export class ChunkRenderer {
     const cam = this.game.camera.position;
     // only sections that could be seen (inside the fog + margin; deep caves only near the camera)
     const fog = this.game.scene.fog;
-    const reach = (fog ? fog.far : 200) + 32, r2 = reach * reach;
+    const reach = (this.game.renderer?.viewFar || (fog ? fog.far : 200)) + 32, r2 = reach * reach;
     const keys = [], dd = new Map();
     for (const k of dirty) {
       const [cx, cz, sy] = parse(k);
