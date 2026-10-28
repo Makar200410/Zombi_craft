@@ -44,6 +44,9 @@ export class Blueprints {
   get(id) { return this.list.find(b => b.id === id) || null; }
   /** Adds a blueprint (from the frame or the workshop); returns its building type id. */
   add(bp) {
+    // the same blueprint again (a friend sent it twice): keep the one we have
+    const same = !bp.id && this.list.find(b => b.name === bp.name && b.w === bp.w && b.h === bp.h && b.d === bp.d && b.blocks.length === bp.blocks.length);
+    if (same) return 'bp_' + same.id;
     bp = { ...bp, id: bp.id || (Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)) };
     this.list = this.list.filter(b => b.id !== bp.id);
     this.list.push(bp);

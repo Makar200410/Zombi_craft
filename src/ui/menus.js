@@ -2,6 +2,7 @@
 import { h, img, glyph, glyphImg, resourceIcon, itemIcon, clear } from './dom.js';
 import { CREDITS } from '../audio/library.js';
 import { AGES } from '../systems/ages.js';
+import { renderWorkshop } from './workshop.js';
 
 const agoText = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'только что'; if (m < 60) return m + ' мин назад'; const hh = Math.round(m / 60); if (hh < 24) return hh + ' ч назад'; const d = Math.round(hh / 24); return d + ' дн назад'; };
 
@@ -75,6 +76,7 @@ export class Menus {
     else if (p === 'new') this._newGame(c);
     else if (p === 'worlds') this._worlds(c);
     else if (p === 'net') this._net(c);
+    else if (p === 'workshop') this._workshop(c);
     else if (p === 'settings') this._settings(c, () => this.page('home'));
     else if (p === 'help') this._help(c, () => this.page('home'));
   }
@@ -88,6 +90,7 @@ export class Menus {
     list.append(
       this.btn('Новый мир', () => this.page('new'), last ? 'big' : 'primary big', glyph('sword')),
       this.btn('Сетевая игра', () => this.page('net'), '', glyph('flag'), 'по локальной сети'),
+      this.btn('Мастерская', () => this.page('workshop'), '', glyph('hammer'), 'чертежи и миры друзей'),
       this.btn('Настройки', () => this.page('settings'), '', glyph('gear')),
       this.btn('Как играть', () => this.page('help'), '', glyph('book')),
     );
@@ -126,6 +129,14 @@ export class Menus {
     c.append(list, h('div.zc-row.end',
       this.btn('Назад', () => this.page('home'), 'ghost'),
       this.btn('Новый мир', () => this.page('new'), 'primary', glyph('sword'))));
+  }
+  /** Workshop: blueprints and world codes to share with friends; a world code starts that world here. */
+  _workshop(c) {
+    c.append(h('h2.zc-h', 'Мастерская'));
+    const box = h('div.zc-rv-body.zc-ws-menu');
+    box.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+    renderWorkshop(box, this.ui, { inMenu: true, onNewWorld: (s) => this.ui.confirm('Создать мир?', `«${s.name || 'Мир друга'}», зерно ${s.seed}`, 'Создать', () => this.ui.startNewGame({ difficulty: this.difficulty, seed: s.seed, name: s.name })) });
+    c.append(box, h('div.zc-row.end', this.btn('Назад', () => this.page('home'), 'ghost')));
   }
   /** Network game over the local network: join a friend (anywhere), or how to host (Windows). */
   _net(c) {
@@ -246,7 +257,7 @@ export class Menus {
       pc: () => [keys([
         ['W A S D', 'Движение'], ['Пробел', 'Прыжок'], ['Shift', 'Бег'], ['Мышь', 'Обзор'],
         ['ЛКМ', 'Атака / добыча блока'], ['ПКМ', 'Поставить блок / особое действие'], ['1–9, колесо', 'Выбор предмета'],
-        ['V', 'Вид от 1-го / 3-го лица'], ['Tab', 'Режим командования'], ['I', 'Крафт и переплавка'], ['E', 'Инвентарь: оружие в ячейки'], ['J', 'Журнал заданий'], ['L', 'Летопись и достижения'], ['N', 'Соседние деревни'], ['ПКМ по верстаку / печи', 'Открыть крафт'], ['Esc / P', 'Пауза'],
+        ['V', 'Вид от 1-го / 3-го лица'], ['Tab', 'Режим командования'], ['I', 'Крафт и переплавка'], ['E', 'Инвентарь: оружие в ячейки'], ['J', 'Журнал заданий'], ['L', 'Летопись и достижения'], ['K', 'Мастерская: чертежи и миры'], ['N', 'Соседние деревни'], ['ПКМ по верстаку / печи', 'Открыть крафт'], ['Esc / P', 'Пауза'],
       ])],
       credits: () => [h('p', 'Спасибо авторам свободной музыки и звуков:'), h('ul.zc-tips', CREDITS.map(t => h('li', t)))],
       touch: () => [keys([

@@ -19,6 +19,7 @@ import { encodeChanges, decodeChanges } from '../systems/save.js';
 import { RECIPES } from '../systems/crafting.js';
 import { ITEMS } from '../core/items.js';
 import { Siege, ROLES } from './siege.js';
+import { decodeBlueprint } from '../systems/blueprints.js';
 
 export const LAN_PORT = 27015;
 const TICK = 0.1;            // snapshot / position rate (s)
@@ -193,6 +194,7 @@ export class Net {
       }
       case 'craft': this._remoteCraft(id, d.id); break;
       case 'cmd': if (p) this.siege.command(p, d); break;
+      case 'bp': if (p) { this._takeBlueprint(d.code, p.playerName); this._sendAll({ t: 'bp', code: d.code, from: p.playerName }); } break;
     }
   }
   _spawnPoint() {
@@ -289,6 +291,7 @@ export class Net {
       const tm = setTimeout(() => resolve(null), 15000);
       this.ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.t === 'welcome' || m.t === 'nohost') { clearTimeout(tm); resolve(m); } };
       this.ws.onclose = () => { clearTimeout(tm); resolve(null); };
+      this.myName = name || 'Игрок';
       this.ws.send(JSON.stringify({ t: 'hello', name: name || 'Игрок', role }));
     });
     if (!welcome || welcome.t !== 'welcome') { try { this.ws?.close(); } catch (e) { /* ignore */ } this.ws = null; return { ok: false, reason: welcome?.t === 'nohost' ? 'На этом компьютере мир ещё не открыт для сети' : 'Хозяин не ответил' }; }
@@ -346,6 +349,16 @@ export class Net {
     if (g.running) { g.ui?.quitToMenu?.(true); g.bus.emit('toast', { text: why, kind: 'warn' }); }
   }
   send(msg) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(msg)); }
+  /** Workshop: send a blueprint code to everyone in the game (through the host). */
+  shareBlueprint(code) {
+    if (this.isHost) this._sendAll({ t: 'bp', code, from: 'Хозяин' });
+    else this.send({ t: 'bp', code });
+  }
+  _takeBlueprint(code, from) {
+    const bp = decodeBlueprint(code); if (!bp) return;
+    this.game.blueprints?.add(bp);
+    this.game.bus.emit('toast', { text: `${from || 'Игрок'} поделился(ась) чертежом «${bp.name}»: Строительство → Чертежи`, kind: 'good' });
+  }
   /** A siege order from a joined commander / lord of the dead (see siege.js). */
   command(c, extra = {}) { this.send({ t: 'cmd', c, ...extra }); }
   /** A joined player's block edit (applied locally right away, made real by the host). */
@@ -375,6 +388,7 @@ export class Net {
       case 'toast': g.bus.emit('toast', { text: m.text, kind: m.kind }); break;
       case 'rivals': g.rivals?.deserialize(m.s); g.rivals?._restampLoaded(); break;
       case 'siege': this.siegeState = m; g.bus.emit('siege:state', m); break;
+      case 'bp': if (m.from !== this.myName) this._takeBlueprint(m.code, m.from); break;
     }
   }
   _applySnap(m) {

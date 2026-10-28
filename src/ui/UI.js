@@ -15,6 +15,7 @@ import { QuestPanel, QuestTracker } from './questPanel.js';
 import { RivalsPanel } from './rivalsPanel.js';
 import { SiegePanel } from './siegePanel.js';
 import { ChroniclePanel } from './chroniclePanel.js';
+import { WorkshopPanel } from './workshop.js';
 import { Tutorial } from './tutorial.js';
 
 const SETTINGS_KEY = 'zc_settings';
@@ -50,11 +51,12 @@ export class UI {
     this.rivals = new RivalsPanel(this);
     this.siege = new SiegePanel(this);
     this.chronicle = new ChroniclePanel(this);
+    this.workshop = new WorkshopPanel(this);
     this.tutorial = new Tutorial(this);
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
     root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
-      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.chronicle.root, this.tutorial.root, this.menus.root, this.dialogLayer);
+      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.chronicle.root, this.workshop.root, this.tutorial.root, this.menus.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {
@@ -215,7 +217,7 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- pause / modal
-  get modalOpen() { return !!(this.research.open || this.craft.open || this.inventory?.open || this.quests?.open || this.rivals?.open || this.siege?.open || this.chronicle?.open || (this.menus.current && this.menus.current !== 'death') || this.dialogLayer.children.length); }
+  get modalOpen() { return !!(this.research.open || this.craft.open || this.inventory?.open || this.quests?.open || this.rivals?.open || this.siege?.open || this.chronicle?.open || this.workshop?.open || (this.menus.current && this.menus.current !== 'death') || this.dialogLayer.children.length); }
   /** True when the UI wants all game input (used by Input to ignore clicks/keys). */
   isBlocking() { return this.modalOpen || !this.game.running; }
   requestPause() {
@@ -271,6 +273,7 @@ export class UI {
       if (this.rivals.open) { this.rivals.close(); e.preventDefault(); return; }
       if (this.siege.open) { this.siege.close(); e.preventDefault(); return; }
       if (this.chronicle.open) { this.chronicle.close(); e.preventDefault(); return; }
+      if (this.workshop.open) { this.workshop.close(); e.preventDefault(); return; }
       if (this.menus.current === 'pause') { this.resume(); e.preventDefault(); return; }
       if (this.menus.current === 'main') { if (this.menus.card?.dataset.page !== 'home') this.menus.page('home'); return; }
       if (this.menus.current) return;
@@ -281,6 +284,7 @@ export class UI {
     if (e.code === 'KeyI' && g.running && !e.repeat && !this.menus.current) { this.inventory.close(); this.craft.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyN' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.quests.close(); this.rivals.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyG' && g.running && !e.repeat && !this.menus.current && this.siege.available) { this.craft.close(); this.inventory.close(); this.rivals.close(); this.siege.toggle(); e.preventDefault(); return; }
+    if (e.code === 'KeyK' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.workshop.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyL' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.quests.close(); this.chronicle.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyJ' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.quests.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyE' && g.running && !e.repeat && !this.menus.current && g.mode === 'explore') { this.craft.close(); this.inventory.toggle(); e.preventDefault(); return; }
@@ -308,7 +312,7 @@ export class UI {
     if (g.gameOver || !g.running) return;
     g.setPaused(true);
     this._unlockPointer();
-    this.research.close(); this.craft.close?.(); this.inventory.close(); this.quests.close(); this.rivals.close(); this.siege.close(); this.chronicle.close();
+    this.research.close(); this.craft.close?.(); this.inventory.close(); this.quests.close(); this.rivals.close(); this.siege.close(); this.chronicle.close(); this.workshop.close();
     this.command.closeTab(true); this.command.deselect();
     this.menus.showVictory();
     g.audio?.play?.('level_up', { volume: 1 });

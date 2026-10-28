@@ -1061,6 +1061,9 @@
 .zc-rv-trade b { font-size: 13px; color: #f0e6d0; }
 .zc-chipbtn.off { opacity: .45; }
 .zc-chron-img { width: 100%; border-radius: 6px; display: block; margin-bottom: 6px; image-rendering: auto; }
+.zc-ws-code { width: 100%; min-height: 56px; resize: vertical; font-family: monospace; font-size: 12px; margin: 6px 0; box-sizing: border-box; }
+.zc-ws-menu { max-height: 56vh; display: block; }
+.zc-ws-menu > .zc-rv-town { margin-bottom: 10px; }
 .zc-ach-off { opacity: .55; }
 .zc-rv-empty { color: var(--muted); padding: 20px; }
 /* =====================================================================  phones: compact interface (UI.layout sets --uiz) */
