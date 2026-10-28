@@ -2,8 +2,8 @@
 // how many, how strong, and the bosses. The first ten waves keep their pace; after that the difficulty curve is
 // stretched so wave 100 is as hard as the old wave 50. Waves past 100 keep scaling ("endless").
 //
-//  I Пробуждение (1–10)  walker → runner → crawler → spitter → armored
-//  II Орда (11–20)       brute, exploder, skeleton archers, first necromancer
+//  I Пробуждение (1–10)  walker → runner → crawler → bats (flying) → spitter → armored
+//  II Орда (11–20)       brute, winged dead (flying), exploder, skeleton archers, first necromancer
 //  III Чума (21–30)      frost, digger          IV Кости (31–40)        burning, leaper
 //  V Пламя (41–50)       screamer               VI Буря мёртвых (51–60) bigger mixed hordes
 //  VII Великий голод (61–70) giants join        VIII Легион (71–80)     multiple bosses
@@ -14,10 +14,12 @@ export const INTRO = {
   walker: { wave: 1, w: 1.0, max: 1.0 },
   runner: { wave: 3, w: 0.18, max: 0.45 },
   crawler: { wave: 5, w: 0.12, max: 0.3 },
+  bat: { wave: 6, w: 0.1, max: 0.24 },
   spitter: { wave: 7, w: 0.1, max: 0.22 },
   armored: { wave: 9, w: 0.08, max: 0.25 },
   brute: { wave: 12, w: 0.05, max: 0.16 },
   exploder: { wave: 16, w: 0.06, max: 0.16 },
+  harpy: { wave: 14, w: 0.05, max: 0.14 },
   skeleton: { wave: 20, w: 0.08, max: 0.22 },
   frost: { wave: 25, w: 0.07, max: 0.2 },
   digger: { wave: 31, w: 0.05, max: 0.14 },
@@ -92,6 +94,7 @@ export const HINTS = {
   runner: 'быстрые', crawler: 'мелкие и юркие', spitter: 'плюются кислотой издали', brute: 'ломают стены',
   armored: 'броня — бейте магией', exploder: 'взрываются у стен', frost: 'замедляют ударом, не боятся льда',
   skeleton: 'стреляют из луков', burning: 'поджигают, не боятся огня', leaper: 'перепрыгивают стены',
-  screamer: 'ускоряют и усиливают соседей', digger: 'быстро роют стены', giant: 'огромный и очень прочный',
+  screamer: 'ускоряют и усиливают соседей', bat: 'летают над стенами и пикируют на жителей — бейте, когда спускаются',
+  harpy: 'крылатые, перелетают стены и нападают сверху', digger: 'быстро роют стены', giant: 'огромный и очень прочный',
   necromancer: 'поднимает мёртвых', mutant: 'живучие, заращивают раны', irradiated: 'излучение жжёт всех рядом', nanite: 'заращивается мгновенно — бейте очередями', nano_titan: 'босс: броня, регенерация, молнии не берут', swarm: 'крошечные, приходят тучами', hacker: 'глушат турели, дроны и тесла-башни', conductor: 'быстрые, молнии и свет им нипочём',
 };

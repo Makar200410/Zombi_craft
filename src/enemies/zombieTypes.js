@@ -78,6 +78,18 @@ export const ZOMBIE_TYPES = {
     height: 1.8, width: 0.9, radius: 0.28, aggro: 20, knock: 3, eye: 0x9aff20, groanPitch: 1.3, loot: 0.55,
     leap: 11, skinBase: 'runner', tint: [0x6ab040, 0.3], minWave: 7,
   },
+  // ---- flyers (base 'flyer'): fly over walls at `fly.cruise` blocks above the ground, swoop down on the living,
+  //      strike and climb away again; `fly.wing` = wingspan of one wing (blocks)
+  bat: {
+    base: 'flyer', name: 'Упырь-нетопырь', hp: 14, speed: 4.6, dmg: 4, cd: 0.7, reach: 1.0, blockDps: 0, bldDmg: 0.6,
+    height: 1.05, width: 0.75, radius: 0.26, aggro: 26, knock: 1, eye: 0xff3050, groanPitch: 2.0, loot: 0.25,
+    hunch: 0.45, fly: { cruise: 6, wing: 1.1 }, skinBase: 'runner', tint: [0x4a2a40, 0.55],
+  },
+  harpy: {
+    base: 'flyer', name: 'Крылатый мертвец', hp: 48, speed: 3.3, dmg: 9, cd: 1.0, reach: 1.1, blockDps: 0, bldDmg: 4,
+    height: 1.9, width: 1, radius: 0.32, aggro: 24, knock: 3, eye: 0xffa030, groanPitch: 1.05, loot: 0.75,
+    fly: { cruise: 8, wing: 1.9 }, skinBase: 'walker', tint: [0x5a4a6a, 0.4],
+  },
   // ---- industrial & electric ages (appear by the village's age, not by wave number)
   mutant: {
     base: 'walker', name: 'Мутант', hp: 95, speed: 2.1, dmg: 13, cd: 0.9, reach: 1.1, blockDps: 3, bldDmg: 8,

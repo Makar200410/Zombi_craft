@@ -947,8 +947,13 @@ export class Village {
     const st = this.game.state;
     return 42 + (st.researchDone.has('archery') ? 8 : 0) + Math.min(12, this.villagersByJob('guard').length) + (this.industry?.radarOn ? 10 : 0);
   }
+  /** The base the guards defend: the town (its farthest building) and a margin around it. */
+  get defenseRadius() { return this.radius + 8; }
+  /** Distance of a point from the town hall (0 without one). */
+  baseDist(p) { const th = this.townHall; return th ? Math.hypot(p.x - th.center.x, p.z - th.center.z) : 0; }
   guardTarget(v, current = null) {
     const th = this.townHall;
+    const defR = this.defenseRadius, bow = this.game.state.researchDone.has('archery');
     const claims = new Map();
     for (const o of this.villagers) if (o !== v && o.fightTarget && !o.dead) claims.set(o.fightTarget, (claims.get(o.fightTarget) || 0) + 1);
     const vision = this.guardVision;
@@ -957,11 +962,10 @@ export class Village {
       if (z.dead) continue;
       const d = v.position.distanceTo(z.position);
       const thd = th ? th.center.distanceTo(z.position) : 0;
-      const nearVillage = th ? thd < this.radius + 18 : true;
-      // the alarm: anything attacking the village is known to every guard, the rest only within sight
-      const attacking = nearVillage && (z.bTarget || (z.target && z.target.faction === 'village'));
-      if (d > (attacking ? vision + 25 : vision)) continue;
-      if (d > vision * 0.6 && !nearVillage) continue;       // don't wander off after stragglers in the woods
+      // guards defend the base: only the dead inside it (archers also shoot a little past its edge)
+      if (th && thd > defR + (bow ? 10 : 0)) continue;
+      const attacking = !!(z.bTarget || (z.target && z.target.faction === 'village'));
+      if (d > vision && !attacking) continue;
       let s = d * 0.8 + thd * 0.25;                          // the closer to the town hall, the more urgent
       if (attacking) s -= 6;
       if (z.bTarget === th) s -= 6;
@@ -972,6 +976,7 @@ export class Village {
       if (z.type === 'necromancer') s -= 7;
       if (z.type === 'exploder') s += 9;                                               // let archers handle those
       if (z.type === 'brute') s += 2;
+      if (z.flyer && z.position.y > v.position.y + 2.5 && !bow) s += 6;             // out of reach until it swoops
       s -= (1 - z.hp / z.maxHp) * 5;                                                   // finish the wounded
       const big = z.boss || z.type === 'giant' || z.type === 'brute' || z.type === 'necromancer' || z.type === 'nano_titan';
       s += (claims.get(z) || 0) * (big ? 2 : 7);                                       // spread out, but gang up on the big ones

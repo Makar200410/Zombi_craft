@@ -20,6 +20,28 @@ const _nb = [];
 // shared eye resources
 const eyeGeo = new THREE.BoxGeometry(1, 1, 1);
 const eyeMats = new Map();
+let _wingMat = null;
+/** Leathery bat-wing membrane with finger bones (cut out of a small canvas). */
+function wingMat() {
+  if (_wingMat) return _wingMat;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 32;
+  const g = c.getContext('2d');
+  const tips = [[63, 3], [50, 24], [38, 15], [27, 29], [15, 17], [5, 30]];
+  g.beginPath(); g.moveTo(0, 2); g.lineTo(63, 2);
+  for (const [x, y] of tips.slice(1)) g.quadraticCurveTo(x + 6, y - 6, x, y);
+  g.lineTo(0, 30); g.closePath();
+  const gr = g.createLinearGradient(0, 0, 0, 32);
+  gr.addColorStop(0, '#4a3048'); gr.addColorStop(1, '#2a1a2c');
+  g.fillStyle = gr; g.fill();
+  g.strokeStyle = '#140a14'; g.lineWidth = 2;
+  for (const [x, y] of tips) { g.beginPath(); g.moveTo(1, 4); g.lineTo(x, y); g.stroke(); }
+  g.fillStyle = '#1a0e1a'; g.fillRect(0, 1, 64, 3);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter;
+  _wingMat = new THREE.MeshLambertMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide });
+  return _wingMat;
+}
+
 function eyeMat(color) {
   let m = eyeMats.get(color);
   if (!m) { m = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.6), toneMapped: false }); eyeMats.set(color, m); }
@@ -96,6 +118,13 @@ export class Zombie extends Entity {
     if (T.glow) { this.model.material.emissive.setHex(T.glow); this.model.material.emissiveIntensity = 0.55; }
     this.buffUntil = 0; this.leapT = 1 + Math.random() * 2; this.trailT = 0;
     if (this.type === 'exploder') this._addBoils();
+    // flyers: wings, no gravity; they swoop down on the living and climb away
+    this.flyer = !!T.fly;
+    if (this.flyer) {
+      this.flying = true; this.autoStep = false;
+      this._addWings();
+      this.diving = false; this.diveT = 0; this.climbT = 0; this.flapPhase = Math.random() * 6; this._gnd = null; this._gndT = 0;
+    }
 
     // --- AI state
     this.target = null;          // Entity being chased
@@ -115,7 +144,7 @@ export class Zombie extends Entity {
     this.sunT = Math.random();
     this.doomT = -1;             // >0: will burn at dawn regardless of shade
     this._sunburn = false;
-    this.emergeT = opts.emerge === false ? 0 : EMERGE_TIME;
+    this.emergeT = opts.emerge === false || T.fly ? 0 : EMERGE_TIME;
     this.far = false; this._animSkip = 0; this._shadow = true;
     this.deadT = 0;
     this.home = null;            // wanderer anchor
@@ -132,6 +161,37 @@ export class Zombie extends Entity {
   }
 
   // ------------------------------------------------------------------ visuals
+  /** Bat wings on the back, flapped in _flap. */
+  _addWings() {
+    const span = this.T.fly.wing, chord = span * 0.55;
+    const mat = wingMat();
+    const make = (side) => {
+      const g = new THREE.PlaneGeometry(span, chord);
+      g.rotateX(-Math.PI / 2);
+      g.translate(side * span / 2, 0, -chord * 0.25);
+      if (side < 0) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i)); }
+      const m = new THREE.Mesh(g, mat);
+      m.castShadow = true;
+      const pivot = new THREE.Group();
+      pivot.add(m);
+      pivot.position.set(side * this.T.width * 0.12, this.height * 0.72, -0.14 * this.T.width);
+      this.visual.add(pivot);
+      return pivot;
+    };
+    this.wings = [make(1), make(-1)];
+  }
+  _flap(dt) {
+    if (!this.wings) return;
+    const fast = this.diving ? 1.6 : this.climbT > 0 ? 1.35 : 1;
+    this.flapPhase += dt * (this.T.width < 0.9 ? 15 : 9) * fast;
+    const a = Math.sin(this.flapPhase) * (this.diving ? 0.35 : 0.75) + (this.diving ? -0.55 : 0.12);
+    this.wings[0].rotation.z = a; this.wings[1].rotation.z = -a;
+    this.wings[0].rotation.y = this.wings[1].rotation.y = 0;
+    // body bob with the beats; pitch forward when diving
+    this.visual.position.y = Math.sin(this.flapPhase + 1.2) * 0.08;
+    this.visual.rotation.x = (this.T.hunch || 0) * 0.85 + (this.diving ? 0.5 : 0.15);
+  }
+
   _addEyes() {
     const px = this.model.px, head = this.model.head;
     const mat = eyeMat(this.T.eye);
@@ -293,10 +353,16 @@ export class Zombie extends Entity {
     this._sunCheck(dt);
     if (this.dead) return;
 
-    const wantMove = this._steer(dt);
-    this.physics(dt);
-    this._blocked(dt, wantMove);
-    this._act(dt);
+    if (this.flyer) {
+      this._fly(dt);
+      this.physics(dt);
+      this._act(dt);
+    } else {
+      const wantMove = this._steer(dt);
+      this.physics(dt);
+      this._blocked(dt, wantMove);
+      this._act(dt);
+    }
     if (this.dead) return;
 
     // animation
@@ -304,8 +370,9 @@ export class Zombie extends Entity {
     if (!far || (this._animSkip -= dt) <= 0) {
       const adt = far ? 0.5 : dt;
       if (far) this._animSkip = 0.5;
-      this.model.update(adt, this.base === 'runner' ? hs * 1.25 : hs);
+      this.model.update(adt, this.flyer ? 0 : this.base === 'runner' ? hs * 1.25 : hs);
       this._postAnim(adt);
+      this._flap(adt);
     }
     this.syncObject(dt);
     // hover for the necromancer
@@ -534,6 +601,86 @@ export class Zombie extends Entity {
     return speed > 0 && (mx !== 0 || mz !== 0);
   }
 
+  /** Ground (or roof) height under a flyer, refreshed now and then. */
+  _groundY(dt) {
+    this._gndT -= dt;
+    if (this._gnd === null || this._gndT <= 0) {
+      this._gndT = 0.4;
+      const w = this.game.world, p = this.position;
+      let g = -1;
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) g = Math.max(g, w.surfaceY(p.x + dx * 2, p.z + dz * 2));
+      this._gnd = g + 1;
+    }
+    return this._gnd;
+  }
+  /**
+   * Flying: cruise above roofs and walls towards the living (or the village), swoop down at a target within
+   * reach, strike (see _act) and climb away to circle in again. With nobody to bite they claw at roofs.
+   */
+  _fly(dt) {
+    const game = this.game, pos = this.position, T = this.T, F = T.fly, v = this.velocity;
+    const gnd = this._groundY(dt);
+    const cruise = gnd + F.cruise;
+    let speed = this.speed * this._buffMul * this.speedMul * (game.weather?.zombieSpeed ?? 1);
+    if (this.stunTimer > 0) speed *= 0.2;
+    let gx = pos.x, gy = cruise, gz = pos.z;
+    const tgt = this.target;
+    this.marching = false;
+    if (this.climbT > 0) this.climbT -= dt;
+    if (tgt) {
+      const dx = tgt.position.x - pos.x, dz = tgt.position.z - pos.z, d = Math.hypot(dx, dz);
+      if (this.climbT > 0) {
+        // pull up and away, then turn back in
+        const l = d || 1;
+        gx = pos.x - dx / l * 4 + dz / l * 3; gz = pos.z - dz / l * 4 - dx / l * 3; gy = Math.max(cruise, tgt.position.y + F.cruise * 0.8);
+        this.diving = false;
+      } else if (this.diving || d < 6) {
+        if (!this.diving) { this.diving = true; this.diveT = 0; if (!this.far) game.audio?.play('zombie_roar', { pos: this.eye, pitch: voice(T.groanPitch) * 1.2, volume: 0.6 }); }
+        this.diveT += dt;
+        gx = tgt.position.x; gz = tgt.position.z; gy = tgt.position.y + (tgt.height || 1.8) * 0.35;
+        speed *= 1.35;
+        if (this.diveT > 3.5) { this.diving = false; this.climbT = 1.2; }      // missed: try again
+      } else {
+        gx = tgt.position.x; gz = tgt.position.z; gy = Math.max(cruise, tgt.position.y + 4);
+      }
+    } else {
+      this.diving = false;
+      // nobody in sight: fly to the village and tear at the roofs
+      if (!this.bTarget || this.bTarget.state === 'destroyed') this.bTarget = this._nearestBuilding();
+      const b = this.bTarget;
+      if (b) {
+        const c = buildingCenter(b), top = b.y + (b.height || 4);
+        const d = Math.hypot(c.x - pos.x, c.z - pos.z);
+        if (d > 4) { gx = c.x; gz = c.z; gy = Math.max(cruise, top + 3); }
+        else {
+          // circle low over the roof and claw at it
+          this.flapPhase2 = (this.flapPhase2 || Math.random() * 6) + dt * 0.8;
+          gx = c.x + Math.cos(this.flapPhase2) * 2.5; gz = c.z + Math.sin(this.flapPhase2) * 2.5; gy = top + 1.2;
+          if (this.attackT <= 0 && Math.abs(pos.y - gy) < 2.5) {
+            this.attackT = T.cd * 1.6;
+            this.model.play('attack');
+            try { b.damage?.(T.bldDmg * this.dmgMul, this); } catch (e) { /* ignore */ }
+            if (!this.far) game.particles?.emit({ pos: { x: pos.x, y: pos.y, z: pos.z }, count: 4, colors: [0x7a5a3a, 0x5a4030], speed: 2, life: 0.5, size: 0.1 });
+          }
+        }
+      } else {
+        const S = game.world.size, th = game.village?.townHall;
+        gx = th?.center.x ?? S / 2; gz = th?.center.z ?? S / 2;
+      }
+    }
+    // steer in 3D (slower vertically), climb over anything in the way
+    let mx = gx - pos.x, my = gy - pos.y, mz = gz - pos.z;
+    const l = Math.hypot(mx, my, mz);
+    if (l > 0.15) { mx /= l; my /= l; mz /= l; } else { mx = my = mz = 0; }
+    let tx = mx * speed, ty = my * speed * 0.8, tz = mz * speed;
+    if (this.hitWall) ty = Math.max(ty, speed * 0.9);
+    if (pos.y < gnd + 0.5 && !this.diving) ty = Math.max(ty, 2);
+    const acc = Math.min(1, dt * (this.diving ? 4 : 2.5));
+    v.x += (tx - v.x) * acc; v.y += (ty - v.y) * acc; v.z += (tz - v.z) * acc;
+    const face = tgt ? Math.atan2(tgt.position.x - pos.x, tgt.position.z - pos.z) : (Math.abs(v.x) + Math.abs(v.z) > 0.3 ? Math.atan2(v.x, v.z) : null);
+    if (face !== null) this.yaw = lerpAngle(this.yaw, face, Math.min(1, dt * 6));
+  }
+
   _nearestBuilding() {
     const v = this.game.village;
     if (!v) return null;
@@ -756,9 +903,11 @@ export class Zombie extends Entity {
           game.audio?.play('hit_flesh', { pos: tgt.position, pitch: this.base === 'brute' ? 0.6 : 1 });
         }
         if (this.base === 'brute') game.particles?.emit({ pos: tgt.position, box: 0.4, count: 10, colors: [0x6a5a4a, 0x8a7a6a], speed: 3, dir: { x: 0, y: 2, z: 0 }, life: 0.6, size: 0.18 });
+        if (this.flyer) { this.diving = false; this.climbT = 1.3 + Math.random() * 0.8; }    // hit and run
       }
       return;
     }
+    if (this.flyer) return;
 
     // --- smashing blocks
     if (this.breakCell) {
@@ -934,6 +1083,7 @@ export class Zombie extends Entity {
   }
 
   onDeath(source) {
+    if (this.flyer) { this.flying = false; if (this.wings) for (const wg of this.wings) wg.rotation.z = wg === this.wings[0] ? -0.9 : 0.9; }
     if (this.T.deathFire && source !== 'sun') {
       const game = this.game, pos = this.center.clone();
       game.particles?.emit({ pos, count: 40, colors: [0xffa030, 0xff5020, 0xffe070], additive: true, speed: 6, life: 0.7, size: 0.3, gravity: -1 });

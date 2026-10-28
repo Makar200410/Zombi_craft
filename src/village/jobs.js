@@ -567,7 +567,7 @@ function* guardBrain(v) {
 function* meleeFight(v, z) {
   const game = v.game, vil = v.village;
   let repath = 0, cd = 0.2, req = null, path = null, pi = 0, retarget = 0.8, shootCd = 0, bashCd = 2 + rnd() * 2, lastClose = 0;
-  const leash = vil.radius + 30;
+  const defR = vil.defenseRadius;       // guards hold the base and don't chase the dead out of it
   const hasBow = () => game.state.researchDone.has('archery');
   const setBow = (on) => { const want = on ? 'bow' : null; if (v.heldOverride !== want) { v.heldOverride = want; v.updateTool(); } };
   v.fightTarget = z;
@@ -584,7 +584,9 @@ function* meleeFight(v, z) {
     }
     const px = v.position.x, pz = v.position.z;
     const d = Math.hypot(z.position.x - px, z.position.z - pz);
-    if (vil.townHall && vil.townHall.distanceTo(v.position) > leash) break;
+    const zIn = vil.baseDist(z.position), meIn = vil.baseDist(v.position);
+    if (meIn > defR + 4) break;                                   // too far out: back to the post
+    if (zIn > defR + (hasBow() ? 14 : 4)) break;                  // it left the base: let it go
     if (d > vil.guardVision + 6) break;
     // situational awareness
     let close = 0, cx = 0, cz = 0, exploder = null;
@@ -625,8 +627,9 @@ function* meleeFight(v, z) {
       v.model.blocking = cd > 0.05 && cd < 0.6;
       continue;
     }
-    // 3) ranged: a bow for targets that are still far away
-    if (hasBow() && d > 7 && d < 26 && game.world.lineOfSight(v.eye, z.center)) {
+    const high = z.flyer && z.position.y > v.position.y + 2.2;
+    // 3) ranged: a bow for targets that are still far away (or circling overhead)
+    if (hasBow() && (d > 7 || high) && d < 26 && game.world.lineOfSight(v.eye, z.center)) {
       v.stopMove(); v.face(z.position); setBow(true);
       v.model.blocking = false;
       v.task = 'Стреляет из лука';
@@ -634,6 +637,15 @@ function* meleeFight(v, z) {
       continue;
     }
     setBow(false);
+    // a flyer out of reach / the enemy outside the base: hold the ground with the shield up and wait
+    if (high || zIn > defR) {
+      v.task = high ? 'Ждёт, когда тварь спикирует' : 'Держит оборону на границе';
+      v.model.blocking = true;
+      if (meIn > defR - 2 && vil.townHall) { const c = vil.townHall.center; v.steerTo(c.x, c.z, 2.5, true); }
+      else v.stopMove();
+      v.face(z.position);
+      continue;
+    }
     // 4) melee with sword & shield
     if (d < 1.9 && Math.abs(z.position.y - v.position.y) < 2) {
       v.task = 'Сражается мечом и щитом';

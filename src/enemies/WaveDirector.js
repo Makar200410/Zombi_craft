@@ -285,7 +285,7 @@ export class WaveDirector {
     const evo = (1 + 0.04 * (game.state.age | 0)) * (1 + 0.25 * (game.state.ngPlus | 0));   // the dead evolve along with the civilisation (and each New Game+)
     const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace * evo;
     const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave) * grace, wave });
-    zb.position.set(p.x, p.y, p.z);
+    zb.position.set(p.x, p.y + (zb.flyer ? 3 + Math.random() * 3 : 0), p.z);
     zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
     zb.progPos.copy(zb.position);
     game.entities.add(zb);
@@ -310,7 +310,7 @@ export class WaveDirector {
       let x, z;
       if (anchor) { x = anchor.x + (Math.random() - 0.5) * 7; z = anchor.z + (Math.random() - 0.5) * 7; }
       const zb = this.spawn(q.type, x, z, { wave: this.currentWave });
-      if (zb) zb.emergeT = 1.4 + i * 0.12;   // staggered rise
+      if (zb && !zb.flyer) zb.emergeT = 1.4 + i * 0.12;   // staggered rise
     }
     return true;
   }
@@ -422,7 +422,7 @@ export class WaveDirector {
     for (let i = 0; i < Math.min(types.length, room); i++) {
       const x = anchor ? anchor.x + (Math.random() - 0.5) * 8 : undefined, z = anchor ? anchor.z + (Math.random() - 0.5) * 8 : undefined;
       const zb = this.spawn(types[i], x, z, { wave: n, sunproof: true });
-      if (zb) { zb.emergeT = 1.4 + i * 0.1; made++; }
+      if (zb) { if (!zb.flyer) zb.emergeT = 1.4 + i * 0.1; made++; }
     }
     if (!made) return;
     game.audio?.play('wave_horn', { volume: 0.7, pitch: 1.2 });
