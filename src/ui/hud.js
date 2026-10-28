@@ -1,5 +1,5 @@
 // Explore-mode HUD: vitals, resources, clock & wave status, hotbar, build palette, crosshair.
-import { ageOf } from '../systems/ages.js';
+import { ageOf, AGES } from '../systems/ages.js';
 import { ITEMS, RESOURCES, RESOURCE_LABELS } from '../core/items.js';
 import { BLOCKS, PALETTE } from '../core/blocks.js';
 import { TECHS } from '../systems/research.js';
@@ -341,7 +341,9 @@ export class Hud {
       if (it) {
         const locked = !this.isItemUnlocked(id);
         this.itemName.textContent = '';
-        this.itemName.append(h('b', it.name), locked ? h('span.lockedtxt', ' — нужно: ' + (TECHS[it.research]?.name || it.research)) : (it.manaCost ? h('span.mana', ` · ${it.manaCost} маны`) : ''));
+        const cost = it.kind === 'block' ? Object.entries(BLOCKS[it.blockId]?.cost || {}).map(([r, n]) => `${RESOURCE_LABELS[r] || r} ${n}`).join(', ') : '';
+        this.itemName.append(h('b', it.name), locked ? h('span.lockedtxt', it.kind === 'block' ? ' — откроется в эпоху: ' + (AGES[it.minAge]?.name || '') : ' — нужно: ' + (TECHS[it.research]?.name || it.research))
+          : it.manaCost ? h('span.mana', ` · ${it.manaCost} маны`) : cost ? h('span.mana', ' · ' + cost) : '');
         this.itemName.classList.remove('show'); void this.itemName.offsetWidth; this.itemName.classList.add('show');
       }
     }

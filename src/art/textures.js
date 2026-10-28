@@ -1979,6 +1979,42 @@ GEN.iron_bars = (p, r) => {
 };
 GEN.acacia_leaves = (p, r) => leafTile(p, r, hexes(['#1e2a0c', '#2c3c10', '#3e5216', '#52681c', '#687e24', '#80942e', '#9aaa3c', '#b4c050', '#cad466']));
 
+// ------------------------------------------------------------------ mechanisms (andesite-and-brass casing look)
+const BRASS = hexes(['#5a3a10', '#8a5e1c', '#b8842e', '#d8a848', '#f0cc70', '#fff0b0']);
+function casingFrame(p, r) {
+  const n = tileFbm(r, S, [4, 8, 16], 0.55);
+  const A = hexes(['#4a4c4e', '#5c5f60', '#707372', '#848785', '#989b98', '#adb0ac']);
+  p.map((x, y) => rampDither(A, 2.6 + (n(x, y) - 0.5) * 3, x, y, 0.5));
+  for (let i = 0; i < 32; i++) for (const [x, y] of [[i, 0], [i, 1], [i, 30], [i, 31], [0, i], [1, i], [30, i], [31, i]]) p.set(x, y, BRASS[(x === 0 || y === 0) ? 4 : (x === 31 || y === 31) ? 1 : 2]);
+  for (const [x, y] of [[3, 3], [28, 3], [3, 28], [28, 28]]) { p.set(x, y, BRASS[5]); p.set(x + 1, y + 1, BRASS[1]); }
+}
+GEN.casing_side = (p, r) => casingFrame(p, r);
+GEN.casing_top = (p, r) => { casingFrame(p, r); for (let x = 12; x < 20; x++) for (let y = 12; y < 20; y++) p.set(x, y, Math.hypot(x - 15.5, y - 15.5) < 3 ? BRASS[1] : hex('#3a3c3e')); };
+// shaft: an iron axle through the middle of the cell; cogwheel: a wooden gear with brass teeth (cutout tiles)
+GEN.shaft_block = (p) => { p.map((x, y) => (y >= 13 && y < 19) ? rampAt(P.iron, 1 + (y - 13) * 0.9) : [0, 0, 0, 0]); };
+GEN.cogwheel_block = (p) => {
+  p.map((x, y) => {
+    const d = Math.hypot(x - 15.5, y - 15.5), a = Math.atan2(y - 15.5, x - 15.5);
+    const tooth = ((a + Math.PI) * 8 / Math.PI | 0) % 2 === 0;
+    if (d < 3) return P.iron[2];
+    if (d < 11) return d < 4.2 || d > 9.8 ? P.plank[1] : P.plank[3 + (((x >> 2) + (y >> 2)) & 1)];
+    if (d < 14 && tooth) return BRASS[d > 12.8 ? 1 : 3];
+    return [0, 0, 0, 0];
+  });
+};
+GEN.water_wheel_side = (p, r) => { casingFrame(p, r); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; for (let t = 4; t < 13; t++) p.set(Math.round(15.5 + Math.cos(a) * t), Math.round(15.5 + Math.sin(a) * t), P.plank[3]); } blob(p, 15.5, 15.5, 3, 3, BRASS, {}); };
+GEN.windmill_side = (p, r) => { casingFrame(p, r); for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; for (let t = 4; t < 13; t++) for (let w = -1; w <= 1; w++) p.set(Math.round(15.5 + Math.cos(a) * t - Math.sin(a) * w), Math.round(15.5 + Math.sin(a) * t + Math.cos(a) * w), w ? hex('#e8e0c8') : P.plank[2]); } };
+GEN.steam_engine_side = (p, r) => {
+  casingFrame(p, r);
+  for (let x = 6; x < 26; x++) for (let y = 8; y < 24; y++) p.set(x, y, rampAt(P.iron, 2 + (x - 6) / 20 * 3));
+  for (let x = 8; x < 24; x += 5) for (let y = 8; y < 24; y++) p.set(x, y, P.iron[1]);
+  for (let x = 12; x < 20; x++) for (let y = 18; y < 22; y++) p.set(x, y, hex(y % 2 ? '#ff8a30' : '#ffc060'));
+};
+GEN.drill_side = (p, r) => { casingFrame(p, r); for (let y = 6; y < 26; y++) { const w = Math.round((26 - y) / 3); for (let x = 16 - w; x <= 16 + w; x++) p.set(x, y, P.iron[(x + y) % 4 + 2]); } };
+GEN.saw_side = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (let y = 4; y < 28; y++) { const d = Math.hypot(x - 15.5, y - 15.5); if (d < 11) p.set(x, y, d > 9.5 && ((Math.atan2(y - 15.5, x - 15.5) * 6 / Math.PI) | 0) % 2 ? P.iron[6] : P.iron[3]); } blob(p, 15.5, 15.5, 2.5, 2.5, BRASS, {}); };
+GEN.crusher_top = (p, r) => { casingFrame(p, r); for (const cx of [10, 22]) for (let x = cx - 5; x <= cx + 5; x++) for (let y = 5; y < 27; y++) p.set(x, y, ((y + (x > 16 ? 2 : 0)) % 4 < 2) ? P.iron[2] : P.iron[4]); };
+GEN.fan_side = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (let y = 4; y < 28; y++) { const d = Math.hypot(x - 15.5, y - 15.5); if (d < 12 && ((x + y) % 4 === 0 || (x - y + 32) % 4 === 0)) p.set(x, y, hex('#2a2c2e')); } };
+
 // ------------------------------------------------------------------ overlays
 const DESTROY_COUNTS = [3, 6, 10, 15, 21, 28];
 function destroy(p, stage) {

@@ -2,7 +2,7 @@
 // Items (weapons, tools, staves) must be researched (if they have a research gate) AND crafted once before use.
 // Recipes need a station: available when the player stands near a matching block, or when the village has a
 // completed building that contains it (so on phones you don't have to walk to it every time).
-import { ITEMS, RESOURCE_LABELS } from '../core/items.js';
+import { ITEMS, RESOURCE_LABELS, ARMOR_TIERS, ARMOR_SLOTS } from '../core/items.js';
 import { B } from '../core/blocks.js';
 
 export const STATIONS = {
@@ -51,7 +51,16 @@ export const RECIPES = [
   { id: 'c_staff_life', kind: 'item', cat: 'magic', item: 'staff_life', station: 'arcane', in: { wood: 4, crystal: 8, food: 20 } },
   { id: 'c_tome_meteor', kind: 'item', cat: 'magic', item: 'tome_meteor', station: 'arcane', in: { crystal: 25, gold: 12, coal: 10 } },
 ];
-export const RECIPE_CATS = [['smelt', 'Переплавка'], ['tools', 'Инструменты'], ['weapons', 'Оружие'], ['magic', 'Магия']];
+// armour: hides at the workbench, iron at the forge, steel at the factory, crystal at the arcane table
+const ARMOR_COST = {
+  leather: (k) => ({ food: [6, 10, 8, 6][k], wood: [2, 3, 3, 2][k] }),
+  iron: (k) => ({ iron: [4, 7, 6, 3][k] }),
+  steel: (k) => ({ steel: [3, 6, 5, 3][k] }),
+  crystal: (k) => ({ crystal: [4, 7, 6, 3][k], gold: [1, 2, 2, 1][k] }),
+};
+const ARMOR_STATION = { leather: 'workbench', iron: 'anvil', steel: 'factory', crystal: 'arcane' };
+for (const t of ARMOR_TIERS) ARMOR_SLOTS.forEach((slot, k) => RECIPES.push({ id: `c_armor_${t.id}_${slot}`, kind: 'item', cat: 'armor', item: `armor_${t.id}_${slot}`, station: ARMOR_STATION[t.id], in: ARMOR_COST[t.id](k) }));
+export const RECIPE_CATS = [['smelt', 'Переплавка'], ['tools', 'Инструменты'], ['weapons', 'Оружие'], ['armor', 'Броня'], ['magic', 'Магия']];
 for (const r of RECIPES) if (r.kind === 'item') { r.name = ITEMS[r.item]?.name || r.item; r.desc = r.desc || ITEMS[r.item]?.desc || ''; r.time = r.time || 0; }
 
 const TIPS = [
@@ -75,7 +84,11 @@ export class Crafting {
   }
   onNewGame() { this.owned = new Set(STARTING_ITEMS); this.queue = []; this._loadedOwned = true; this._tips = 0; this._tipT = 40; }
 
-  owns(itemId) { return this.owned.has(itemId); }
+  owns(itemId) {
+    const it = ITEMS[itemId];
+    if (it?.kind === 'block') return (this.game.state.age | 0) >= (it.minAge || 0);     // blocks only cost resources when placed
+    return this.owned.has(itemId);
+  }
   researched(itemId) {
     const it = ITEMS[itemId]; if (!it) return false;
     return !it.research || this.game.state.researchDone.has(it.research);
@@ -128,6 +141,7 @@ export class Crafting {
       g.state.spend(r.in);
       if (r.kind === 'item') {
         this.owned.add(r.item);
+        if (ITEMS[r.item]?.kind === 'armor') this.game.player?.equipArmor?.(r.item);
         g.bus.emit('item:unlocked', { id: r.item });
         g.bus.emit('toast', { text: 'Создано: ' + r.name, kind: 'good' });
         g.audio?.play('level_up', { volume: 0.7 });
@@ -144,6 +158,7 @@ export class Crafting {
   /** Put a newly crafted item into the hotbar if it isn't there yet. */
   _equip(itemId) {
     const p = this.game.player; if (!p?.hotbar) return;
+    if (ITEMS[itemId]?.kind === 'armor') { p.equipArmor?.(itemId); return; }
     if (p.hotbar.includes(itemId)) return;
     const free = p.hotbar.findIndex(id => !id || !this.owns(id));
     if (free >= 0) p.hotbar[free] = itemId; else if (p.hotbar.length < 9) p.hotbar.push(itemId);

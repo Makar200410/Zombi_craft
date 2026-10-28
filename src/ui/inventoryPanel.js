@@ -1,33 +1,62 @@
-// Inventory: every weapon, tool and spell the player owns; put any of them into any hotbar slot.
-// Opened by the «Инвентарь» button or the E key. Pick a slot on top, then an item below
-// (an item already on the hotbar swaps places with it).
-import { ITEMS } from '../core/items.js';
+// Inventory (E key or the «Инвентарь» button), split into tabs like a creative inventory:
+// Оружие / Инструменты / Броня / Блоки / Технологии (firearms, late-age gear and mechanism blocks). Pick a hotbar slot on top, then an item below
+// (an item already on the hotbar swaps places with it). Armour goes to the four armour slots instead.
+import { ITEMS, ARMOR_SLOTS, ARMOR_SLOT_NAMES, RESOURCE_LABELS } from '../core/items.js';
+import { BLOCKS } from '../core/blocks.js';
 import { TECHS } from '../systems/research.js';
+import { AGES } from '../systems/ages.js';
 import { h, img, glyph, glyphImg, itemIcon, clear, toggle, dragScroll } from './dom.js';
 
-const KIND_ORDER = ['melee', 'ranged', 'gun', 'spell', 'tool', 'build'];
+const TABS = [
+  ['weapons', 'Оружие', ['melee', 'ranged', 'spell']],
+  ['tools', 'Инструменты', ['tool', 'build']],
+  ['armor', 'Броня', ['armor']],
+  ['blocks', 'Блоки', ['block']],
+  ['tech', 'Технологии', ['gun', 'melee', 'ranged', 'block']],
+];
+// research of the gunpowder age and later: those weapons go to the «Технологии» tab
+const TECH_RESEARCH = new Set(['gunpowder', 'steam_power', 'machine_guns', 'rocketry', 'ai', 'nanotech']);
+const isTech = (it) => it.kind === 'gun' || (it.kind !== 'armor' && TECH_RESEARCH.has(it.research)) || (it.kind === 'block' && !!(BLOCKS[it.blockId]?.kinetic || BLOCKS[it.blockId]?.minAge));
 const KIND_NAMES = { melee: 'Ближний бой', ranged: 'Стрелковое', gun: 'Огнестрельное', spell: 'Магия', tool: 'Инструменты', build: 'Строительство' };
+const KINETIC_NAMES = { source: 'Механизмы: источники', shaft: 'Механизмы: передача', machine: 'Механизмы: машины', undefined: 'Механизмы: корпуса' };
+// mechanisms are placeable blocks for now; the moving parts will come with a kinetics system
+export const MECH_DESC = {
+  shaft: 'Вал механизма.',
+  cogwheel: 'Шестерня механизма.',
+  water_wheel: 'Водяное колесо.',
+  windmill: 'Ветряк.',
+  steam_engine: 'Паровой двигатель.',
+  mech_drill: 'Механический бур.',
+  mech_saw: 'Механическая пила.',
+  crusher: 'Дробилка руды.',
+  mech_fan: 'Вентилятор.',
+  casing: 'Корпус для механизмов.',
+};
 
 export class InventoryPanel {
   constructor(ui) {
     this.ui = ui; this.game = ui.game;
     this.open = false;
     this.target = 0;
+    this.tab = 'weapons';
     this.root = h('div.zc-research.zc-craft.zc-inv.ui-i');
     this.slotsEl = h('div.zc-inv-slots');
+    this.tabsEl = h('div.zc-cats.zc-inv-tabs');
+    for (const [id, name] of TABS) this.tabsEl.append(h('button.zc-chipbtn.ui-i', { 'data-tab': id, onclick: () => { this.tab = id; this.ui.click(); this.render(); } }, name));
     this.grid = h('div.zc-inv-grid');
     dragScroll(this.grid, { x: false, y: true });
     this.grid.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+    this.hint = h('div.zc-inv-hint', 'Выберите ячейку панели, затем предмет');
     const head = h('div.zc-rs-head',
       h('div.zc-rs-title', img(glyph('sword')), h('span', 'Инвентарь')),
-      h('div.zc-inv-hint', 'Выберите ячейку панели, затем предмет'),
+      this.hint,
       h('button.zc-iconbtn.zc-close.ui-i', { title: 'Закрыть', onclick: () => this.close() }, glyphImg('close')));
-    this.panel = h('div.zc-rs-panel.zc-panel.ornate', head, this.slotsEl, this.grid);
+    this.panel = h('div.zc-rs-panel.zc-panel.ornate', head, this.slotsEl, this.tabsEl, this.grid);
     this.root.append(this.panel);
     this.root.addEventListener('pointerdown', (e) => { if (e.target === this.root) this.close(); });
     const bus = this.game.bus;
     const rr = () => { if (this.open) this.render(); };
-    bus.on('item:unlocked', rr); bus.on('research:done', rr); bus.on('hotbar:changed', rr);
+    bus.on('item:unlocked', rr); bus.on('research:done', rr); bus.on('hotbar:changed', rr); bus.on('armor:changed', rr); bus.on('craft:changed', rr); bus.on('age:changed', rr);
   }
 
   show() {
@@ -52,42 +81,94 @@ export class InventoryPanel {
     const cr = this.game.crafting;
     if (cr) return cr.owns(id);
     const it = ITEMS[id];
+    if (it.kind === 'block') return (this.game.state.age | 0) >= (it.minAge || 0);
     return !it.research || this.game.state.researchDone.has(it.research);
+  }
+
+  /** Items shown on a tab, grouped: [[groupName, ids[]], ...]. */
+  groups(tab) {
+    const [, , kinds] = TABS.find(t => t[0] === tab);
+    let ids = Object.keys(ITEMS).filter(id => kinds.includes(ITEMS[id].kind));
+    if (tab === 'tech') {
+      ids = ids.filter(id => isTech(ITEMS[id]));
+      const out = [['Технологичное оружие', ids.filter(id => ITEMS[id].kind !== 'block')]];
+      const blocks = ids.filter(id => ITEMS[id].kind === 'block');
+      for (const k of ['source', 'shaft', 'machine', undefined]) out.push([KINETIC_NAMES[k], blocks.filter(id => (BLOCKS[ITEMS[id].blockId].kinetic || undefined) === k)]);
+      return out;
+    }
+    ids = ids.filter(id => !isTech(ITEMS[id]));
+    if (tab === 'blocks') return [['', ids]];
+    if (tab === 'armor') return ARMOR_SLOTS.map(s => [ARMOR_SLOT_NAMES[s], ids.filter(id => ITEMS[id].slot === s)]);
+    return kinds.map(k => [KIND_NAMES[k] || k, ids.filter(id => ITEMS[id].kind === k)]);
   }
 
   render() {
     const p = this.game.player; if (!p) return;
-    const hb = p.hotbar;
+    const hb = p.hotbar, armorTab = this.tab === 'armor';
+    for (const b of this.tabsEl.children) toggle(b, 'sel', b.dataset.tab === this.tab);
+    this.hint.textContent = armorTab ? `Защита: ${p.armorDefense || 0} (−${Math.round(Math.min(0.7, (p.armorDefense || 0) * 0.03) * 100)}% урона)` : 'Выберите ячейку панели, затем предмет';
     clear(this.slotsEl);
-    for (let i = 0; i < 9; i++) {
-      const id = hb[i];
-      const slot = h('button.zc-inv-slot.ui-i' + (i === this.target ? '.target' : ''), { title: id ? ITEMS[id]?.name : 'Пусто', onclick: () => { this.target = i; this.ui.click(); this.render(); } },
-        id ? img(itemIcon(id)) : null, h('span.zc-slot-key', String(i + 1)),
-        id ? h('span.zc-inv-x.ui-i', { title: 'Убрать', onclick: (e) => { e.stopPropagation(); hb[i] = null; this._changed(); } }, '×') : null);
-      this.slotsEl.append(slot);
+    if (armorTab) {
+      // the four worn pieces
+      for (const s of ARMOR_SLOTS) {
+        const id = p.armor?.[s];
+        this.slotsEl.append(h('button.zc-inv-slot.zc-inv-armor.ui-i', { title: id ? ITEMS[id].name + ' — снять' : ARMOR_SLOT_NAMES[s], onclick: () => { if (id) { p.equipArmor(id); this.ui.click(); } } },
+          id ? img(itemIcon(id)) : h('span.zc-inv-empty', ARMOR_SLOT_NAMES[s])));
+      }
+    } else {
+      for (let i = 0; i < 9; i++) {
+        const id = hb[i];
+        const slot = h('button.zc-inv-slot.ui-i' + (i === this.target ? '.target' : ''), { title: id ? ITEMS[id]?.name : 'Пусто', onclick: () => { this.target = i; this.ui.click(); this.render(); } },
+          id ? img(itemIcon(id)) : null, h('span.zc-slot-key', String(i + 1)),
+          id ? h('span.zc-inv-x.ui-i', { title: 'Убрать', onclick: (e) => { e.stopPropagation(); hb[i] = null; this._changed(); } }, '×') : null);
+        this.slotsEl.append(slot);
+      }
     }
     clear(this.grid);
-    const ids = Object.keys(ITEMS).sort((a, b) => KIND_ORDER.indexOf(ITEMS[a].kind) - KIND_ORDER.indexOf(ITEMS[b].kind));
-    let kind = null;
-    for (const id of ids) {
-      const it = ITEMS[id];
-      if (it.kind !== kind) { kind = it.kind; this.grid.append(h('div.zc-inv-cat', KIND_NAMES[kind] || kind)); }
-      const own = this.owns(id);
-      const where = hb.indexOf(id);
-      const why = own ? (where >= 0 ? 'В ячейке ' + (where + 1) : '') : it.research && !this.game.state.researchDone.has(it.research) ? 'Нужно: ' + (TECHS[it.research]?.name || it.research) : 'Создайте в «Крафте»';
-      const stats = it.damage ? `Урон ${it.damage}${it.pellets ? '×' + it.pellets : ''}` : it.heal ? `Лечение ${it.heal}` : '';
-      const card = h('button.zc-inv-item.ui-i' + (own ? '' : '.locked') + (where >= 0 ? '.equipped' : ''), {
-        title: it.desc || it.name,
-        onclick: () => this.place(id),
-      }, h('div.zc-inv-ico', img(itemIcon(id))), h('div.zc-inv-name', it.name, h('small', stats)), why ? h('div.zc-inv-why', why) : null);
-      this.grid.append(card);
+    toggle(this.grid, 'blocks', this.tab === 'blocks');
+    for (const [name, ids] of this.groups(this.tab)) {
+      if (!ids.length) continue;
+      if (name) this.grid.append(h('div.zc-inv-cat', name));
+      for (const id of ids) this.grid.append(this.tab === 'blocks' ? this.cell(id) : this.card(id));
     }
   }
 
-  /** Put item id into the target slot (swapping if it already sits in another slot). */
+  _why(id) {
+    const it = ITEMS[id], p = this.game.player, own = this.owns(id);
+    if (it.kind === 'armor') return own ? (p.armor?.[it.slot] === id ? 'Надето' : 'Нажмите, чтобы надеть') : it.research && !this.game.state.researchDone.has(it.research) ? 'Нужно: ' + (TECHS[it.research]?.name || it.research) : 'Создайте в «Крафте» → Броня';
+    if (it.kind === 'block' && !own) return 'Откроется: ' + (AGES[it.minAge]?.name || 'позже');
+    const where = p.hotbar.indexOf(id);
+    if (own) return where >= 0 ? 'В ячейке ' + (where + 1) : '';
+    return it.research && !this.game.state.researchDone.has(it.research) ? 'Нужно: ' + (TECHS[it.research]?.name || it.research) : 'Создайте в «Крафте»';
+  }
+  _cost(id) {
+    const b = BLOCKS[ITEMS[id].blockId];
+    const c = Object.entries(b?.cost || {});
+    return c.length ? c.map(([r, n]) => `${RESOURCE_LABELS[r] || r} ${n}`).join(', ') : 'Бесплатно';
+  }
+
+  card(id) {
+    const it = ITEMS[id], p = this.game.player, own = this.owns(id);
+    const on = it.kind === 'armor' ? p.armor?.[it.slot] === id : p.hotbar.includes(id);
+    const why = this._why(id);
+    const stats = it.kind === 'armor' ? `Защита +${it.def}` : it.kind === 'block' ? this._cost(id) : it.damage ? `Урон ${it.damage}${it.pellets ? '×' + it.pellets : ''}` : it.heal ? `Лечение ${it.heal}` : '';
+    const desc = it.kind === 'block' ? MECH_DESC[BLOCKS[it.blockId]?.name] || '' : it.desc || '';
+    return h('button.zc-inv-item.ui-i' + (own ? '' : '.locked') + (on ? '.equipped' : ''), { title: desc || it.name, onclick: () => this.place(id) },
+      h('div.zc-inv-ico', img(itemIcon(id))), h('div.zc-inv-name', it.name, h('small', stats)),
+      it.kind === 'block' && desc ? h('div.zc-inv-why', desc) : null, why ? h('div.zc-inv-why', why) : null);
+  }
+  /** Compact Minecraft-like block cell. */
+  cell(id) {
+    const it = ITEMS[id], on = this.game.player.hotbar.includes(id);
+    return h('button.zc-inv-cell.ui-i' + (on ? '.equipped' : ''), { title: `${it.name}\nСтоимость: ${this._cost(id)}`, onclick: () => this.place(id) }, img(itemIcon(id)));
+  }
+
+  /** Put item id into the target slot (swapping if it already sits in another slot); armour is worn instead. */
   place(id) {
     const p = this.game.player; if (!p) return;
-    if (!this.owns(id)) { this.ui.toast(ITEMS[id]?.research && !this.game.state.researchDone.has(ITEMS[id].research) ? 'Сначала исследуйте: ' + (TECHS[ITEMS[id].research]?.name || '') : 'Сначала создайте в «Крафте»', 'bad'); this.game.audio?.play?.('mana_empty'); return; }
+    const it = ITEMS[id];
+    if (!this.owns(id)) { this.ui.toast(this._why(id) || 'Недоступно', 'bad'); this.game.audio?.play?.('mana_empty'); return; }
+    if (it.kind === 'armor') { p.equipArmor(id); this.ui.click(); return; }
     const hb = p.hotbar, t = this.target;
     const from = hb.indexOf(id);
     if (from === t) return;

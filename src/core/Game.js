@@ -1,3 +1,4 @@
+import { setItemAtlas } from '../entities/itemMesh.js';
 import * as THREE from 'three';
 import { Quests } from '../systems/quests.js';
 import { Ambience } from '../systems/ambience.js';
@@ -57,6 +58,7 @@ export class Game {
     progress(0.05, 'Рисуем текстуры…');
     await tick();
     this.atlas = buildAtlas();
+    setItemAtlas(this.atlas);
     this.renderer = new Renderer(this, document.getElementById('game-root') || document.body);
     this.atlas.texture.anisotropy = Math.min(4, this.renderer.renderer.capabilities.getMaxAnisotropy());
     this.scene = this.renderer.scene;

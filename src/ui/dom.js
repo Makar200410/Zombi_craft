@@ -143,7 +143,30 @@ export function resourceIcon(res) {
   if (gm[res]) return glyph(gm[res]);
   return canvasURL(fallbackIcon('r_' + res, RES_COLORS[res], (RESOURCE_LABELS[res] || res)[0]));
 }
-export function itemIcon(id) { return canvasURL(tryArt('getItemSprite', id) || fallbackIcon('i_' + id, '#6a5a8a', (id || '?')[0].toUpperCase())); }
+export function itemIcon(id) {
+  if (id && id.startsWith('blk_')) return blockIcon(+id.slice(4));          // a block carried in the hotbar
+  if (id && id.startsWith('armor_')) return canvasURL(armorIcon(id));
+  return canvasURL(tryArt('getItemSprite', id) || fallbackIcon('i_' + id, '#6a5a8a', (id || '?')[0].toUpperCase()));
+}
+const ARMOR_COL = { leather: ['#5a3418', '#8a5a32', '#b88452'], iron: ['#6a6e76', '#c0c4cc', '#f0f2f6'], steel: ['#2a3040', '#5a6272', '#8a94a8'], crystal: ['#3a2080', '#8a70ff', '#d8c8ff'] };
+// 16×16 pixel shapes of the four pieces ('#' main, '+' light, '.' dark outline)
+const ARMOR_SHAPE = {
+  head: ['', '', '    ........    ', '   .########.   ', '  .##++++####.  ', '  .#+######.#.  ', '  .#######...#. ', '  .##.    .##.  ', '  .##.    .##.  ', '   ..      ..   '],
+  chest: ['', '  ...      ...  ', ' .###......###. ', ' .#++########+#.', ' .#############.', '  ..##########.. ', '   .#+#####+#.  ', '   .##########. ', '   .##########. ', '   .##########. ', '   .##########. ', '    ..........  '],
+  legs: ['', '', '   ..........   ', '   .#++#####.   ', '   .########.   ', '   .###..###.   ', '   .##.  .##.   ', '   .#+.  .+#.   ', '   .##.  .##.   ', '   .##.  .##.   ', '   ....  ....   '],
+  feet: ['', '', '', '', '', '', '   ...    ...   ', '   .#.    .#.   ', '   .+.    .+.   ', '   .#..   .#..  ', '  .####. .####. ', '  ......  ......'],
+};
+const armorCache = new Map();
+function armorIcon(id) {
+  if (armorCache.has(id)) return armorCache.get(id);
+  const [, tier, slot] = id.split('_');
+  const col = ARMOR_COL[tier] || ARMOR_COL.iron, rows = ARMOR_SHAPE[slot] || ARMOR_SHAPE.chest;
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (ch === ' ') continue; g.fillStyle = ch === '.' ? col[0] : ch === '+' ? col[2] : col[1]; g.fillRect(x, y + 2, 1, 1); } });
+  armorCache.set(id, c);
+  return c;
+}
 export function blockIcon(id) { return canvasURL(tryArt('getBlockIcon', id) || fallbackIcon('b_' + id, '#7a6a4a', String(id))); }
 export function buildingIcon(type) {
   return canvasURL(tryArt('getBuildingIcon', type) || glyph('castle'));

@@ -1,21 +1,62 @@
 import * as THREE from 'three';
 import { getItemSprite } from '../art/icons.js';
+import { BLOCKS } from '../core/blocks.js';
 
 const cache = new Map();
 const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+let atlas = null;
+/** Blocks carried as items ('blk_<id>') are drawn as small textured cubes from the block atlas. */
+export function setItemAtlas(a) { atlas = a; }
+const blockGeo = new Map();
+let blockMat = null;
+/** Unit cube (centered) textured with the block's faces. */
+export function blockItemGeometry(blockId) {
+  if (!atlas) return null;
+  let g = blockGeo.get(blockId);
+  if (g) return g;
+  const def = BLOCKS[blockId]; if (!def) return null;
+  g = new THREE.BoxGeometry(1, 1, 1);
+  const uv = g.attributes.uv, col = [];
+  // BoxGeometry face order: +x, -x, +y, -y, +z, -z (4 verts each); faces shaded like the world mesher
+  const shade = [0.8, 0.8, 1, 0.5, 0.9, 0.9];
+  for (let f = 0; f < 6; f++) {
+    const tile = f === 2 ? def.tiles.top : f === 3 ? def.tiles.bottom : def.tiles.side;
+    const [u0, v0, u1, v1] = atlas.uv(tile);
+    for (let k = 0; k < 4; k++) {
+      const i = f * 4 + k;
+      uv.setXY(i, u0 + (u1 - u0) * uv.getX(i), v1 + (v0 - v1) * uv.getY(i));
+      col.push(shade[f], shade[f], shade[f]);
+    }
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  blockGeo.set(blockId, g);
+  return g;
+}
+export function blockItemMaterial() {
+  if (!blockMat && atlas) blockMat = new THREE.MeshLambertMaterial({ map: atlas.texture, alphaTest: 0.5, vertexColors: true });
+  return blockMat;
+}
 
 /**
  * Extrudes a 32x32 item sprite into a 1-pixel-thick voxel mesh (1 unit = sprite width).
  * Origin at sprite bottom-left (the handle). Returns a new Mesh sharing cached geometry.
  */
-export function makeItemMesh(itemIdOrCanvas) {
-  const key = typeof itemIdOrCanvas === 'string' ? itemIdOrCanvas : itemIdOrCanvas;
+export function makeItemMesh(itemIdOrCanvas, { thick = 1.2 } = {}) {
+  if (typeof itemIdOrCanvas === 'string' && itemIdOrCanvas.startsWith('blk_')) {
+    // a block in the hand: a cube a little under half the sprite size, sitting where a sprite's middle would be
+    const g = blockItemGeometry(+itemIdOrCanvas.slice(4)); if (!g) return null;
+    const m = new THREE.Mesh(g, blockItemMaterial());
+    m.scale.setScalar(0.45); m.position.set(0.5, 0.5, 0);
+    const grp = new THREE.Group(); grp.add(m); grp.userData.block = true;
+    return grp;
+  }
+  const key = (typeof itemIdOrCanvas === 'string' ? itemIdOrCanvas : itemIdOrCanvas) + ':' + thick;
   let geo = cache.get(key);
   if (!geo) {
     let canvas = null;
     try { canvas = typeof itemIdOrCanvas === 'string' ? getItemSprite(itemIdOrCanvas) : itemIdOrCanvas; } catch (e) { canvas = null; }
     if (!canvas) return null;
-    geo = extrude(canvas);
+    geo = extrude(canvas, thick);
     cache.set(key, geo);
   }
   const m = new THREE.Mesh(geo, mat);
@@ -23,10 +64,10 @@ export function makeItemMesh(itemIdOrCanvas) {
   return m;
 }
 
-function extrude(canvas) {
+function extrude(canvas, thick = 1.2) {
   const W = canvas.width, H = canvas.height;
   const data = canvas.getContext('2d').getImageData(0, 0, W, H).data;
-  const s = 1 / W, t = s * 1.2;   // thickness a little over a pixel
+  const s = 1 / W, t = s * thick;   // thickness in sprite pixels
   const pos = [], nrm = [], col = [], idx = [];
   const opaque = (x, y) => x >= 0 && y >= 0 && x < W && y < H && data[(y * W + x) * 4 + 3] > 127;
   const c = new THREE.Color();

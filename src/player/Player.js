@@ -5,7 +5,7 @@ import { B as _B } from '../core/blocks.js';
 const STATION_OF_BLOCK = { [_B.WORKBENCH]: 'workbench', [_B.FURNACE]: 'furnace', [_B.IRON_BLOCK]: 'anvil', [_B.ARCANE_TABLE]: 'arcane' };
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
-import { ITEMS, DEFAULT_HOTBAR, RESOURCE_LABELS } from '../core/items.js';
+import { ITEMS, DEFAULT_HOTBAR, RESOURCE_LABELS, ARMOR_SLOTS } from '../core/items.js';
 import { B, BLOCKS, PALETTE, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { playerSkin } from '../art/skins.js';
 import { Viewmodel } from './Viewmodel.js';
@@ -183,6 +183,7 @@ export class Player extends Entity {
   // ------------------------------------------------------------------ lifecycle
   onNewGame() {
     this.hotbar = [...DEFAULT_HOTBAR];
+    this.armor = {}; this._armorLook?.();
     this.selected = 0;
     this.buildBlock = B.PLANKS;
     this.cooldowns = {}; this._cdUntil = {};
@@ -249,9 +250,29 @@ export class Player extends Entity {
     this.game.bus.emit('toast', { text: 'Вы очнулись у ратуши', kind: 'info' });
   }
 
+  /** Armour: equipped pieces per slot (item ids) and their total defence. */
+  get armorDefense() { let d = 0; for (const s of ARMOR_SLOTS) d += ITEMS[this.armor?.[s]]?.def || 0; return d; }
+  equipArmor(id) {
+    const it = ITEMS[id];
+    if (!it || it.kind !== 'armor') return;
+    this.armor = this.armor || {};
+    this.armor[it.slot] = this.armor[it.slot] === id ? null : id;
+    this._armorLook();
+    this.game.bus.emit('armor:changed', { armor: this.armor });
+  }
+  /** Third-person look: a helmet in the colour of the head piece. */
+  _armorLook() {
+    const m = this.model; if (!m) return;
+    if (m.hat) { m.hat.parent?.remove(m.hat); m.hat = null; }
+    const head = ITEMS[this.armor?.head];
+    if (head) m.addHat(head.tier === 'crystal' ? 'crown' : 'helmet', head.color);
+  }
+
   damage(amount, source, opts = {}) {
     if (this.dead || amount <= 0) return false;
     if (this.invuln > 0 && opts.kind !== 'fall' && opts.kind !== 'void') return false;
+    // armour softens blows, fire and acid (not falls or the void)
+    if (opts.kind !== 'fall' && opts.kind !== 'void') amount *= 1 - Math.min(0.7, this.armorDefense * 0.03);
     const died = super.damage(amount, source, opts);
     this.game.bus.emit('player:damaged', { amount, source, kind: opts.kind });
     if (!died) this.game.audio?.play('player_hurt', { volume: 0.8, pitch: 0.95 + Math.random() * 0.1 });
@@ -273,7 +294,7 @@ export class Player extends Entity {
     return {
       pos: [this.position.x, this.position.y, this.position.z], yaw: this.game.cameraRig?.yaw ?? this.yaw, pitch: this.game.cameraRig?.pitch ?? 0,
       hp: this.hp, mana: this.mana, stamina: this.stamina, hotbar: [...this.hotbar], selected: this.selected,
-      buildBlock: this.buildBlock, view: this.game.cameraRig?.view || 'fp',
+      buildBlock: this.buildBlock, view: this.game.cameraRig?.view || 'fp', armor: { ...(this.armor || {}) },
     };
   }
   deserialize(o = {}) {
@@ -288,6 +309,9 @@ export class Player extends Entity {
     if (typeof o.mana === 'number') this.mana = Math.min(this.maxMana, o.mana);
     if (typeof o.stamina === 'number') this.stamina = o.stamina;
     if (BLOCKS[o.buildBlock]) this.buildBlock = o.buildBlock;
+    this.armor = {};
+    for (const sl of ARMOR_SLOTS) if (ITEMS[o.armor?.[sl]]) this.armor[sl] = o.armor[sl];
+    this._armorLook();
     const rig = this.game.cameraRig;
     if (rig) { rig.yaw = o.yaw ?? 0; rig.pitch = o.pitch ?? 0; rig.view = o.view === 'tp' ? 'tp' : 'fp'; rig.eyeY = null; rig.trans = null; }
     this.yaw = o.yaw ?? 0;
@@ -459,6 +483,9 @@ export class Player extends Entity {
     const g = this.game, w = g.world, combat = g.combat, a = input.actions;
     const id = this.itemId, it = this.item;
     const unlocked = id ? this.isUnlocked(id) : true;
+    // a block in hand (Minecraft-style hotbar) places that block; the build hammer places the palette's
+    if (it?.kind === 'block') this.buildBlock = it.blockId;
+    const building = id === 'build_hammer' || it?.kind === 'block';
     const pressP = a.primary && !this._prevPrimary, releaseP = !a.primary && this._prevPrimary;
     const pressS = a.secondary && !this._prevSecondary;
     this._prevPrimary = a.primary; this._prevSecondary = a.secondary;
@@ -477,12 +504,12 @@ export class Player extends Entity {
 
     // placement preview for the build hammer
     let ghost = null;
-    if (id === 'build_hammer' && this.target.block) ghost = this._placeCell(this.target.block);
+    if (building && this.target.block) ghost = this._placeCell(this.target.block);
     this.target.place = ghost;
 
     let mining = false;
     // interact with crafting stations (workbench, furnace, anvil, arcane table)
-    if (pressS && id !== 'build_hammer' && this.target.block && STATION_OF_BLOCK[this.target.block.id]) {
+    if (pressS && !building && this.target.block && STATION_OF_BLOCK[this.target.block.id]) {
       g.bus.emit('ui:craft', { station: STATION_OF_BLOCK[this.target.block.id] });
       this._prevSecondary = true;
       this.cursor.update(dt, this.target.block, null);
@@ -495,7 +522,7 @@ export class Player extends Entity {
     } else {
       const aim = () => this.getAim();
       switch (it.kind) {
-        case 'melee': case 'tool': case 'build': {
+        case 'melee': case 'tool': case 'build': case 'block': {
           if (a.primary) {
             const reach = it.range || 3;
             const aimv = aim();
@@ -528,7 +555,7 @@ export class Player extends Entity {
       // secondary: place (hammer) / interact
       if (a.secondary) {
         this._placeT -= dt;
-        if (id === 'build_hammer') {
+        if (building) {
           if (pressS || this._placeT <= 0) { this._place(ghost); this._placeT = pressS ? 0.3 : 0.2; }
         } else if (pressS) {
           if (this.target.entity && this.target.entity.faction === 'village') g.bus.emit('select:entity', { entity: this.target.entity });
@@ -585,7 +612,7 @@ export class Player extends Entity {
     if (key !== this._mineKey) { this._mineKey = key; this._mineSoundT = 0; this._mineFxT = 0; }
     let mul = 1;
     if (it.kind === 'tool' && it.toolType === b.tool) mul = it.speed || 1;
-    else if (it.kind === 'build') mul = 1.6;
+    else if (it.kind === 'build' || it.kind === 'block') mul = 1.6;
     else if (b.tool === 'pick') mul = 0.35;
     if (it.kind === 'melee' && b.tool === 'axe' && hit.id !== B.LOG) mul = Math.max(mul, 1.2);
     const res = w.hitBlock(hit.x, hit.y, hit.z, 2 * mul * dt, 'player');

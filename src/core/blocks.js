@@ -27,6 +27,8 @@ function def(id, name, o = {}) {
     placeable: o.placeable !== undefined ? o.placeable : true,
     replaceable: !!o.replaceable,     // can be overwritten by placing (air, plants, water)
     tool: o.tool || 'any',            // 'axe' | 'pick' | 'shovel' | 'any' — faster with the right tool
+    kinetic: o.kinetic || null,       // mechanisms: 'source' | 'shaft' | 'machine'
+    minAge: o.minAge || 0,            // age that unlocks placing it
   };
   BLOCKS[id] = b;
   B[name.toUpperCase()] = id;
@@ -143,6 +145,19 @@ def(100, 'cracked_bricks', { label: 'Треснувший кирпич', tiles: 
 def(101, 'skull_block', { label: 'Череп на стене', tiles: { top: 'stone_bricks', side: 'skull_block' }, hardness: 3, drop: { stone: 1 }, placeable: false, tool: 'pick' });
 def(102, 'gold_block', { label: 'Золотой блок', hardness: 6, drop: { gold: 6 }, cost: { gold: 8 }, tool: 'pick' });
 def(103, 'iron_bars', { label: 'Решётка', render: 'cutout', hardness: 5, drop: { iron: 1 }, cost: { iron: 1 }, tool: 'pick' });
+// mechanisms (Create-style): power sources, transmission and machines. For now they are placeable blocks with their
+// own look; `kinetic` = 'source' | 'shaft' | 'machine' marks the role a kinetics system will give them, minAge = the
+// age that unlocks them.
+def(104, 'shaft', { label: 'Вал', tiles: 'shaft_block', render: 'cutout', hardness: 1.5, cost: { iron: 1 }, drop: { iron: 1 }, tool: 'pick', kinetic: 'shaft', minAge: 2 });
+def(105, 'cogwheel', { label: 'Шестерня', tiles: 'cogwheel_block', render: 'cutout', hardness: 1.5, cost: { wood: 2, iron: 1 }, drop: { wood: 1 }, tool: 'axe', kinetic: 'shaft', minAge: 2 });
+def(106, 'water_wheel', { label: 'Водяное колесо', tiles: { top: 'casing_top', side: 'water_wheel_side' }, hardness: 2, cost: { wood: 10, iron: 2 }, drop: { wood: 4 }, tool: 'axe', kinetic: 'source', minAge: 2 });
+def(107, 'windmill', { label: 'Ветряк', tiles: { top: 'casing_top', side: 'windmill_side' }, hardness: 2, cost: { wood: 14, iron: 2 }, drop: { wood: 5 }, tool: 'axe', kinetic: 'source', minAge: 2 });
+def(108, 'steam_engine', { label: 'Паровой двигатель', tiles: { top: 'casing_top', side: 'steam_engine_side' }, hardness: 5, light: 6, cost: { iron: 8, stone: 6, steel: 2 }, drop: { iron: 3 }, tool: 'pick', kinetic: 'source', minAge: 5 });
+def(109, 'mech_drill', { label: 'Механический бур', tiles: { top: 'casing_top', side: 'drill_side' }, hardness: 3, cost: { iron: 4, stone: 2 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
+def(110, 'mech_saw', { label: 'Механическая пила', tiles: { top: 'casing_top', side: 'saw_side' }, hardness: 3, cost: { iron: 4, wood: 4 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
+def(111, 'crusher', { label: 'Дробилка руды', tiles: { top: 'crusher_top', side: 'casing_side' }, hardness: 3, cost: { iron: 6, stone: 6 }, drop: { iron: 3 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
+def(112, 'mech_fan', { label: 'Вентилятор', tiles: { top: 'casing_top', side: 'fan_side' }, hardness: 3, cost: { iron: 4, wood: 2 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
+def(113, 'casing', { label: 'Механический корпус', tiles: { top: 'casing_top', side: 'casing_side' }, hardness: 3, cost: { stone: 2, iron: 1 }, drop: { stone: 1 }, tool: 'pick', minAge: 2 });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
@@ -158,6 +173,7 @@ export const isSolid = (id) => BLOCKS[id] ? BLOCKS[id].solid : false;
 export const isOpaqueCube = (id) => { const b = BLOCKS[id]; return !!b && b.shape === 'cube' && b.render === 'opaque'; };
 export const LOG_BLOCKS = new Set([B.LOG, B.SPRUCE_LOG, B.BIRCH_LOG]);
 export const LEAF_BLOCKS = new Set([B.LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES, B.ACACIA_LEAVES]);
+export const MECHANISMS = [B.SHAFT, B.COGWHEEL, B.WATER_WHEEL, B.WINDMILL, B.STEAM_ENGINE, B.MECH_DRILL, B.MECH_SAW, B.CRUSHER, B.MECH_FAN, B.CASING];
 export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL_ORE, B.AMETHYST]);
 // Blocks the player can pick in the build palette (in order).
 export const PALETTE = [

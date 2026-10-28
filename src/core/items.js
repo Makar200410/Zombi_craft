@@ -4,6 +4,8 @@
 // projectile: key understood by src/combat/projectiles.js
 // sprite: icon/held-item sprite name drawn by src/art/icons.js (getItemSprite(name) -> 32x32 canvas)
 
+import { BLOCKS, PALETTE, MECHANISMS } from './blocks.js';
+
 export const ITEMS = {};
 function item(id, o) { ITEMS[id] = { id, research: null, cooldown: 0.5, damage: 0, range: 3, manaCost: 0, ammo: null, sprite: id, ...o }; }
 
@@ -42,6 +44,23 @@ item('flamethrower', { name: 'Огнемёт', kind: 'gun', damage: 7, pellets: 
 item('rocket_launcher', { name: 'Гранатомёт', kind: 'gun', damage: 110, cooldown: 2.4, range: 90, projectile: 'rocket', splash: 4.5, research: 'rocketry', desc: 'Ракета взрывается по площади.' });
 item('laser_rifle', { name: 'Лазерная винтовка', kind: 'gun', damage: 40, cooldown: 0.28, range: 120, projectile: 'laser', research: 'ai', desc: 'Луч прожигает любую броню.' });
 item('nano_blade', { name: 'Нано-клинок', kind: 'melee', damage: 30, cooldown: 0.3, range: 3.6, knockback: 7, element: 'arcane', research: 'nanotech', desc: 'Лезвие толщиной в молекулу.' });
+
+// --- armour: four slots, each piece adds defence (3% less damage per point, up to 70%)
+export const ARMOR_SLOTS = ['head', 'chest', 'legs', 'feet'];
+export const ARMOR_SLOT_NAMES = { head: 'Шлем', chest: 'Нагрудник', legs: 'Поножи', feet: 'Сапоги' };
+export const ARMOR_TIERS = [
+  { id: 'leather', names: ['Кожаный шлем', 'Кожаная куртка', 'Кожаные штаны', 'Кожаные сапоги'], color: 0x8a5a32, def: [1, 3, 2, 1], research: null },
+  { id: 'iron', names: ['Железный шлем', 'Железная кираса', 'Железные поножи', 'Железные сапоги'], color: 0xc0c4cc, def: [2, 5, 4, 2], research: 'smithing' },
+  { id: 'steel', names: ['Стальной шлем', 'Стальной бронежилет', 'Стальные поножи', 'Стальные сапоги'], color: 0x5a6272, def: [3, 6, 5, 3], research: 'steam_power' },
+  { id: 'crystal', names: ['Кристальная корона', 'Кристальный доспех', 'Кристальные поножи', 'Кристальные сапоги'], color: 0x8a70ff, def: [4, 7, 6, 3], research: 'crystal_forging' },
+];
+for (const t of ARMOR_TIERS) ARMOR_SLOTS.forEach((slot, i) => item(`armor_${t.id}_${slot}`, { name: t.names[i], kind: 'armor', slot, def: t.def[i], tier: t.id, color: t.color, research: t.research, desc: `Защита +${t.def[i]}` }));
+
+// --- blocks as hotbar items (like Minecraft): building blocks and mechanisms; placing one spends village resources
+for (const id of [...new Set([...PALETTE, ...MECHANISMS])]) {
+  const b = BLOCKS[id];
+  if (b) item('blk_' + id, { name: b.label, kind: 'block', blockId: id, minAge: b.minAge || 0, sprite: null });
+}
 
 // Default hotbar layout for a new game (ids may be locked until researched).
 export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'build_hammer', 'bow', 'staff_fire', 'musket', 'staff_frost', 'staff_storm'];

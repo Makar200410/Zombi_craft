@@ -1,54 +1,51 @@
-// First-person viewmodel: blocky arm + held item, parented to the camera and drawn last after a depth clear
-// (so it never clips into walls). Procedural animation: idle sway, walk bob, look lag, swing, mine loop,
-// gun recoil + muzzle flash, spell cast thrust + tip glow, bow draw, equip.
+// First-person viewmodel, laid out like Minecraft's ItemInHandRenderer: the held item floats at the lower right
+// (no arm), an empty hand shows the bare arm. The pose is built like Minecraft's pose stack — arm transform
+// (0.56, -0.52, -0.72) lowered by the equip progress, the swing (attack) rotations, then the item model's
+// "firstperson_righthand" display transform — and drawn last after a depth clear so it never clips into walls.
+// On top of that: walk bob, look lag, mining loop, bow draw, gun recoil + muzzle flash, spell thrust + tip glow.
 import * as THREE from 'three';
 import { ITEMS } from '../core/items.js';
 import { makeItemMesh } from '../entities/itemMesh.js';
 import { glowTexture } from '../combat/effects.js';
 
 const RO = 1000;   // render order for viewmodel parts (after everything else, incl. particles)
+const DEG = Math.PI / 180;
 
-// Per-grip placement in camera space (camera looks down -Z, +X right, +Y up).
-//   pos  = where the hand grips the item          tip  = direction the sprite's handle→tip axis points
-//   face = direction the sprite's front face looks s    = item size (sprite width in units)
-//   grip = sprite coords (0..1) of the hand        end  = sprite coords of the business end (muzzle / staff tip)
-//   arm  = direction from the hand back to the shoulder   axis = sprite axis mapped to `tip` (default diagonal)
-export const GRIPS = {
-  blade: { pos: [0.37, -0.3, -0.6], tip: [-0.24, 0.82, -0.52], face: [0.45, 0.25, 0.86], s: 0.52, grip: [0.2, 0.2], end: [0.9, 0.9], arm: [0.45, -0.85, 0.3] },
-  tool:  { pos: [0.37, -0.29, -0.6], tip: [-0.22, 0.82, -0.53], face: [0.5, 0.25, 0.83], s: 0.52, grip: [0.16, 0.16], end: [0.85, 0.85], arm: [0.45, -0.85, 0.3] },
-  staff: { pos: [0.35, -0.32, -0.6], tip: [-0.15, 0.92, -0.35], face: [0.5, 0.2, 0.84], s: 0.62, grip: [0.3, 0.3], end: [0.9, 0.9], arm: [0.45, -0.85, 0.3] },
-  gun:   { pos: [0.28, -0.3, -0.48], tip: [-0.3, 0.07, -0.95], face: [-0.94, 0.15, 0.33], s: 0.6, grip: [0.3, 0.3], end: [0.97, 0.97], arm: [0.4, -0.85, 0.35] },
-  bow:   { pos: [0.27, -0.25, -0.58], tip: [0.3, 1, -0.12], face: [-0.3, 0, 1], s: 0.48, grip: [0.45, 0.45], end: [0.5, 0.5], arm: [0.45, -0.85, 0.3] },
-  throw: { pos: [0.34, -0.34, -0.55], tip: [-0.3, 0.8, -0.5], face: [0.5, 0.25, 0.83], s: 0.38, grip: [0.3, 0.3], end: [0.6, 0.6], arm: [0.45, -0.85, 0.3] },
-  book:  { pos: [0.25, -0.35, -0.52], tip: [-0.1, 0.5, -0.86], face: [0.25, 0.85, 0.47], s: 0.36, grip: [0.3, 0.2], end: [0.5, 0.9], arm: [0.4, -0.85, 0.35], axis: [0, 1, 0] },
+// Item display transforms (rotation in degrees XYZ, translation in 1/16 block, uniform scale), as in item model
+// JSON "display.firstperson_righthand". `end` = sprite coords of the business end (muzzle / staff tip).
+export const DISPLAY = {
+  item:  { r: [0, -90, 25], t: [1.13, 3.2, 1.13], s: 0.68, end: [0.9, 0.9] },     // swords, tools, rods, food
+  staff: { r: [0, -90, 25], t: [1.13, 3.2, 1.13], s: 0.7, end: [0.9, 0.9] },
+  bow:   { r: [0, -90, 25], t: [1.13, 3.2, 1.13], s: 0.68, end: [0.5, 0.5] },
+  gun:   { r: [0, 95, -45], t: [-3.6, 3.4, 0.4], s: 1.0, end: [0.97, 0.97], noSwing: true },
+  book:  { r: [0, -90, 25], t: [1.13, 3.2, 1.13], s: 0.55, end: [0.5, 0.9] },
+  block: { r: [0, 45, 0], t: [0, 0, 0], s: 0.4, end: [0.5, 0.5] },
 };
-const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
-/** Quaternion that maps sprite axis → tip and sprite +Z → face (orthonormalized). */
-export function gripQuaternion(grip, out = new THREE.Quaternion()) {
-  const a = new THREE.Vector3(...(grip.axis || [1, 1, 0])).normalize();
-  const e3 = new THREE.Vector3(0, 0, 1), e2 = new THREE.Vector3().crossVectors(e3, a);
-  const t1 = new THREE.Vector3(...grip.tip).normalize();
-  const t3 = new THREE.Vector3(...grip.face); t3.addScaledVector(t1, -t3.dot(t1)).normalize();
-  const t2 = new THREE.Vector3().crossVectors(t3, t1);
-  _m1.makeBasis(a, e2, e3); _m2.makeBasis(t1, t2, t3);
-  return out.setFromRotationMatrix(_m2.multiply(_m1.transpose()));
-}
-function gripFor(it) {
-  if (!it) return 'blade';
+function displayFor(it) {
+  if (!it) return null;
+  if (it.kind === 'block') return 'block';
   if (it.id === 'tome_meteor') return 'book';
   if (it.kind === 'gun' || it.id === 'crossbow') return 'gun';
   if (it.id === 'bow') return 'bow';
-  if (it.id === 'grenade') return 'throw';
   if (it.kind === 'spell') return 'staff';
-  if (it.kind === 'tool' || it.kind === 'build') return 'tool';
-  return 'blade';
+  return 'item';
 }
 const ELEMENT_COLORS = { fire: 0xff8a30, frost: 0x8ad8ff, storm: 0xb0d0ff, life: 0x9aff9a, arcane: 0xc890ff };
 
-const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ');
-const Y = new THREE.Vector3(0, 1, 0);
+/** Minimal pose stack (post-multiplied, like Minecraft's PoseStack). */
+class Pose {
+  constructor() { this.m = new THREE.Matrix4(); this._t = new THREE.Matrix4(); }
+  reset() { this.m.identity(); return this; }
+  translate(x, y, z) { this.m.multiply(this._t.makeTranslation(x, y, z)); return this; }
+  rotX(d) { if (d) this.m.multiply(this._t.makeRotationX(d * DEG)); return this; }
+  rotY(d) { if (d) this.m.multiply(this._t.makeRotationY(d * DEG)); return this; }
+  rotZ(d) { if (d) this.m.multiply(this._t.makeRotationZ(d * DEG)); return this; }
+  scale(x, y = x, z = x) { this.m.multiply(this._t.makeScale(x, y, z)); return this; }
+}
+
 const _warm = new THREE.Color(1.1, 0.85, 0.6);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
+const clamp = THREE.MathUtils.clamp;
 
 export class Viewmodel {
   constructor(game, player) {
@@ -64,18 +61,18 @@ export class Viewmodel {
     clearer.onBeforeRender = (renderer) => renderer.clearDepth();
     this.root.add(clearer);
 
-    this.sway = new THREE.Group();     // bob / sway / look lag
+    this.sway = new THREE.Group();     // bob / look lag
     this.root.add(this.sway);
-    this.anim = new THREE.Group();     // action animations
-    this.sway.add(this.anim);
-    this.holder = new THREE.Group();   // grip point & orientation
-    this.anim.add(this.holder);
+    this.hand = new THREE.Group();     // the pose-stack matrix (arm transform + swing)
+    this.hand.matrixAutoUpdate = false;
+    this.sway.add(this.hand);
+    this.armSpace = new THREE.Group(); // empty hand: the arm's own pose
+    this.armSpace.matrixAutoUpdate = false;
+    this.sway.add(this.armSpace);
 
-    this.itemMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true });   // baked face shading, lit by world light below
+    this.itemMat = new THREE.MeshBasicMaterial({ vertexColors: true });   // baked face shading, tinted by world light below
     this.armMat = null;
     this.arm = null;
-    this.armPivot = new THREE.Group();
-    this.anim.add(this.armPivot);
 
     this.tipMarker = new THREE.Object3D();
     this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd080, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, fog: false }));
@@ -84,23 +81,21 @@ export class Viewmodel {
     this.tipGlow.renderOrder = RO + 2; this.tipGlow.visible = false;
 
     this.itemId = undefined;
-    this.pending = null;
+    this.pending = undefined;
     this.mesh = null;
-    this.grip = GRIPS.blade;
+    this.disp = null;
+    this.pose = new Pose();
     // animation state
     this.t = 0;
     this.swingT = 1; this.swingDur = 0.3; this.swingKind = 'swing';
-    this.mining = false; this.mineT = 0;
+    this.mineT = 0;
     this.recoil = 0;
     this.castT = 1;
-    this.equipT = 1;
-    this.placeT = 1;
+    this.height = 1;           // Minecraft's equip height: 1 = raised, 0 = lowered out of view
     this.flashT = 0;
     this.lag = new THREE.Vector2();
-    this.basePos = new THREE.Vector3(0.3, -0.3, -0.58);
-    this.charge = 0;
+    this.charge = 0; this.drawT = 0;
     this.light = new THREE.Color(1, 1, 1);
-    this.emis = new THREE.Color(0, 0, 0);
   }
 
   attach(camera, armGeometry, skinTexture) {
@@ -109,66 +104,69 @@ export class Viewmodel {
       this.armMat = new THREE.MeshLambertMaterial({ map: skinTexture, transparent: true, alphaTest: 0.5 });
       this.arm = new THREE.Mesh(armGeometry, this.armMat);
       this.arm.renderOrder = RO;
-      const len = 12 * (1.8 / 32);
-      this.arm.position.set(0, len / 2 + 0.02, 0);
-      this.arm.scale.set(1.05, 1, 1.05);
-      this.armPivot.add(this.arm);
+      // the body model's arm is a centered 4×12×4 box at 1.8/32 per pixel (hand at -y); scale it to Minecraft's
+      // 1/16 per pixel and lay it from the hand (armSpace origin) back towards the shoulder below the screen
+      this.arm.scale.setScalar((1 / 16) / (1.8 / 32));
+      const dir = new THREE.Vector3(0.28, -0.8, 0.53).normalize();
+      this.arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      this.arm.rotateY(-0.5);
+      this.arm.position.copy(dir).multiplyScalar(6 / 16);
+      this.armSpace.add(this.arm);
     }
   }
 
   setVisible(v) { this.root.visible = v; }
 
   setItem(itemId) {
-    if (itemId === this.itemId && !this.pending) return;
-    if (this.itemId === undefined) { this._apply(itemId); this.equipT = 0.3; return; }
-    this.pending = itemId;   // swapped at the bottom of the lower/raise animation
-    if (this.equipT >= 1 || this.equipT > 0.5) this.equipT = 0;
+    itemId = itemId || null;
+    if (this.itemId === undefined) { this._apply(itemId); this.height = 0; return; }
+    if (itemId === this.itemId) { this.pending = undefined; return; }
+    this.pending = itemId;   // swapped once the hand is lowered
   }
 
   _apply(itemId) {
     this.itemId = itemId;
-    this.pending = null;
-    if (this.mesh) { this.holder.remove(this.mesh); this.mesh = null; }
+    this.pending = undefined;
+    if (this.mesh) { this.mesh.parent?.remove(this.mesh); this.mesh = null; }
     const it = ITEMS[itemId];
-    const grip = this.grip = GRIPS[gripFor(it)];
-    this.basePos.set(grip.pos[0], grip.pos[1], grip.pos[2]);   // anim group pivots at the hand
-    this.holder.position.set(0, 0, 0);
-    gripQuaternion(grip, this.holder.quaternion);
-    const m = itemId ? makeItemMesh(itemId) : null;
-    if (m) {
-      m.material = this.itemMat;
-      m.castShadow = false; m.receiveShadow = false;
-      m.renderOrder = RO;
-      const S = grip.s;
-      m.scale.setScalar(S);
-      m.position.set(-grip.grip[0] * S, -grip.grip[1] * S, 0);
-      this.mesh = m;
-      m.add(this.tipMarker);
-      this.tipMarker.position.set(grip.end[0], grip.end[1], 0);
-      this.holder.add(this.mesh);
+    const key = displayFor(it);
+    const D = this.disp = key ? DISPLAY[key] : null;
+    const m = itemId ? makeItemMesh(itemId, { thick: 2 }) : null;
+    if (m && D) {
+      const isBlock = !!m.userData.block;
+      let mesh = m;
+      if (isBlock) { mesh = m.children[0]; m.remove(mesh); mesh.position.set(0, 0, 0); mesh.scale.setScalar(1); }
+      else mesh.material = this.itemMat;
+      mesh.castShadow = false; mesh.receiveShadow = false; mesh.renderOrder = RO; mesh.frustumCulled = false;
+      // display transform: translate, rotate XYZ, scale, then the model is centered (sprites span 0..1)
+      const ps = new Pose();
+      ps.translate(D.t[0] / 16, D.t[1] / 16, D.t[2] / 16).rotX(D.r[0]).rotY(D.r[1]).rotZ(D.r[2]).scale(D.s);
+      if (!isBlock) ps.translate(-0.5, -0.5, 0);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(ps.m);
+      this.mesh = mesh;
+      mesh.add(this.tipMarker);
+      this.tipMarker.position.set(isBlock ? 0 : D.end[0], isBlock ? 0 : D.end[1], 0);
+      this.hand.add(mesh);
     }
-    // muzzle flash & tip glow live at the tip
     this.tipMarker.add(this.flash);
     this.tipMarker.add(this.tipGlow);
     const el = it?.element;
     this.tipGlow.visible = !!(it && it.kind === 'spell' && el && it.id !== 'tome_meteor');
     if (el) this.tipGlow.material.color.set(ELEMENT_COLORS[el] || 0xffffff);
-    const inv = grip.s > 0 ? 1 / grip.s : 1;
+    const inv = D ? 1 / D.s : 1;
     this.tipGlow.scale.setScalar(0.22 * inv);
     this.flash.scale.setScalar(0.5 * inv);
-    // arm: from grip towards the shoulder (off-screen bottom right)
-    this.armPivot.position.set(0, 0, 0);
-    _v.set(grip.arm[0], grip.arm[1], grip.arm[2]).normalize();
-    this.armPivot.quaternion.setFromUnitVectors(Y, _v);
-    this.armPivot.rotateY(0.4);
+    if (this.arm) this.arm.visible = !this.mesh;
   }
 
   /** One-shot animations: 'swing' | 'cast' | 'recoil' | 'place' | 'throw' */
   play(name, strength = 1) {
-    if (name === 'swing' || name === 'throw') { this.swingT = 0; this.swingDur = name === 'throw' ? 0.35 : 0.28; this.swingKind = name; }
-    else if (name === 'cast') this.castT = 0;
+    if (name === 'swing' || name === 'place' || name === 'throw') {
+      // Minecraft restarts the swing only once it is past half way
+      if (this.swingT >= 0.5 || this.swingT >= 1) { this.swingT = 0; this.swingDur = name === 'throw' ? 0.35 : 0.3; this.swingKind = name; }
+    } else if (name === 'cast') this.castT = 0;
     else if (name === 'recoil') { this.recoil = Math.min(1.4, this.recoil + strength); this.flashT = 0.06; }
-    else if (name === 'place') this.placeT = 0;
   }
 
   /** World position of the item's tip (muzzle / staff tip). */
@@ -182,20 +180,18 @@ export class Viewmodel {
     const k = Math.min(1.45, Math.max(0.45, (this.game.camera.aspect || 1.78) / 1.78));
     this.root.position.x = (k - 1) * 0.3;
     this.root.scale.setScalar(Math.min(1, 0.55 + 0.45 * k));
-    const g = this.game;
-    // equip lower/raise
-    if (this.equipT < 1) {
-      const before = this.equipT;
-      this.equipT = Math.min(1, this.equipT + dt / 0.32);
-      if (this.pending !== null && before < 0.5 && this.equipT >= 0.5) this._apply(this.pending);
-      if (this.pending !== null && this.equipT >= 1) this._apply(this.pending);
-    }
-    const eq = this.equipT < 0.5 ? this.equipT * 2 : (1 - this.equipT) * 2;   // 0 → 1 (lowest) → 0
+    // equip: lower (0.4 per tick), swap, raise — like Minecraft's mainHandHeight
+    const want = this.pending !== undefined ? 0 : 1;
+    this.height = want > this.height ? Math.min(want, this.height + dt * 8) : Math.max(want, this.height - dt * 8);
+    if (this.pending !== undefined && this.height <= 0) this._apply(this.pending);
+    const equip = 1 - this.height;
     // lighting from the world at the player's eye (caves are dark, torches warm)
     if (st.light) {
       const { s, b } = st.light;
-      this.light.setScalar(s); this.emis.setRGB(1.0, 0.72, 0.42).multiplyScalar(b * 0.5);
-      this.itemMat.color.setScalar(Math.min(1.15, 0.28 + s * 0.8 + b * 0.4)).lerp(_warm, Math.min(0.35, b * 0.4));
+      const lit = Math.min(1.15, 0.28 + s * 0.8 + b * 0.4);
+      this.itemMat.color.setScalar(lit).lerp(_warm, Math.min(0.35, b * 0.4));
+      const bm = this.mesh?.material;
+      if (bm && bm !== this.itemMat) bm.color.setScalar(lit);
       if (this.armMat) {
         const w = b * 0.4, base = 0.35 + s * 0.65;
         this.armMat.color.setRGB(Math.min(1.2, base + w), Math.min(1.2, base + w * 0.72), Math.min(1.2, base + w * 0.42));
@@ -203,59 +199,78 @@ export class Viewmodel {
       }
     }
 
-    // --- sway group: bob, idle breathing, look lag
+    // --- sway group: view bob and look lag (the hand trails the camera a little)
     const bob = st.bobAmount || 0, ph = st.bobPhase || 0;
-    this.lag.x = damp(this.lag.x, THREE.MathUtils.clamp(st.lookX * 0.0018, -0.09, 0.09), 10, dt);
-    this.lag.y = damp(this.lag.y, THREE.MathUtils.clamp(st.lookY * 0.0018, -0.09, 0.09), 10, dt);
-    const breathe = Math.sin(this.t * 1.6) * 0.006;
+    this.lag.x = damp(this.lag.x, clamp(st.lookX * 0.0018, -0.09, 0.09), 10, dt);
+    this.lag.y = damp(this.lag.y, clamp(st.lookY * 0.0018, -0.09, 0.09), 10, dt);
     this.sway.position.set(
-      Math.cos(ph) * 0.028 * bob - this.lag.x * 0.35,
-      -Math.abs(Math.sin(ph)) * 0.032 * bob + breathe + this.lag.y * 0.3 - (st.landDip || 0) * 0.35 - eq * 0.55 - (st.sprinting ? 0.03 : 0),
-      (st.sprinting ? 0.02 : 0));
-    this.sway.rotation.set(this.lag.y * 0.9 + (st.sprinting ? -0.12 : 0), -this.lag.x * 1.2 + (st.sprinting ? 0.25 : 0), Math.cos(ph) * 0.02 * bob);
+      Math.sin(ph) * 0.03 * bob - this.lag.x * 0.3,
+      -Math.abs(Math.cos(ph)) * 0.035 * bob + this.lag.y * 0.25 - (st.landDip || 0) * 0.3,
+      0);
+    this.sway.rotation.set(this.lag.y * 0.6, -this.lag.x * 0.8, Math.sin(ph) * 0.03 * bob);
 
-    // --- anim group: actions
-    const a = this.anim;
-    a.position.copy(this.basePos); a.rotation.set(0, 0, 0);
-    // swing (melee / tool one-shot) and mining loop
-    let sw = -1;
-    if (this.swingT < 1) { this.swingT = Math.min(1, this.swingT + dt / this.swingDur); sw = this.swingT; }
-    else if (st.mining) { this.mineT = (this.mineT + dt / 0.27) % 1; sw = this.mineT; }
+    // --- swing progress (one-shot swing, or a looping swing while mining — Minecraft swings every 6 ticks)
+    let sw = 0;
+    if (this.swingT < 1) { this.swingT = Math.min(1, this.swingT + dt / this.swingDur); sw = this.swingT < 1 ? this.swingT : 0; }
+    else if (st.mining) { this.mineT = (this.mineT + dt / 0.3) % 1; sw = this.mineT; }
     else this.mineT = 0;
-    if (sw >= 0) {
-      // MC-like arc: quick wind-up → strike down & inward → recover
-      const k = Math.sin(Math.min(1, sw) * Math.PI);
-      const k2 = Math.sin(Math.sqrt(Math.min(1, sw)) * Math.PI);
-      if (this.swingKind === 'throw' && this.swingT < 1) {
-        a.position.set(-0.05 * k, 0.12 * k, -0.2 * k2); a.rotation.set(-0.9 * k, 0, 0);
-      } else {
-        a.position.set(-0.2 * k2, 0.06 * k - 0.1 * k * k, -0.14 * k);
-        a.rotation.set(-0.95 * k2, 0.35 * k, 0.55 * k);
-      }
+    const sq = Math.sqrt(sw);
+    const D = this.disp;
+    const P = this.pose.reset();
+
+    if (!this.mesh) {
+      // ---- empty hand (Minecraft renderPlayerArm, right side)
+      const f2 = -0.3 * Math.sin(sq * Math.PI), f3 = 0.4 * Math.sin(sq * Math.PI * 2), f4 = -0.4 * Math.sin(sw * Math.PI);
+      P.translate(f2 + 0.42, f3 - 0.3 - equip * 0.6, f4 - 0.62);
+      P.rotY(Math.sin(sq * Math.PI) * 70);
+      P.rotZ(Math.sin(sw * sw * Math.PI) * -20);
+      P.rotX(Math.sin(sq * Math.PI) * -30);
+      this.armSpace.matrix.copy(P.m);
+      this.armSpace.matrixWorldNeedsUpdate = true;
+      this.hand.matrix.identity();
+      return;
     }
-    // place bump
-    if (this.placeT < 1) { this.placeT = Math.min(1, this.placeT + dt / 0.22); const k = Math.sin(this.placeT * Math.PI); a.position.z -= 0.08 * k; a.rotation.x -= 0.35 * k; }
-    // cast: thrust forward & up, glow flare
-    if (this.castT < 1) {
-      this.castT = Math.min(1, this.castT + dt / 0.35);
-      const k = Math.sin(this.castT * Math.PI);
-      a.position.x -= 0.1 * k; a.position.y += 0.07 * k; a.position.z -= 0.16 * k; a.rotation.x += 0.25 * k;
-    }
-    // recoil: kick back and muzzle up, springy settle
-    if (this.recoil > 0.001) {
-      const r = this.recoil;
-      a.position.z += 0.13 * r; a.position.y += 0.02 * r; a.rotation.x += 0.38 * r; a.rotation.z -= 0.08 * r;
-      this.recoil *= Math.exp(-dt * 11);
-    }
-    // bow draw: bring to center, pull back, tremble at full draw
+
     const ch = st.charge || 0;
-    this.charge = damp(this.charge, ch, 14, dt);
-    if (this.charge > 0.01) {
-      const c = this.charge;
-      const trem = ch >= 1 ? Math.sin(this.t * 40) * 0.004 : 0;
-      a.position.x -= 0.16 * c; a.position.y += 0.07 * c + trem; a.position.z += 0.08 * c;
-      a.rotation.z += 0.35 * c;
+    this.charge = damp(this.charge, ch, 18, dt);
+    this.drawT = ch > 0 ? this.drawT + dt : 0;
+    if (this.charge > 0.02 && this.disp === DISPLAY.bow) {
+      // ---- bow being drawn (Minecraft's BOW use animation)
+      P.translate(0.56, -0.52 - equip * 0.6, -0.72);
+      P.translate(-0.2785682, 0.18344387, 0.15731531).rotX(-13.935).rotY(35.3).rotZ(-9.785);
+      const f = Math.min(1, this.charge);
+      if (f > 0.1) P.translate(0, Math.sin((this.drawT * 20 - 0.1) * 1.3) * (f - 0.1) * 0.004, 0);
+      P.translate(0, 0, f * 0.04).scale(1, 1, 1 + f * 0.2).rotY(-45);
+    } else if (D?.noSwing) {
+      // ---- firearms: held forward, kick back on each shot
+      P.translate(0.56, -0.52 - equip * 0.6, -0.72);
+      const r = this.recoil;
+      if (r > 0.001) { P.translate(0, 0.02 * r, 0.12 * r).rotX(22 * r).rotZ(-4 * r); this.recoil *= Math.exp(-dt * 11); }
+      if (this.charge > 0.02) P.translate(-0.1 * this.charge, 0.04 * this.charge, 0.05 * this.charge);
+    } else {
+      // ---- everything else (Minecraft: swing offset, applyItemArmTransform, applyItemArmAttackTransform)
+      if (this.swingKind === 'throw' && this.swingT < 1) {
+        const kk = Math.sin(this.swingT * Math.PI);
+        P.translate(0, 0.1 * kk, -0.2 * kk);
+        P.translate(0.56, -0.52 - equip * 0.6, -0.72).rotX(-60 * kk);
+      } else {
+        P.translate(-0.4 * Math.sin(sq * Math.PI), 0.2 * Math.sin(sq * Math.PI * 2), -0.2 * Math.sin(sw * Math.PI));
+        P.translate(0.56, -0.52 - equip * 0.6, -0.72);
+        const f = Math.sin(sw * sw * Math.PI), f1 = Math.sin(sq * Math.PI);
+        P.rotY(45 + f * -20).rotZ(f1 * -20).rotX(f1 * -80).rotY(-45);
+      }
+      // spell: thrust forward and up
+      if (this.castT < 1) {
+        this.castT = Math.min(1, this.castT + dt / 0.35);
+        const kk = Math.sin(this.castT * Math.PI);
+        P.translate(-0.1 * kk, 0.07 * kk, -0.16 * kk).rotX(-15 * kk);
+      }
+      const r = this.recoil;   // light kick (crossbow-like items)
+      if (r > 0.001) { P.translate(0, 0.02 * r, 0.1 * r).rotX(15 * r); this.recoil *= Math.exp(-dt * 11); }
     }
+    this.hand.matrix.copy(P.m);
+    this.hand.matrixWorldNeedsUpdate = true;
+
     // muzzle flash
     if (this.flashT > 0) {
       this.flashT -= dt;
@@ -267,9 +282,7 @@ export class Viewmodel {
     if (this.tipGlow.visible) {
       const p = 0.75 + Math.sin(this.t * 5) * 0.12 + (1 - this.castT) * 0.9;
       this.tipGlow.material.opacity = Math.min(1, 0.55 + (1 - this.castT));
-      const inv = this.grip.s > 0 ? 1 / this.grip.s : 1;
-      this.tipGlow.scale.setScalar(0.22 * inv * p);
+      this.tipGlow.scale.setScalar(0.22 / (D?.s || 1) * p);
     }
-    void g;
   }
 }
