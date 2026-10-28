@@ -89,7 +89,7 @@ export class WeatherFx {
     this.occOrigin = { x: -1e6, z: -1e6 };
     this._occT = 0;
     const q = game.quality;
-    const n = q === 'low' ? 1600 : q === 'medium' ? 3600 : 6000;
+    const n = q === 'low' ? 3200 : q === 'medium' ? 5200 : 8000;
     this.rain = precipMesh(n, this.occ);
     this.snow = precipMesh(Math.round(n * 0.6), this.occ);
     const su = this.snow.material.uniforms;
@@ -148,7 +148,7 @@ export class WeatherFx {
       u.uWind.value.set(w.wind.x, w.wind.z);
       u.uOccOrigin.value.set(this.occOrigin.x, this.occOrigin.z);
       const big = cmd ? 1.8 : 1;
-      if (m === this.rain) { u.uBox.value = 44 * big; u.uHeight.value = 34 * big; u.uFall.value = 22 + 8 * amt; u.uLen.value = 0.9 + amt * 0.5; u.uWidth.value = cmd ? 0.06 : 0.022; u.uOpacity.value = 0.45 + amt * 0.35; }
+      if (m === this.rain) { u.uBox.value = 44 * big; u.uHeight.value = 34 * big; u.uFall.value = 22 + 8 * amt; u.uLen.value = 1.0 + amt * 0.7; u.uWidth.value = cmd ? 0.07 : 0.032; u.uOpacity.value = 0.55 + amt * 0.35; }
       else { u.uBox.value = 40 * big; u.uHeight.value = 26 * big; u.uWidth.value = cmd ? 0.14 : 0.07; }
       // night: rain picks up less light
       const night = g.state.nightFactor;

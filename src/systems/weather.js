@@ -113,7 +113,7 @@ export class Weather {
     // cold: on the high spruce mountains precipitation falls as snow
     const cam = g.camera.position, W = g.world;
     const cx = Math.floor(cam.x), cz = Math.floor(cam.z);
-    // the tundra is always cold; in the desert rain dries up before it reaches the ground (and it never snows)
+    // the tundra is always cold; in the desert light rain dries up before it reaches the ground (and it never snows)
     let coldHere = 0, dryHere = 0;
     if (cx >= 0 && cz >= 0 && cx < W.size && cz < W.size) {
       const i = cz * W.size + cx, bi = W.biome[i];
@@ -122,7 +122,9 @@ export class Weather {
     }
     this.cold = lerp(this.cold, coldHere, Math.min(1, dt * 0.5));
     this.dry = lerp(this.dry || 0, dryHere, Math.min(1, dt * 0.5));
-    const rainVis = this.rain * (1 - this.cold) * (1 - this.dry), snowVis = Math.min(1, this.snow + this.rain * this.cold * 0.8) * (1 - this.dry);
+    // (a thunderstorm brings real rain even to the desert)
+    const dryK = this.dry * (1 - this.storm);
+    const rainVis = this.rain * (1 - this.cold) * (1 - dryK), snowVis = Math.min(1, this.snow + this.rain * this.cold * 0.8) * (1 - dryK);
 
     // ground: wet in the rain, dries slowly; snow settles while it snows and melts afterwards
     this.wet = rainVis > this.wet ? lerp(this.wet, rainVis, Math.min(1, dt / 15)) : Math.max(0, this.wet - dt / 70);
