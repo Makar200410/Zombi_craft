@@ -48,14 +48,35 @@ const DUNGEON_LOOT = {
 };
 const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
-// who lives in which layer: [type, weight]
-const CAVE_FOLK = {
-  under: [['cave_dweller', 3], ['cave_spider', 3], ['walker', 2], ['bat', 2]],
-  caverns: [['cave_spider', 3], ['slime', 2], ['skeleton', 2], ['cave_dweller', 2], ['bat', 2]],
-  depths: [['slime', 2], ['skeleton', 2], ['cave_spider', 2], ['cave_dweller', 2], ['harpy', 1], ['frost', 1]],
-  hell: [['imp', 3], ['magma_golem', 1], ['burning', 2], ['skeleton', 1]],
-};
-const DEPTH_HP = { under: 1, caverns: 1.3, depths: 1.7, hell: 2.2 };
+// Danger grows with depth: ten levels from the first tunnels under the grass to the bottom of the underworld.
+// Each level: who lives there ([type, weight]), how tough they are (hp / damage multipliers, the wave their stats
+// are scaled to), how many come at once, and from level 5 the bosses that roam it (chance per spawn, cooldown).
+export const DEPTH_TIERS = [
+  { name: 'Неглубокие норы', folk: [['walker', 4], ['crawler', 3], ['slime_small', 2], ['bat', 1]], hp: 0.7, dmg: 0.7, wave: 2, cap: 3 },
+  { name: 'Сырые туннели', folk: [['walker', 3], ['crawler', 2], ['cave_spider', 2], ['bat', 2], ['slime', 1]], hp: 0.85, dmg: 0.85, wave: 4, cap: 4 },
+  { name: 'Заброшенные шахты', folk: [['cave_dweller', 3], ['cave_spider', 3], ['runner', 2], ['slime', 2], ['skeleton', 1]], hp: 1, dmg: 1, wave: 6, cap: 5 },
+  { name: 'Гулкие гроты', folk: [['skeleton', 3], ['armored', 2], ['cave_dweller', 2], ['leaper', 2], ['slime', 2], ['spitter', 1]], hp: 1.15, dmg: 1.1, wave: 8, cap: 6 },
+  { name: 'Пещерный ярус', folk: [['armored', 3], ['leaper', 2], ['skeleton', 2], ['frost', 2], ['harpy', 1], ['digger', 1]], hp: 1.3, dmg: 1.2, wave: 10, cap: 6,
+    bosses: [['brute', 1]], bossChance: 0.06 },
+  { name: 'Ледяные глубины', folk: [['frost', 3], ['armored', 2], ['screamer', 1], ['exploder', 2], ['harpy', 2], ['brute', 1]], hp: 1.5, dmg: 1.3, wave: 12, cap: 7,
+    bosses: [['brute', 2], ['giant', 1]], bossChance: 0.07 },
+  { name: 'Глубокие пещеры', folk: [['brute', 2], ['burning', 3], ['skeleton', 2], ['mutant', 2], ['screamer', 1], ['leaper', 2]], hp: 1.7, dmg: 1.45, wave: 15, cap: 8,
+    bosses: [['giant', 2], ['necromancer', 1]], bossChance: 0.08 },
+  { name: 'Врата преисподней', folk: [['imp', 3], ['burning', 3], ['magma_golem', 1], ['mutant', 2], ['skeleton', 1]], hp: 2, dmg: 1.6, wave: 18, cap: 8,
+    bosses: [['necromancer', 2], ['giant', 2]], bossChance: 0.09 },
+  { name: 'Пепельные пустоши', folk: [['imp', 3], ['magma_golem', 2], ['irradiated', 2], ['burning', 2], ['giant', 1]], hp: 2.4, dmg: 1.8, wave: 22, cap: 9,
+    bosses: [['lich', 2], ['necromancer', 1]], bossChance: 0.1 },
+  { name: 'Дно преисподней', folk: [['magma_golem', 3], ['imp', 2], ['irradiated', 2], ['giant', 2], ['nanite', 2]], hp: 2.9, dmg: 2.1, wave: 26, cap: 10,
+    bosses: [['lich', 2], ['nano_titan', 1]], bossChance: 0.12 },
+];
+/** Depth level 0..9 at height y (0 = just under the surface). */
+export function depthTier(world, y) {
+  const top = world.sea - 8;
+  const d = Math.max(0, Math.min(0.999, (top - y) / Math.max(1, top)));
+  return Math.floor(d * DEPTH_TIERS.length);
+}
+const BOSS_COOLDOWN = 120;    // seconds between roaming bosses
+
 function pick(list) { let t = 0; for (const [, w] of list) t += w; let r = Math.random() * t; for (const [k, w] of list) if ((r -= w) <= 0) return k; return list[0][0]; }
 
 export class Underground {
@@ -126,7 +147,7 @@ export class Underground {
     const mine = W.zombies.filter(z => z.cave && !z.dead);
     // the far ones go back to the dark
     for (const z of mine) {
-      if (z.boss) continue;
+      if (z.bossKey) continue;              // dungeon bosses guard their lair
       if (Math.hypot(z.position.x - pos.x, z.position.z - pos.z) > 72 || Math.abs(z.position.y - pos.y) > 48) { z.dead = true; z.removeAt = 0; z.object3d.visible = false; }
     }
     // spawner cages near the player
@@ -154,24 +175,35 @@ export class Underground {
         }
       }
     }
-    // creatures coming out of the dark
+    // creatures coming out of the dark: the deeper, the more and the deadlier
     const layer = layerAt(w, Math.floor(pos.y));
-    if (layer.id === 'surface' || !CAVE_FOLK[layer.id]) return;
+    if (layer.id === 'surface') return;
+    const ti = depthTier(w, Math.floor(pos.y)), T = DEPTH_TIERS[ti];
     this._spawnT = (this._spawnT ?? 4) - dt;
+    this._bossT = (this._bossT ?? 30) - dt;
     if (this._spawnT > 0) return;
-    this._spawnT = 3 + Math.random() * 4;
-    const cap = layer.id === 'under' ? 4 : layer.id === 'caverns' ? 6 : 8;
-    if (mine.filter(z => !z.spawnerKey).length >= cap) return;
-    const type = pick(CAVE_FOLK[layer.id]);
+    this._spawnT = Math.max(1.5, 4.5 - ti * 0.3) + Math.random() * 3;
+    if (mine.filter(z => !z.spawnerKey && !z.roamBoss).length >= T.cap) return;
+    // now and then one of the level's bosses comes hunting
+    const boss = T.bosses && this._bossT <= 0 && !mine.some(z => z.roamBoss) && Math.random() < T.bossChance;
+    const type = boss ? pick(T.bosses) : pick(T.folk);
+    const opts = { cave: true, wanderer: true, sunproof: true, silent: true, wave: T.wave, hpMul: T.hp, dmgMul: T.dmg };
     for (let k = 0; k < 14; k++) {
-      const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * 12;
+      const a = Math.random() * Math.PI * 2, r = (boss ? 18 : 14) + Math.random() * 12;
       const x = Math.floor(pos.x + Math.cos(a) * r), z = Math.floor(pos.z + Math.sin(a) * r);
       const s = this._standAt(x, Math.floor(pos.y), z, 8);
       if (s === null) continue;
       const l = w.getLight(x, s, z);
       if ((l & 15) > 6 || (l >> 4) > 3) continue;                    // only in the dark
-      const zb = W.spawn(type, x + 0.5, z + 0.5, { y: s, emerge: false, cave: true, wanderer: true, sunproof: true, silent: true, wave: Math.max(4, W.currentWave), hpMul: DEPTH_HP[layer.id] || 1 });
-      if (zb) zb.home = zb.position.clone();
+      const zb = W.spawn(type, x + 0.5, z + 0.5, { y: s, emerge: false, ...opts });
+      if (!zb) return;
+      zb.home = zb.position.clone();
+      if (boss) {
+        zb.roamBoss = true;
+        this._bossT = BOSS_COOLDOWN;
+        g.bus.emit('toast', { text: `Из глубины поднимается ${zb.name}!`, kind: 'bad' });
+        g.audio?.play('zombie_roar', { pos: zb.position, pitch: 0.5, volume: 1 });
+      }
       return;
     }
   }
@@ -201,6 +233,13 @@ export class Underground {
     const g = this.game, p = g.player, w = g.world;
     if (!p || !w || w.format === 1 || g.mode !== 'explore') return;
     if (!g.net?.isClient) this._monsters(dt);
+    // a deeper danger level than ever before on this trip down
+    const ti = layerAt(w, Math.floor(p.position.y)).id === 'surface' ? -1 : depthTier(w, Math.floor(p.position.y));
+    if (ti < 0) this._deepest = -1;
+    else if (ti > (this._deepest ?? -1)) {
+      this._deepest = ti;
+      if (ti > 0) g.bus.emit('toast', { text: `Глубина ${ti + 1}/${DEPTH_TIERS.length}: ${DEPTH_TIERS[ti].name} — нежить здесь сильнее`, kind: ti >= 6 ? 'bad' : 'warn' });
+    }
     // tell the player which layer they've reached (after staying there a moment)
     const l = layerAt(w, Math.floor(p.position.y));
     if (l.id === this._layer) { this._pendingLayer = null; return; }

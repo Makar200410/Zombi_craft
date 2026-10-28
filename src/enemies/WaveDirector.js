@@ -284,7 +284,7 @@ export class WaveDirector {
     const grace = Math.min(1, 0.65 + wave * 0.05);
     const evo = (1 + 0.04 * (game.state.age | 0)) * (1 + 0.25 * (game.state.ngPlus | 0));   // the dead evolve along with the civilisation (and each New Game+)
     const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace * evo;
-    const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave) * grace, wave });
+    const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: (opts.dmgMul ?? 1) * d.dmg * dmgScale(wave) * grace, wave });
     zb.position.set(p.x, p.y + (zb.flyer ? (opts.y !== undefined ? 1 : 3 + Math.random() * 3) : 0), p.z);
     zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
     zb.progPos.copy(zb.position);

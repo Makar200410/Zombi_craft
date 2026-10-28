@@ -1079,7 +1079,15 @@ export class Zombie extends Entity {
     const n = Math.min(3, Math.max(0, cap - waves.aliveCount()));
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 2.2;
-      const z = waves.spawn('walker', this.position.x + Math.cos(a) * r, this.position.z + Math.sin(a) * r, { wave: this.wave, raised: true, hpMul: this.raiseHpMul || 1 });
+      const x = this.position.x + Math.cos(a) * r, zz = this.position.z + Math.sin(a) * r;
+      let extra = {};
+      if (this.cave) {
+        // underground: the dead rise from the cave floor next to the caster, and stay cave dwellers
+        const y = game.underground?._standAt?.(Math.floor(x), Math.floor(this.position.y), Math.floor(zz), 3);
+        if (y === null || y === undefined) continue;
+        extra = { y, emerge: false, cave: true, wanderer: true, sunproof: true, silent: true };
+      }
+      const z = waves.spawn('walker', x, zz, { wave: this.wave, raised: true, hpMul: this.raiseHpMul || 1, ...extra });
       if (z) z.raisedByNecro = true;
     }
   }
