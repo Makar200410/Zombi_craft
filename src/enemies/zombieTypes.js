@@ -90,6 +90,45 @@ export const ZOMBIE_TYPES = {
     height: 1.9, width: 1, radius: 0.32, aggro: 24, knock: 3, eye: 0xffa030, groanPitch: 1.05, loot: 0.75,
     fly: { cruise: 8, wing: 1.9 }, skinBase: 'walker', tint: [0x5a4a6a, 0.4],
   },
+  // ---- underground (never in the night waves: they live in caves and dungeons; `cave` marks them, `model` picks
+  //      a non-human body, `split` spawns smaller ones on death)
+  cave_spider: {
+    base: 'runner', name: 'Пещерный паук', hp: 22, speed: 3.6, dmg: 5, cd: 0.6, reach: 1.0, blockDps: 0.3, bldDmg: 1,
+    height: 0.85, width: 1.4, radius: 0.45, aggro: 18, knock: 1, eye: 0xff2020, groanPitch: 1.8, loot: 0.35,
+    leap: 8, hitSlow: 1.5, cave: true, model: { kind: 'spider', size: 0.85, tint: 0x3a3036 },
+  },
+  slime: {
+    base: 'walker', name: 'Слизень', hp: 34, speed: 1.9, dmg: 5, cd: 0.9, reach: 1.0, blockDps: 0, bldDmg: 1,
+    height: 1.1, width: 1.1, radius: 0.5, aggro: 14, knock: 3, eye: 0x203010, groanPitch: 1.6, loot: 0.4,
+    leap: 7, split: 'slime_small', cave: true, model: { kind: 'slime', size: 1.1, tint: 0x5ad040 },
+  },
+  slime_small: {
+    base: 'walker', name: 'Слизнёныш', hp: 10, speed: 2.4, dmg: 2, cd: 0.8, reach: 0.9, blockDps: 0, bldDmg: 0.5,
+    height: 0.55, width: 0.55, radius: 0.26, aggro: 14, knock: 1, eye: 0x203010, groanPitch: 2.2, loot: 0.1,
+    leap: 6, cave: true, model: { kind: 'slime', size: 0.55, tint: 0x6ae050 },
+  },
+  cave_dweller: {
+    base: 'walker', name: 'Пещерный упырь', hp: 40, speed: 2.2, dmg: 8, cd: 0.9, reach: 1.0, blockDps: 1, bldDmg: 2,
+    height: 1.75, width: 0.95, radius: 0.3, aggro: 20, knock: 3, eye: 0x80ffff, groanPitch: 0.9, loot: 0.5,
+    hunch: 0.35, cave: true, skinBase: 'walker', tint: [0xc8d0d8, 0.55],
+  },
+  imp: {
+    base: 'flyer', name: 'Бес преисподней', hp: 26, speed: 4.0, dmg: 6, cd: 0.8, reach: 1.0, blockDps: 0, bldDmg: 1,
+    height: 1.2, width: 0.8, radius: 0.28, aggro: 24, knock: 2, eye: 0xffe040, groanPitch: 1.7, loot: 0.6,
+    hunch: 0.3, immune: 'fire', hitBurn: 2.5, glow: 0xff4010, cave: true, fly: { cruise: 4, wing: 1.2 },
+    skinBase: 'runner', tint: [0xc03018, 0.55], trail: [0xffa030, 0xff5020],
+  },
+  magma_golem: {
+    base: 'brute', name: 'Магмовый голем', hp: 170, speed: 1.3, dmg: 20, cd: 1.5, reach: 1.3, blockDps: 4, bldDmg: 14,
+    height: 2.5, width: 1.5, radius: 0.44, aggro: 16, knock: 10, eye: 0xffc020, groanPitch: 0.55, loot: 1,
+    immune: 'fire', hitBurn: 3, deathFire: 3, glow: 0xff5010, cave: true, skinBase: 'brute', tint: [0x3a1a10, 0.6], trail: [0xffa030, 0xff4010],
+  },
+  lich: {
+    base: 'necromancer', name: 'Лич подземелья', hp: 950, speed: 1.4, dmg: 14, cd: 1.1, reach: 1.1, blockDps: 2, bldDmg: 8,
+    height: 2.4, width: 1, radius: 0.36, aggro: 26, knock: 7, eye: 0x60e0ff, groanPitch: 0.45, loot: 1,
+    hat: 'crown', hatColor: 0xe8c040, boss: true, hover: 0.4, boltCd: 1.8, boltDmg: 16, raiseCd: 9, armor: 0.25, cave: true,
+    skinBase: 'necromancer', tint: [0x8ab0d0, 0.45], glow: 0x2040a0,
+  },
   // ---- industrial & electric ages (appear by the village's age, not by wave number)
   mutant: {
     base: 'walker', name: 'Мутант', hp: 95, speed: 2.1, dmg: 13, cd: 0.9, reach: 1.1, blockDps: 3, bldDmg: 8,

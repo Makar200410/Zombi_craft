@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
+import { CreatureModel } from './CreatureModel.js';
 import { B, BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { ZOMBIE_TYPES } from './zombieTypes.js';
 import { CONSTRUCTION } from './flowfield.js';
@@ -98,14 +99,17 @@ export class Zombie extends Entity {
     this.sunproof = !!opts.sunproof;
     this.boss = !!T.boss;
     this.name = T.name;
-    this.speed = T.speed * (0.9 + Math.random() * 0.2) * (this.wanderer ? 0.65 : 1);
+    this.speed = T.speed * (0.9 + Math.random() * 0.2) * (this.wanderer && !(opts.cave || T.cave) ? 0.65 : 1);
     this.autoStep = true;
     const seed = opts.seed ?? (Math.random() * 1e6) | 0;
 
     // --- model
-    const hat = this.sunproof ? 'helmet' : T.hat || null;
-    const hatColor = this.sunproof ? 0x6d6a60 : T.hatColor;
-    this.model = new HumanoidModel({ skin: getZombieSkin(this.type, seed), height: T.height, zombie: true, width: T.width, hat, hatColor });
+    this.cave = !!opts.cave || !!T.cave;
+    const helmet = this.sunproof && !this.cave;
+    const hat = helmet ? 'helmet' : T.hat || null;
+    const hatColor = helmet ? 0x6d6a60 : T.hatColor;
+    this.model = T.model ? new CreatureModel({ ...T.model, width: T.width / 1.4 })
+      : new HumanoidModel({ skin: getZombieSkin(this.type, seed), height: T.height, zombie: true, width: T.width, hat, hatColor });
     // emissive uses the skin texture, so torch glow / night corpse-light keep the pixel detail
     this.model.material.emissiveMap = this.model.material.map;
     this.model.material.needsUpdate = true;
@@ -113,8 +117,8 @@ export class Zombie extends Entity {
     this.visual.add(this.model.group);
     this.object3d.add(this.visual);
     this._addEyes();
-    if (this.type === 'necromancer') this._addNecroProps();
-    if (T.hunch) { this.visual.rotation.x = T.hunch * 0.85; }
+    if (this.base === 'necromancer' && !T.model) this._addNecroProps();
+    if (T.hunch && !T.model) { this.visual.rotation.x = T.hunch * 0.85; }
     if (T.glow) { this.model.material.emissive.setHex(T.glow); this.model.material.emissiveIntensity = 0.55; }
     this.buffUntil = 0; this.leapT = 1 + Math.random() * 2; this.trailT = 0;
     if (this.type === 'exploder') this._addBoils();
@@ -197,10 +201,14 @@ export class Zombie extends Entity {
     const mat = eyeMat(this.T.eye);
     this.eyes = [];
     // matches the 1-px eyes of src/art/skins.js zombie faces (row 4, columns 2 and 5)
-    for (const sx of [-1.5, 1.5]) {
+    const M = this.model;
+    const eyes = M.eyeY !== undefined
+      ? (M.kind === 'spider' ? [[-M.eyeX, M.eyeY, 1.3], [M.eyeX, M.eyeY, 1.3], [-M.eyeX * 0.5, M.eyeY + 1.4, 0.9], [M.eyeX * 0.5, M.eyeY + 1.4, 0.9]] : [[-M.eyeX, M.eyeY, 1.6], [M.eyeX, M.eyeY, 1.6]])
+      : [[-1.5, 3.5, 1.25], [1.5, 3.5, 1.25]];
+    for (const [ex, ey, sz] of eyes) {
       const e = new THREE.Mesh(eyeGeo, mat);
-      e.scale.set(1.25 * px, 1.1 * px, 0.4 * px);
-      e.position.set(sx * px, 3.5 * px, 4.05 * px);
+      e.scale.set(sz * px, sz * 0.9 * px, 0.4 * px);
+      e.position.set(ex * px, ey * px, (M.eyeZ ?? 4.05) * px);
       head.add(e);
       this.eyes.push(e);
     }
@@ -208,7 +216,7 @@ export class Zombie extends Entity {
       const s = new THREE.Sprite(glowMat(this.T.eye));
       this._glowBase = this.boss ? 0.5 : 0.3 * (this.T.height / 1.8);
       s.scale.setScalar(this._glowBase);
-      s.position.set(0, 3.5 * px, 4.6 * px);
+      s.position.set(0, (M.eyeY ?? 3.5) * px, ((M.eyeZ ?? 4.05) + 0.6) * px);
       s.renderOrder = 6;
       head.add(s);
       this.eyeGlow = s;
@@ -499,7 +507,7 @@ export class Zombie extends Entity {
         if (d < T.keep[0]) { gx = pos.x - dx; gz = pos.z - dz; speed *= 0.8; }
         else if (d > T.keep[1]) { gx = tgt.position.x; gz = tgt.position.z; }
         else { speed = 0; }
-      } else if (this.type === 'necromancer' && d < 9 && d > 3) {
+      } else if (this.base === 'necromancer' && d < 9 && d > 3) {
         speed = 0;       // casts from range
       } else {
         const direct = d < 2.5 || (this.losOk && Math.abs(dy) < 1.5 && d < 14);
@@ -606,10 +614,19 @@ export class Zombie extends Entity {
     this._gndT -= dt;
     if (this._gnd === null || this._gndT <= 0) {
       this._gndT = 0.4;
-      const w = this.game.world, p = this.position;
+      // the floor (or roof) below and the ceiling above: flyers keep between them, in caves too
+      const w = this.game.world, p = this.position, y0 = Math.floor(p.y + 0.5);
       let g = -1;
-      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) g = Math.max(g, w.surfaceY(p.x + dx * 2, p.z + dz * 2));
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const x = Math.floor(p.x + dx * 2), z = Math.floor(p.z + dz * 2);
+        let y = y0 + 1;
+        while (y > y0 - 40 && y > 0 && !w.isSolid(x, y, z)) y--;
+        g = Math.max(g, y);
+      }
+      let c = y0 + 1;
+      while (c < y0 + 14 && !w.isSolid(Math.floor(p.x), c, Math.floor(p.z))) c++;
       this._gnd = g + 1;
+      this._ceil = c < y0 + 14 ? c : Infinity;
     }
     return this._gnd;
   }
@@ -620,7 +637,7 @@ export class Zombie extends Entity {
   _fly(dt) {
     const game = this.game, pos = this.position, T = this.T, F = T.fly, v = this.velocity;
     const gnd = this._groundY(dt);
-    const cruise = gnd + F.cruise;
+    const cruise = Math.max(gnd + 1, Math.min(gnd + F.cruise, (this._ceil ?? Infinity) - 2.2));
     let speed = this.speed * this._buffMul * this.speedMul * (game.weather?.zombieSpeed ?? 1);
     if (this.stunTimer > 0) speed *= 0.2;
     let gx = pos.x, gy = cruise, gz = pos.z;
@@ -668,6 +685,7 @@ export class Zombie extends Entity {
         gx = th?.center.x ?? S / 2; gz = th?.center.z ?? S / 2;
       }
     }
+    if (this._ceil < Infinity) gy = Math.min(gy, this._ceil - 1.6);
     // steer in 3D (slower vertically), climb over anything in the way
     let mx = gx - pos.x, my = gy - pos.y, mz = gz - pos.z;
     const l = Math.hypot(mx, my, mz);
@@ -843,7 +861,7 @@ export class Zombie extends Entity {
     }
 
     // --- necromancer: bolts + raising the dead
-    if (this.type === 'necromancer') {
+    if (this.base === 'necromancer') {
       this.auraT -= dt;
       if (this.auraT <= 0 && !this.far) {
         this.auraT = 0.08;
@@ -1104,6 +1122,12 @@ export class Zombie extends Entity {
       if (game.state.stats) game.state.stats.kills = (game.state.stats.kills || 0) + 1;
       this._dropLoot();
     }
+    if (this.T.split && !sun) {
+      for (let k = 0; k < 2; k++) {
+        const p = this.position, a = Math.random() * Math.PI * 2;
+        game.waves?.spawn(this.T.split, p.x + Math.cos(a) * 0.6, p.z + Math.sin(a) * 0.6, { y: p.y, emerge: false, cave: true, wanderer: true, sunproof: true, silent: true, wave: this.wave, hpMul: 1 });
+      }
+    }
     if (this.base === 'exploder' && !sun) {
       // popping the bloated corpse: small burst that doesn't break blocks
       const pos = this.center.clone();
@@ -1113,7 +1137,8 @@ export class Zombie extends Entity {
     }
     if (this.boss) {
       game.particles?.emit({ pos: this.center, box: 0.5, count: 80, colors: [0xa040ff, 0xd080ff, 0xffffff], additive: true, speed: 6, life: 1.4, size: 0.4, gravity: -1 });
-      game.bus.emit('toast', { text: 'Некромант повержен!', kind: 'good' });
+      game.bus.emit('toast', { text: `${this.name} повержен!`, kind: 'good' });
+      if (this.bossKey) game.bus.emit('dungeon:boss', { key: this.bossKey, zombie: this });
     }
   }
 

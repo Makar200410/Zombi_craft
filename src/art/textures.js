@@ -1945,6 +1945,38 @@ GEN.jungle_grass_side = (p, r) => {
   copyInto(p, gen('mud'));
   overhang(p, r, hexes(['#0e2a0c', '#164012', '#1e5818', '#2a7220', '#3a8c2a', '#52a634', '#74c046']), 'mud', { min: 3, var: 4, drips: 0.45, dripLen: [2, 6], top: 5 });
 };
+GEN.spawner = (p, r) => {
+  // a dark iron cage with a smouldering soul inside
+  p.map((x, y) => [0, 0, 0, 0]);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const d = Math.hypot(x - 15.5, y - 15.5);
+    if (d < 9) p.set(x, y, mix(hex('#ff8a30'), hex('#5a1060'), Math.min(1, d / 9)), d < 5 ? 255 : 200);
+  }
+  const bar = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) p.set(x, y, (x + y) % 5 ? hex('#2a2a32') : hex('#4a4a56')); };
+  bar(0, 0, 31, 2); bar(0, 29, 31, 31); bar(0, 0, 2, 31); bar(29, 0, 31, 31);
+  for (const x of [8, 15, 22]) bar(x, 0, x + 1, 31);
+  for (const y of [10, 21]) bar(0, y, 31, y + 1);
+};
+GEN.cracked_bricks = (p, r) => {
+  copyInto(p, gen('stone_bricks'));
+  cracks(p, r, 7, hex('#1e1d22'), 0.25, [5, 12]);
+  for (let i = 0; i < 30; i++) p.shade(r.int(0, 31), r.int(0, 31), -0.2);
+};
+GEN.skull_block = (p, r) => {
+  copyInto(p, gen('stone_bricks'));
+  const B0 = hexes(['#7a7466', '#a8a290', '#d0cab6', '#ece6d2']);
+  blob(p, 16, 14, 7, 6.5, B0, { dither: 0.2 });
+  for (let x = 11; x <= 21; x++) for (let y = 19; y <= 23; y++) p.set(x, y, B0[(x + y) % 2 ? 2 : 1]);
+  for (const ex of [12, 18]) for (let y = 12; y <= 15; y++) for (let x = ex; x <= ex + 2; x++) p.set(x, y, hex('#120c0a'));
+  p.set(15, 17, hex('#120c0a')); p.set(16, 17, hex('#120c0a'));
+  for (let x = 12; x <= 20; x += 2) p.set(x, 21, hex('#3a3428'));
+};
+GEN.gold_block = (p, r) => metalPlates(p, r, P.wgold);
+GEN.iron_bars = (p, r) => {
+  p.map(() => [0, 0, 0, 0]);
+  for (const x of [3, 11, 19, 27]) for (let y = 0; y < 32; y++) { p.set(x, y, P.iron[2]); p.set(x + 1, y, P.iron[5]); p.set(x + 2, y, P.iron[3]); }
+  for (const y of [2, 29]) for (let x = 0; x < 32; x++) { p.set(x, y, P.iron[2]); p.set(x, y + 1, P.iron[4]); }
+};
 GEN.acacia_leaves = (p, r) => leafTile(p, r, hexes(['#1e2a0c', '#2c3c10', '#3e5216', '#52681c', '#687e24', '#80942e', '#9aaa3c', '#b4c050', '#cad466']));
 
 // ------------------------------------------------------------------ overlays

@@ -1,6 +1,7 @@
 import { B } from '../core/blocks.js';
 import { Simplex, mulberry32, hash2 } from '../core/rng.js';
 import { TerrainGenV2 } from './terrainV2.js';
+import { Dungeons } from './dungeons.js';
 import { oak, birch, spruce, acacia, swampOak, cactus, setTreeClip } from './trees.js';
 
 export { oak, birch, spruce, acacia, swampOak, cactus };
@@ -45,6 +46,7 @@ export class TerrainGen extends TerrainGenV2 {
     this.c4 = new Simplex(seed + 808); this.c5 = new Simplex(seed + 909); this.c6 = new Simplex(seed + 1010);
     this.L = layersOf(world);
     this.GY = Math.floor(world.height / G) + 1;
+    this.dungeons = new Dungeons(this);
   }
 
   /** Cavern zone of a column (by noise and by the biome above). */
@@ -301,6 +303,7 @@ export class TerrainGen extends TerrainGenV2 {
     this._mineshafts3(x0, z0, x1, z1, idx, inChunk, cols, blocks);
     if (rnd() < 0.09) this._cabin(x0, z0, idx, rnd, blocks, cols);
     if (rnd() < 0.09) this._ruin(x0, z0, idx, rnd, blocks);
+    this.dungeons.draw(x0, z0, x1, z1, blocks, idx);
     // treasure chests on cave floors
     for (let t = 0; t < 5; t++) {
       if (rnd() > 0.3) continue;

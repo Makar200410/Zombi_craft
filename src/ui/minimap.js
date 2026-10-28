@@ -13,7 +13,7 @@ const NAME_COLORS = {
   mushroom: 0x5f9a3a, dead_bush: 0xb09a60, birch_log: 0xd8d0c0, birch_leaves: 0x6a9a3a,
   lava: 0xf06818, chest: 0xa07040, glow_moss: 0x2ab0a8, cactus: 0x2e7a30, ice: 0xa8d0f0, packed_ice: 0x90b4dc, mud: 0x4a3a28,
   dry_grass: 0xb09a44, obsidian: 0x22183a, amethyst: 0x9a5cd0, red_sand: 0xc8743a, acacia_leaves: 0x6a802a, sandstone: 0xd8b878,
-  ash: 0x45403f, magma: 0xd0501a, jungle_grass: 0x3a8c2a,
+  ash: 0x45403f, magma: 0xd0501a, jungle_grass: 0x3a8c2a, spawner: 0x3a2a40, cracked_bricks: 0x7a7a7a, skull_block: 0x8a8a80, gold_block: 0xf0d060, iron_bars: 0x9a9aa4,
 };
 const COL = new Uint32Array(256);
 const SKIP = new Uint8Array(256);   // look through (air, plants)

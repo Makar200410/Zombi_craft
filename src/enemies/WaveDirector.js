@@ -50,7 +50,7 @@ export class WaveDirector {
   get remaining() { return this.activeCount + (this.waveActive ? this.queue.length : 0); }
   get maxAlive() { const a = this.diff.alive || 45; return this.game.quality === 'low' ? Math.round(a * 0.55) : a; }
   get diff() { return DIFF[this.game.state.difficulty] || DIFF.normal; }
-  aliveCount() { let n = 0; for (const z of this.zombies) if (!z.dead) n++; return n; }
+  aliveCount() { let n = 0; for (const z of this.zombies) if (!z.dead && !z.cave) n++; return n; }
 
   init() {
     const bus = this.game.bus;
@@ -227,7 +227,7 @@ export class WaveDirector {
     // the sun rises: every creature of the night is doomed
     this.queue = [];
     let i = 0;
-    for (const z of this.zombies) if (!z.dead && !(z.wanderer && z.sunproof)) z.doom(0.2 + Math.random() * 5 + (i++ % 7) * 0.15);
+    for (const z of this.zombies) if (!z.dead && !z.cave && !(z.wanderer && z.sunproof)) z.doom(0.2 + Math.random() * 5 + (i++ % 7) * 0.15);
   }
 
   // ------------------------------------------------------------------ spawning
@@ -270,7 +270,7 @@ export class WaveDirector {
       if (!p) return null;
       x = p.x; z = p.z;
     }
-    let p = this._standPoint(x, z);
+    let p = opts.y !== undefined ? { x, y: opts.y, z } : this._standPoint(x, z);     // underground spawns give their height
     if (!p) {
       // search a small spiral for a free spot
       outer: for (let r = 1; r <= 4; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
@@ -285,7 +285,7 @@ export class WaveDirector {
     const evo = (1 + 0.04 * (game.state.age | 0)) * (1 + 0.25 * (game.state.ngPlus | 0));   // the dead evolve along with the civilisation (and each New Game+)
     const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace * evo;
     const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: d.dmg * dmgScale(wave) * grace, wave });
-    zb.position.set(p.x, p.y + (zb.flyer ? 3 + Math.random() * 3 : 0), p.z);
+    zb.position.set(p.x, p.y + (zb.flyer ? (opts.y !== undefined ? 1 : 3 + Math.random() * 3) : 0), p.z);
     zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
     zb.progPos.copy(zb.position);
     game.entities.add(zb);
@@ -366,7 +366,7 @@ export class WaveDirector {
       if (z.dead) continue;
       this.zombies[write++] = z;
       alive++;
-      if (!z.wanderer) waveAlive++;
+      if (!z.wanderer && !z.cave) waveAlive++;
       const k = Math.floor(z.position.x / GRID) * 4096 + Math.floor(z.position.z / GRID);
       let cell = grid.get(k);
       if (!cell) { cell = []; grid.set(k, cell); }
@@ -396,7 +396,7 @@ export class WaveDirector {
     if (this._wanderT <= 0) {
       this._wanderT = 45 + Math.random() * 45;
       let wanderers = 0;
-      for (const z of this.zombies) if (z.wanderer) wanderers++;
+      for (const z of this.zombies) if (z.wanderer && !z.cave) wanderers++;
       if (wanderers < (game.state.isNight ? 4 : 3) && alive < this.maxAlive && !this.waveActive) this._spawnWanderer();
     }
 

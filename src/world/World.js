@@ -58,6 +58,8 @@ export class World {
     this.pending = new Map();                              // chunk key -> [[idx, id]] saved edits waiting for their chunk
     this.gen = null;
     this.damage = new Map();                               // idx -> {dmg, t}
+    this.spawners = new Map();                             // idx -> {x, y, z, type, boss, key, cap} dungeon spawner cages
+    this.chestTier = new Map();                            // idx -> 'dungeon' | 'vault' | 'boss' (richer chests)
     this._tmpV = new THREE.Vector3();
   }
 
@@ -161,6 +163,10 @@ export class World {
       if (list.length) this.pending.set(key, list); else this.pending.delete(key);
     }
     for (let sy = 0; sy < this.sections; sy++) this.dirty.delete(key + ',' + sy);
+    // the chunk's spawners and chest tags come back with its generation
+    const inChunk = (i) => { const S = this.size, x = i % S, z = ((i - x) / S) % S; return (x >> 4) === cx && (z >> 4) === cz; };
+    for (const i of this.spawners.keys()) if (inChunk(i)) this.spawners.delete(i);
+    for (const i of this.chestTier.keys()) if (inChunk(i)) this.chestTier.delete(i);
     this.game?.bus?.emit('chunk:unloaded', { cx, cz });
     return true;
   }

@@ -1,5 +1,6 @@
-// The underground of deep worlds: depth layers the player is told about when going down, and treasure chests
-// (in caves and abandoned mineshafts) whose loot gets better the deeper they lie.
+// The underground of deep worlds: depth layers the player is told about when going down, treasure chests (in caves,
+// mineshafts and dungeons) whose loot gets better the deeper they lie, the monsters that live down there (they
+// come out of the dark near the player) and the spawner cages and bosses of the dungeons.
 import { B } from '../core/blocks.js';
 import { ITEMS, RESOURCE_LABELS } from '../core/items.js';
 
@@ -39,7 +40,23 @@ const LOOT = {
   depths: { res: { gold: [4, 8], crystal: [4, 9], iron: [6, 10], gold_ore: [4, 8] }, item: 0.5, pool: ['sword_crystal', 'staff_frost', 'staff_storm', 'staff_life', 'battle_axe', 'crossbow'] },
   hell: { res: { gold: [8, 16], crystal: [8, 16], iron: [8, 14], coal: [10, 20] }, item: 0.7, pool: ['sword_crystal', 'staff_storm', 'tome_meteor', 'staff_fire', 'staff_frost', 'staff_life'] },
 };
+// dungeon chests (tagged by the generator in world.chestTier) are richer than the layer's
+const DUNGEON_LOOT = {
+  dungeon: { res: { gold: [6, 12], iron: [6, 12], crystal: [2, 6], coal: [6, 12] }, item: 0.45, pool: ['sword_iron', 'crossbow', 'battle_axe', 'staff_fire', 'staff_frost', 'sword_crystal', 'pickaxe_iron'] },
+  vault: { res: { gold: [14, 26], crystal: [6, 12], iron: [10, 18] }, item: 0.7, pool: ['sword_crystal', 'staff_storm', 'staff_life', 'battle_axe', 'crossbow', 'tome_meteor'] },
+  boss: { res: { gold: [30, 50], crystal: [14, 24], iron: [16, 24] }, item: 1, pool: ['tome_meteor', 'staff_storm', 'sword_crystal', 'staff_life', 'staff_frost'] },
+};
 const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+// who lives in which layer: [type, weight]
+const CAVE_FOLK = {
+  under: [['cave_dweller', 3], ['cave_spider', 3], ['walker', 2], ['bat', 2]],
+  caverns: [['cave_spider', 3], ['slime', 2], ['skeleton', 2], ['cave_dweller', 2], ['bat', 2]],
+  depths: [['slime', 2], ['skeleton', 2], ['cave_spider', 2], ['cave_dweller', 2], ['harpy', 1], ['frost', 1]],
+  hell: [['imp', 3], ['magma_golem', 1], ['burning', 2], ['skeleton', 1]],
+};
+const DEPTH_HP = { under: 1, caverns: 1.3, depths: 1.7, hell: 2.2 };
+function pick(list) { let t = 0; for (const [, w] of list) t += w; let r = Math.random() * t; for (const [k, w] of list) if ((r -= w) <= 0) return k; return list[0][0]; }
 
 export class Underground {
   constructor(game) {
@@ -50,14 +67,23 @@ export class Underground {
   }
   init() {
     const g = this.game;
-    g.bus.on('block:broken', ({ x, y, z, id, by }) => { if (id === B.CHEST && by === 'player') this.openChest(x, y, z); });
-    g.bus.on('game:begin', () => { this._layer = 'surface'; this._pendingLayer = null; });
+    g.bus.on('block:broken', ({ x, y, z, id, by }) => {
+      if (id === B.CHEST && by === 'player') this.openChest(x, y, z);
+      if (id === B.SPAWNER && by === 'player') this.spawnerBroken(x, y, z);
+    });
+    g.bus.on('game:begin', () => { this._layer = 'surface'; this._pendingLayer = null; this._spawnT = 4; });
+    g.bus.on('dungeon:boss', ({ key }) => {
+      g.state.bossesSlain = g.state.bossesSlain || new Set();
+      g.state.bossesSlain.add(key);
+      g.bus.emit('toast', { text: 'Хозяин подземелья пал! Его сокровищница открыта — ищите сундуки в зале.', kind: 'good' });
+    });
   }
 
   openChest(x, y, z) {
     const g = this.game, w = g.world;
     const layer = layerAt(w, y);
-    const L = LOOT[layer.id] || LOOT.under;
+    const tier = w.chestTier?.get(w.index(x, y, z));
+    const L = DUNGEON_LOOT[tier] || LOOT[layer.id] || LOOT.under;
     const got = {};
     for (const [r, [a, b]] of Object.entries(L.res)) if (Math.random() < 0.8) got[r] = rint(a, b);
     if (!Object.keys(got).length) got.coal = rint(3, 6);
@@ -81,9 +107,100 @@ export class Underground {
     g.particles?.emit({ pos: { x: x + 0.5, y: y + 0.7, z: z + 0.5 }, count: 30, colors: [0xffe070, 0xfff2b0, 0xffb020], additive: true, speed: 3, dir: { x: 0, y: 3, z: 0 }, gravity: 4, life: 1, size: 0.18 });
   }
 
+  /** A spawner cage smashed by the player: a reward and one less source of monsters. */
+  spawnerBroken(x, y, z) {
+    const g = this.game, w = g.world;
+    w.spawners?.delete(w.index(x, y, z));
+    const got = { gold: rint(4, 9), crystal: rint(1, 3) };
+    g.state.addAll(got);
+    g.bus.emit('toast', { text: `Клетка-спавнер разрушена! +${got.gold} ${RESOURCE_LABELS.gold}, +${got.crystal} ${RESOURCE_LABELS.crystal}`, kind: 'good' });
+    g.particles?.emit({ pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, count: 40, colors: [0xa040ff, 0xff8a30, 0xffffff], additive: true, speed: 4, life: 0.9, size: 0.25 });
+    g.audio?.play('fire_impact', { pos: { x, y, z }, volume: 0.8, pitch: 0.7 });
+  }
+
+  /** Monsters of the deep and the dungeons' spawner cages, around the player. */
+  _monsters(dt) {
+    const g = this.game, p = g.player, w = g.world, W = g.waves;
+    if (!W || !p || p.dead) return;
+    const pos = p.position;
+    const mine = W.zombies.filter(z => z.cave && !z.dead);
+    // the far ones go back to the dark
+    for (const z of mine) {
+      if (z.boss) continue;
+      if (Math.hypot(z.position.x - pos.x, z.position.z - pos.z) > 72 || Math.abs(z.position.y - pos.y) > 48) { z.dead = true; z.removeAt = 0; z.object3d.visible = false; }
+    }
+    // spawner cages near the player
+    this._cageT = (this._cageT || 0) - dt;
+    if (this._cageT <= 0 && w.spawners?.size) {
+      this._cageT = 1;
+      for (const [i, sp] of w.spawners) {
+        const d = Math.hypot(sp.x + 0.5 - pos.x, sp.y - pos.y, sp.z + 0.5 - pos.z);
+        if (d > (sp.boss ? 14 : 20)) continue;
+        if (w.getBlock(sp.x, sp.y, sp.z) !== B.SPAWNER) { w.spawners.delete(i); continue; }
+        if (sp.boss) {
+          if (g.state.bossesSlain?.has(sp.key) || mine.some(z => z.bossKey === sp.key)) continue;
+          const z = this._spawnNear(sp.type, sp.x, sp.y, sp.z, 3, 1.2, { silent: true });
+          if (z) { z.bossKey = sp.key; g.bus.emit('toast', { text: `${z.name} пробудился!`, kind: 'bad' }); g.audio?.play('zombie_roar', { pos: z.position, pitch: 0.5, volume: 1 }); }
+          continue;
+        }
+        sp.t = (sp.t ?? 2) - 1;
+        if (sp.t > 0) continue;
+        sp.t = 5 + Math.random() * 4;
+        if (mine.filter(z => z.spawnerKey === i).length >= (sp.cap || 3)) continue;
+        const z = this._spawnNear(sp.type, sp.x, sp.y, sp.z, 3, sp.hp || 1.4);
+        if (z) {
+          z.spawnerKey = i;
+          g.particles?.emit({ pos: { x: sp.x + 0.5, y: sp.y + 0.5, z: sp.z + 0.5 }, count: 18, colors: [0xa040ff, 0xff8a30], additive: true, speed: 2.5, life: 0.6, size: 0.2 });
+        }
+      }
+    }
+    // creatures coming out of the dark
+    const layer = layerAt(w, Math.floor(pos.y));
+    if (layer.id === 'surface' || !CAVE_FOLK[layer.id]) return;
+    this._spawnT = (this._spawnT ?? 4) - dt;
+    if (this._spawnT > 0) return;
+    this._spawnT = 3 + Math.random() * 4;
+    const cap = layer.id === 'under' ? 4 : layer.id === 'caverns' ? 6 : 8;
+    if (mine.filter(z => !z.spawnerKey).length >= cap) return;
+    const type = pick(CAVE_FOLK[layer.id]);
+    for (let k = 0; k < 14; k++) {
+      const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * 12;
+      const x = Math.floor(pos.x + Math.cos(a) * r), z = Math.floor(pos.z + Math.sin(a) * r);
+      const s = this._standAt(x, Math.floor(pos.y), z, 8);
+      if (s === null) continue;
+      const l = w.getLight(x, s, z);
+      if ((l & 15) > 6 || (l >> 4) > 3) continue;                    // only in the dark
+      const zb = W.spawn(type, x + 0.5, z + 0.5, { y: s, emerge: false, cave: true, wanderer: true, sunproof: true, silent: true, wave: Math.max(4, W.currentWave), hpMul: DEPTH_HP[layer.id] || 1 });
+      if (zb) zb.home = zb.position.clone();
+      return;
+    }
+  }
+  /** A floor cell with two free cells above it near height y (searching up and down), or null. */
+  _standAt(x, y, z, range) {
+    const w = this.game.world;
+    for (let d = 0; d <= range; d++) for (const yy of d ? [y - d, y + d] : [y]) {
+      if (yy < 2 || yy >= w.height - 2) continue;
+      if (w.isSolid(x, yy - 1, z) && !w.isSolid(x, yy, z) && !w.isSolid(x, yy + 1, z) && w.getBlock(x, yy, z) !== B.LAVA && w.getBlock(x, yy, z) !== B.WATER) return yy;
+    }
+    return null;
+  }
+  _spawnNear(type, x, y, z, r, hpMul, opts = {}) {
+    const W = this.game.waves;
+    for (let k = 0; k < 10; k++) {
+      const xx = x + Math.round((Math.random() - 0.5) * 2 * r), zz = z + Math.round((Math.random() - 0.5) * 2 * r);
+      const s = this._standAt(xx, y, zz, 3);
+      if (s === null) continue;
+      const zb = W.spawn(type, xx + 0.5, zz + 0.5, { y: s, emerge: false, cave: true, wanderer: true, sunproof: true, silent: true, wave: Math.max(4, W.currentWave), hpMul, ...opts });
+      if (zb) zb.home = zb.position.clone();
+      return zb;
+    }
+    return null;
+  }
+
   update(dt) {
     const g = this.game, p = g.player, w = g.world;
     if (!p || !w || w.format === 1 || g.mode !== 'explore') return;
+    if (!g.net?.isClient) this._monsters(dt);
     // tell the player which layer they've reached (after staying there a moment)
     const l = layerAt(w, Math.floor(p.position.y));
     if (l.id === this._layer) { this._pendingLayer = null; return; }

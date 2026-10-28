@@ -137,6 +137,12 @@ def(95, 'packed_ice', { label: 'Плотный лёд', hardness: 2, tool: 'pick
 def(96, 'ash', { label: 'Пепел', hardness: 1.4, tool: 'shovel' });
 def(97, 'magma', { label: 'Адский камень', hardness: 6, light: 10, drop: { stone: 1, coal: 1 }, tool: 'pick' });
 def(98, 'jungle_grass', { label: 'Мшистый ил', tiles: { top: 'jungle_grass_top', side: 'jungle_grass_side', bottom: 'mud' }, hardness: 1.2, tool: 'shovel' });
+// dungeons
+def(99, 'spawner', { label: 'Клетка-спавнер', render: 'cutout', hardness: 7, light: 6, placeable: false, tool: 'pick' });
+def(100, 'cracked_bricks', { label: 'Треснувший кирпич', tiles: 'cracked_bricks', hardness: 3.5, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
+def(101, 'skull_block', { label: 'Череп на стене', tiles: { top: 'stone_bricks', side: 'skull_block' }, hardness: 3, drop: { stone: 1 }, placeable: false, tool: 'pick' });
+def(102, 'gold_block', { label: 'Золотой блок', hardness: 6, drop: { gold: 6 }, cost: { gold: 8 }, tool: 'pick' });
+def(103, 'iron_bars', { label: 'Решётка', render: 'cutout', hardness: 5, drop: { iron: 1 }, cost: { iron: 1 }, tool: 'pick' });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
@@ -158,5 +164,5 @@ export const PALETTE = [
   B.PLANKS, B.COBBLESTONE, B.STONE_BRICKS, B.LOG, B.TIMBER_FRAME, B.PLASTER, B.ROOF_TILES, B.THATCH,
   B.GLASS, B.TORCH, B.LANTERN, B.PALISADE, B.REINFORCED_WALL, B.DIRT, B.SAND, B.GRAVEL, B.PATH,
   B.MOSSY_COBBLE, B.DARK_STONE, B.BRICK, B.MARBLE, B.COPPER_ROOF, B.BRONZE_BLOCK, B.CONCRETE, B.STEEL_BLOCK, B.LAMP, B.HAZARD, B.SERVER, B.POLYMER,
-  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.LADDER, B.BED, B.OBSIDIAN, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
+  B.WATTLE, B.HIDE, B.MUDBRICK, B.SANDSTONE, B.SHINGLES, B.STUCCO, B.SLATE, B.CAST_IRON, B.CORRUGATED, B.WINDOW, B.PREFAB, B.ALUMINUM, B.GLASS_BLUE, B.LED, B.NEON, B.ENERGY_GLASS, B.NANO, B.LADDER, B.BED, B.OBSIDIAN, B.CRACKED_BRICKS, B.IRON_BARS, B.GOLD_BLOCK, B.BOOKSHELF, B.WORKBENCH, B.FURNACE, B.HAY_BALE, B.IRON_BLOCK, B.BANNER, B.ARCANE_TABLE,
 ];

@@ -64,7 +64,15 @@ export class Entity {
         this._lightT = 0.25;
         const w = this.game.world;
         const l = w.getLight(Math.floor(this.position.x), Math.floor(this.position.y + 1), Math.floor(this.position.z));
-        this.model.setLight((l >> 4) / 15, (l & 15) / 15, this.game.state.nightFactor);
+        // underground the player's miner's lamp lights creatures near the camera too (see chunkMaterials)
+        let blk = (l & 15) / 15;
+        const cave = this.game.renderer?._cave || 0;
+        if (cave > 0.01) {
+          const d = this.game.camera.position.distanceTo(this.position);
+          const k = Math.max(0, 1 - d / 15);
+          blk = Math.max(blk, k * k * cave * 0.9);
+        }
+        this.model.setLight((l >> 4) / 15, blk, this.game.state.nightFactor);
       }
     }
   }
