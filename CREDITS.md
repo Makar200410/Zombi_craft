@@ -15,6 +15,27 @@ Calm Before the Storm, Hill of Sorrows, Red Dawn, Honor Bound, Tale of Warriors,
 The Road Ahead, Epitaph, Point of No Return, Taiko 1, Mountain Idyll.
 Источник: https://github.com/0ad/0ad (binaries/data/mods/public/audio/music).
 
+## Музыка пещер — `public/audio/music/cave_*.ogg`
+
+Из игры **Battle for Wesnoth** (https://www.wesnoth.org/, исходники и оригиналы: https://github.com/wesnoth/wesnoth,
+папка `data/core/music`). Изменения: перекодированы в Opus 40 кбит/с, к именам добавлен префикс `cave_`.
+Файлы распространяются на условиях их лицензий (GNU GPL v2 или новее — https://www.gnu.org/licenses/old-licenses/gpl-2.0.html;
+CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/).
+
+| Файл | Трек, автор | Лицензия |
+|---|---|---|
+| cave_underground | Underground — Aleksi Aubry-Carlson | GNU GPL v2+ |
+| cave_knalgan_theme | Knalgan Theme — Ryan Reilly | GNU GPL v2+ |
+| cave_suspense | Suspense — Ryan Reilly | GNU GPL v2+ |
+| cave_the_deep_path | The Deep Path — Gianmarco Leone | GNU GPL v2+ |
+| cave_the_dangerous_symphony | The Dangerous Symphony — Gianmarco Leone | GNU GPL v2+ |
+| cave_into_the_shadows | Into the Shadows — Tyler Johnson | GNU GPL v2+ |
+| cave_revelation | Revelation — Joseph G. Toscano | GNU GPL v2+ |
+| cave_frantic | Frantic — Stephen Rozanc | GNU GPL v2+ |
+| cave_the_city_falls, cave_battle_epic, cave_weight_of_revenge | The City Falls, Battle Epic, Weight of Revenge — Doug Kaufman | GNU GPL v2+ |
+| cave_vengeful | Vengeful — Jeremy Nicoll | GNU GPL v2+ |
+| cave_undead_siege | Undead Siege — Tomek Szczęsny | CC BY-SA 4.0 |
+
 ## Звуки — `public/audio/sfx/`
 
 Из **Minetest Game** (https://github.com/minetest/minetest_game), файлы без изменений:

@@ -229,6 +229,13 @@ export class Underground {
     return null;
   }
 
+  /** Danger level 0..9 at height y, or -1 on the surface (used by the music). */
+  tierAt(y) {
+    const w = this.game.world;
+    if (!w || w.format === 1 || layerAt(w, y).id === 'surface') return -1;
+    return depthTier(w, y);
+  }
+
   update(dt) {
     const g = this.game, p = g.player, w = g.world;
     if (!p || !w || w.format === 1 || g.mode !== 'explore') return;

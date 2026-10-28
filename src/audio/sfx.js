@@ -825,12 +825,28 @@ export class Audio {
   _computeMood() {
     try {
       if (this.game && !this.game.running) return 'menu';
+      const cave = this._caveMood();
+      if (cave) return cave;
       const late = ((this.game?.state?.age | 0) >= 5) && this._music ? '2' : '';
       const m = this._computeMoodBase();
       return m + late;
     } catch (e) {
       return 'day';
     }
+  }
+  /** Underground music: its own tracks for every depth band, a fight theme while a boss hunts the player. */
+  _caveMood() {
+    const g = this.game, p = g?.player, w = g?.world;
+    if (!p || !w || w.format === 1 || g.mode !== 'explore' || !g.underground) return null;
+    const y = Math.floor(p.position.y);
+    const tier = g.underground.tierAt?.(y);
+    if (tier === null || tier === undefined || tier < 0) return null;
+    // a night attack on the village still calls the player up while they are near the surface
+    if (tier <= 1 && g.waves?.activeCount > 0) return null;
+    const boss = g.waves?.zombies?.some(z => z.cave && (z.boss || z.roamBoss) && !z.dead &&
+      Math.abs(z.position.x - p.position.x) < 40 && Math.abs(z.position.z - p.position.z) < 40 && Math.abs(z.position.y - p.position.y) < 24);
+    if (boss) return 'caveboss';
+    return 'cave' + Math.min(5, 1 + (tier >> 1));
   }
   _computeMoodBase() {
     try {
@@ -857,6 +873,7 @@ export class Audio {
     }
     if (!this._moodGains) return;
     if (mood === 'menu') mood = 'day';
+    if (mood.startsWith('cave')) mood = mood === 'caveboss' ? 'wave' : 'night';
     mood = mood.replace('2', '');
     if (mood !== this._mood) {
       this._mood = mood;

@@ -99,10 +99,18 @@ export const PLAYLISTS = {
   day2: ['the_road_ahead', 'mountain_idyll', 'forging_a_city_state'],
   night2: ['epitaph', 'calm_before_the_storm'],
   wave2: ['point_of_no_return', 'taiko_1', 'taiko_2', 'red_dawn'],
+  // underground, by depth (see DEPTH_TIERS in systems/underground.js): from quiet tunnels to the bottom of the underworld
+  cave1: ['cave_underground', 'cave_knalgan_theme'],                       // burrows and tunnels (levels 1–2)
+  cave2: ['cave_the_deep_path', 'cave_knalgan_theme', 'cave_underground'], // old mines and grottos (3–4)
+  cave3: ['cave_into_the_shadows', 'cave_suspense'],                       // caverns and ice depths (5–6)
+  cave4: ['cave_the_dangerous_symphony', 'cave_undead_siege', 'cave_revelation'],   // deep caves, gates of hell (7–8)
+  cave5: ['cave_frantic', 'cave_the_city_falls', 'cave_vengeful'],         // ash wastes, the bottom (9–10)
+  caveboss: ['cave_battle_epic', 'cave_weight_of_revenge'],                // a boss is hunting the player
 };
 
 export const CREDITS = [
   'Музыка: Omri Lahav и другие композиторы Wildfire Games — саундтрек игры 0 A.D. (play0ad.com), CC BY-SA 3.0, wildfiregames.com, creativecommons.org/licenses/by-sa/3.0/. Треки перекодированы в Opus.',
+  'Музыка пещер: Battle for Wesnoth (wesnoth.org, github.com/wesnoth/wesnoth) — Aleksi Aubry-Carlson (Underground), Ryan Reilly (Knalgan Theme, Suspense), Gianmarco Leone (The Deep Path, The Dangerous Symphony), Tyler Johnson (Into the Shadows), Joseph G. Toscano (Revelation), Stephen Rozanc (Frantic), Doug Kaufman (The City Falls, Battle Epic, Weight of Revenge), Jeremy Nicoll (Vengeful) — GNU GPL v2+; Tomek Szczęsny (Undead Siege) — CC BY-SA 4.0. Треки перекодированы в Opus.',
   'Звуки блоков и шагов: Minetest Game — Mito551 (CC BY-SA 3.0); Erdie, Benboncan, sonictechtonic, Dynamicell (CC BY 3.0); Sheyvan, Iwan Gabovitch (qubodup), TumeniNodes / steveygos93 (CC0). github.com/minetest/minetest_game',
   'Оружие, магия, голоса, стройка, сигналы, дождь, ветер, метель и гром: 0 A.D. — © Wildfire Games, CC BY-SA 3.0.',
   'Голоса зомби: FuzzyTuesday, mazlyn, bananplyte, tonsil5, PaulMorek (CC0), -sihiL (CC BY 3.0), missozzy, LittleRobotSoundFactory, Audionautics (CC BY) — из звукового пакета CDDA-Soundpacks (Fris0uman); Under7dude, haratman, rubberduck (CC0) — из VoxeLibre/MineClone2. Источники: freesound.org, opengameart.org.',
