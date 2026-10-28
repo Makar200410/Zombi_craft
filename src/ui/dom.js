@@ -1,5 +1,6 @@
 // Small DOM + icon helpers shared by all UI modules.
 import { RESOURCE_LABELS } from '../core/items.js';
+import { getZombieSkin } from '../enemies/skinFallback.js';
 
 // ---- optional modules written by other agents (loaded defensively) -------------------------
 const artMods = import.meta.glob('../art/icons.js', { eager: true });
@@ -144,6 +145,7 @@ export function resourceIcon(res) {
   return canvasURL(fallbackIcon('r_' + res, RES_COLORS[res], (RESOURCE_LABELS[res] || res)[0]));
 }
 export function itemIcon(id) {
+  if (id && id.startsWith('raise_')) return canvasURL(raiseIcon(id.slice(6)));      // the lord of the dead's hotbar
   if (id && id.startsWith('blk_')) return blockIcon(+id.slice(4));          // a block carried in the hotbar
   if (id && id.startsWith('armor_')) return canvasURL(armorIcon(id));
   return canvasURL(tryArt('getItemSprite', id) || (id === 'blueprint_frame' ? frameIcon() : null) || fallbackIcon('i_' + id, '#6a5a8a', (id || '?')[0].toUpperCase()));
@@ -156,6 +158,20 @@ const ARMOR_SHAPE = {
   legs: ['', '', '   ..........   ', '   .#++#####.   ', '   .########.   ', '   .###..###.   ', '   .##.  .##.   ', '   .#+.  .+#.   ', '   .##.  .##.   ', '   .##.  .##.   ', '   ....  ....   '],
   feet: ['', '', '', '', '', '', '   ...    ...   ', '   .#.    .#.   ', '   .+.    .+.   ', '   .#..   .#..  ', '  .####. .####. ', '  ......  ......'],
 };
+const raiseCache = new Map();
+/** A zombie's face (from its skin) on a dark purple badge. */
+function raiseIcon(type) {
+  if (raiseCache.has(type)) return raiseCache.get(type);
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2a1238'; g.fillRect(0, 0, 16, 16);
+  g.fillStyle = '#7a3ab0'; g.fillRect(0, 0, 16, 1); g.fillRect(0, 15, 16, 1); g.fillRect(0, 0, 1, 16); g.fillRect(15, 0, 1, 16);
+  let skin = null; try { skin = getZombieSkin(type, 0); } catch (e) { skin = null; }
+  g.imageSmoothingEnabled = false;
+  if (skin) g.drawImage(skin, 8 * skin.width / 64, 8 * skin.height / 64, 8 * skin.width / 64, 8 * skin.height / 64, 2, 2, 12, 12);
+  raiseCache.set(type, c);
+  return c;
+}
 let frameCanvas = null;
 /** The blueprint frame: a rolled-out blue sheet with a white plan on it. */
 function frameIcon() {

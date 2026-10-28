@@ -9,6 +9,12 @@ import { BLOCKS, PALETTE, MECHANISMS, ELECTRICS } from './blocks.js';
 export const ITEMS = {};
 function item(id, o) { ITEMS[id] = { id, research: null, cooldown: 0.5, damage: 0, range: 3, manaCost: 0, ammo: null, sprite: id, ...o }; }
 
+// --- the dead a lord of the undead can call (siege mode on a network game, see src/net/siege.js): his hotbar
+for (const [type, name, cost] of [['walker', 'Ходячий', 4], ['runner', 'Бегун', 7], ['crawler', 'Ползун', 6], ['spitter', 'Плевун', 10], ['skeleton', 'Скелет', 9], ['exploder', 'Взрывун', 14], ['brute', 'Громила', 24], ['necromancer', 'Некромант', 60], ['giant', 'Великан', 120]]) {
+  item('raise_' + type, { name: `Призвать: ${name} (от ${cost} силы)`, kind: 'summon', summon: type, hidden: true, free: true, cooldown: 0.25, desc: 'ЛКМ по земле — поднять мертвеца там, куда смотрите' });
+}
+export const HORDE_HOTBAR = ['raise_walker', 'raise_runner', 'raise_crawler', 'raise_spitter', 'raise_skeleton', 'raise_exploder', 'raise_brute', 'raise_necromancer', 'raise_giant'];
+
 // --- tools
 // the builders' hammer: only villagers carry it (the player builds with block items from the inventory)
 item('build_hammer', { name: 'Молот строителя', kind: 'build', hidden: true, desc: 'Инструмент строителей деревни.' });

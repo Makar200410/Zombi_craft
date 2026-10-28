@@ -1064,6 +1064,9 @@
 .zc-ws-code { width: 100%; min-height: 56px; resize: vertical; font-family: monospace; font-size: 12px; margin: 6px 0; box-sizing: border-box; }
 .zc-ws-menu { max-height: 56vh; display: block; }
 .zc-ws-menu > .zc-rv-town { margin-bottom: 10px; }
+.zc-siege-bar { position: absolute; left: 50%; bottom: calc(var(--sb, 0px) + 104px); transform: translateX(-50%); display: none; padding: 5px 14px; border-radius: 8px; background: rgba(20, 10, 24, .78); color: #e8d8ff; font-size: 13px; font-weight: 700; border: 1px solid rgba(170, 110, 255, .5); white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; cursor: pointer; z-index: 5; }
+.zc-siege-bar.on { display: block; }
+.o-compact .zc-siege-bar { zoom: var(--uiz); }
 .zc-ach-off { opacity: .55; }
 .zc-rv-empty { color: var(--muted); padding: 20px; }
 /* =====================================================================  phones: compact interface (UI.layout sets --uiz) */

@@ -16,6 +16,7 @@ import { BUILDING_TYPES } from '../village/buildings.js';
 import { AGES } from './ages.js';
 import { mulberry32 } from '../core/rng.js';
 import { RESOURCE_LABELS } from '../core/items.js';
+import { TownLife } from './townLife.js';
 
 const NAMES = ['Ольховка', 'Каменка', 'Сосновка', 'Берёзовый Лог', 'Заречье', 'Волчья Падь', 'Медвежий Угол', 'Красный Бор', 'Ясная Поляна', 'Луговое', 'Овражки', 'Дубравино'];
 export const RIVAL_COLORS = ['#d04040', '#4070d0', '#40b060', '#e0b030', '#9050d0', '#30b0c0', '#e07030', '#8a8a8a'];
@@ -56,6 +57,7 @@ export class Rivals {
     this.wars = new Set();      // 'a:b' (a < b): towns at war with each other
     this.units = new Map();     // town index -> spawned entities near the player
     this.jobs = [];             // buildings rising / being rebuilt in the world (see _work)
+    this.life = new TownLife(this);   // townsfolk, patrols, captains and the towns' strategy
     this.t = 0;
     this._world = null;
     const bus = game.bus;
@@ -311,6 +313,7 @@ export class Rivals {
     for (const r of this.list) this._grow(r, step);
     this._diplomacy(step);
     for (const r of this.list) this._raids(r, step);
+    for (const r of this.list) { r.stratT = (r.stratT ?? Math.random() * 40) - step; if (r.stratT <= 0) { r.stratT = 40 + Math.random() * 30; this.life.strategy(r); } }
     this._battles(step);
     this._capture(step);
   }
@@ -427,6 +430,8 @@ export class Rivals {
         return;
       }
       raid.t += dt;
+      // the captain leading the party fell: the rest run home
+      if (raid.captain?.dead && !raid.broken) { raid.broken = true; raid.t = Math.max(raid.t, 236); g.bus.emit('toast', { text: `Воевода «${r.name}» убит — его отряд бежит!`, kind: 'good' }); }
       const alive = raid.units.filter(u => !u.dead);
       if (!alive.length || raid.t > 240) {
         // all fallen, or they leave with their loot
@@ -446,15 +451,16 @@ export class Rivals {
     // a war party when they think they can win — or out of spite
     if (this.power(r) < this.playerDefense() * 0.5 && Math.random() > r.aggro * 0.4) { r.raidT = 120; return; }
     this.launchRaid(r, Math.max(3, Math.min(14, Math.round(r.army * 0.6))));
+    this.life.allyJoins(r);
   }
   /** A war party of `size` sets off for the player's village. */
-  launchRaid(r, size) {
+  launchRaid(r, size, quiet = false) {
     const g = this.game;
     size = Math.max(1, Math.min(Math.floor(r.army), size));
     r.army -= size;
     const c = g.world.size / 2, dist = Math.hypot(r.x - c, r.z - c);
     r.raid = { size, eta: Math.max(45, Math.min(180, dist / 5)), arrived: false, units: [], t: 0, loot: 0 };
-    g.bus.emit('toast', { text: `«${r.name}» выслала отряд: ${size} воинов. Они придут с ${dirFrom(r.x - c, r.z - c)} через ~${Math.round(r.raid.eta)} с!`, kind: 'bad' });
+    if (!quiet) g.bus.emit('toast', { text: `«${r.name}» выслала отряд: ${size} воинов. Они придут с ${dirFrom(r.x - c, r.z - c)} через ~${Math.round(r.raid.eta)} с!`, kind: 'bad' });
   }
   /** A town led by a joined player (siege mode): its soldiers fight the dead too, and the dead come for it. */
   fightsDead(i) { return this.list[i]?.commander != null; }
@@ -465,9 +471,12 @@ export class Rivals {
     for (let k = 0; k < raid.size; k++) {
       const p = W?._edgePoint?.(ang + (Math.random() - 0.5) * 0.4, 6);
       if (!p) continue;
-      const u = this._spawnUnit(r, pick(soldierTypes(r.tier)), p.x, p.z, p.y, { wanderer: false });
-      if (u) { u.raider = true; raid.units.push(u); }
+      // a big party is led by the town's captain
+      const lead = k === 0 && raid.size >= 4 && (r.captainCD || 0) <= g.time;
+      const u = this._spawnUnit(r, lead ? 'rival_captain' : pick(soldierTypes(r.tier)), p.x, p.z, p.y, { wanderer: false });
+      if (u) { u.raider = true; raid.units.push(u); if (lead) { u.captain = true; raid.captain = u; } }
     }
+    if (raid.captain) g.bus.emit('toast', { text: `Отряд «${r.name}» ведёт воевода — сразите его, и остальные побегут`, kind: 'warn' });
     g.bus.emit('toast', { text: `Отряд «${r.name}» у стен деревни!`, kind: 'bad' });
     g.audio?.play('wave_horn', { volume: 1 });
   }
@@ -592,41 +601,45 @@ export class Rivals {
       const mine = list.filter(u => u.rivalId === r.i);
       const folk = mine.filter(u => u.type === 'folk').length;
       const soldiers = mine.filter(u => u.type !== 'folk').length;
-      const wantFolk = Math.min(6, Math.floor(r.pop / 5));
+      // townsfolk work by day and sleep at night; soldiers patrol and fight whoever their town is at war with
+      const wantFolk = g.state.isNight ? 0 : Math.min(8, Math.floor(r.pop / 4));
       const wantSoldiers = Math.min(MAX_DEFENDERS, Math.floor(r.army), hostile ? MAX_DEFENDERS : 3);
-      // townsfolk go about their business; soldiers only fight whoever their town is at war with
-      if (folk < wantFolk) this._spawnAround(r, 'folk', true);
+      if (soldiers < wantSoldiers && this.life.needCaptain(r, mine)) { const u = this._spawnAround(r, 'rival_captain', false, 10); if (u) u.captain = true; }
+      else if (folk < wantFolk) this._spawnAround(r, 'folk', true, 30, this.life.folkOpts(r, this.life.pickJob(r, mine)));
       else if (soldiers < wantSoldiers) this._spawnAround(r, pick(soldierTypes(r.tier)), false);
+      this.life.tick(r, mine);
     }
   }
-  _spawnAround(r, type, peaceful) {
+  _spawnAround(r, type, peaceful, spread = 30, extra = {}) {
     const g = this.game;
     for (let k = 0; k < 8; k++) {
-      const a = Math.random() * Math.PI * 2, rr = 6 + Math.random() * 30;
+      const a = Math.random() * Math.PI * 2, rr = 6 + Math.random() * spread;
       const x = Math.floor(r.x + Math.cos(a) * rr), z = Math.floor(r.z + Math.sin(a) * rr);
       if (!g.world.isGenerated(x, z)) continue;
       const y = g.underground?._standAt?.(x, r.y + 1, z, 6);
       if (y === null || y === undefined) continue;
-      const u = this._spawnUnit(r, type, x + 0.5, z + 0.5, y, { peaceful, home: { x: r.x, z: r.z } });
+      const u = this._spawnUnit(r, type, x + 0.5, z + 0.5, y, { peaceful, wanderer: false, home: { x: r.x, z: r.z }, ...extra });
       if (u) return u;
     }
     return null;
   }
-  _spawnUnit(r, type, x, z, y, { peaceful = false, wanderer = true, home = null } = {}) {
+  _spawnUnit(r, type, x, z, y, { peaceful = false, wanderer = true, home = null, job, hat, held, name } = {}) {
     const W = this.game.waves; if (!W) return null;
     const T = ['rival_trooper', 'rival_rifleman'].includes(type) ? 1.2 : 1;
     const u = W.spawn(type, x, z, {
       y: y ?? undefined, emerge: false, cave: true, wanderer, sunproof: true, silent: true, rivalId: r.i, peaceful,
       wave: 3 + r.tier * 2, hpMul: (0.8 + r.tier * 0.12) * T, dmgMul: 0.8 + r.tier * 0.08,
-      name: `${type === 'folk' ? 'Житель' : this._soldierName(type)} «${r.name}»`, hatColor: parseInt(r.color.slice(1), 16),
+      name: name || `${type === 'folk' ? 'Житель' : this._soldierName(type)} «${r.name}»`, hatColor: type === 'rival_captain' ? 0xe8c040 : parseInt(r.color.slice(1), 16),
+      ...(job ? { job, hat, held } : {}),
     });
     if (!u) return null;
     if (home) u.home = u.position.clone().set(home.x + 0.5, r.y + 1, home.z + 0.5);
+    if (home && !wanderer) u.lead = { x: u.position.x, z: u.position.z };      // town life (townLife.js) moves it from here
     // the town's people (and field-battle attackers) exist while the player is near; raiders are tracked by their raid
     if (home) { let list = this.units.get(r.i); if (!list) this.units.set(r.i, list = []); list.push(u); }
     return u;
   }
-  _soldierName(type) { return { militia: 'Ополченец', rival_guard: 'Стражник', rival_archer: 'Лучник', rival_knight: 'Рыцарь', rival_musketeer: 'Мушкетёр', rival_rifleman: 'Стрелок', rival_trooper: 'Штурмовик' }[type] || 'Воин'; }
+  _soldierName(type) { return { rival_captain: 'Воевода', militia: 'Ополченец', rival_guard: 'Стражник', rival_archer: 'Лучник', rival_knight: 'Рыцарь', rival_musketeer: 'Мушкетёр', rival_rifleman: 'Стрелок', rival_trooper: 'Штурмовик' }[type] || 'Воин'; }
   _clearUnits() { for (const l of this.units.values()) for (const u of l) { u.dead = true; u.removeAt = 0; } this.units.clear(); }
 
   /** Hooks from Zombie: a townsperson is hurt / killed. */
@@ -639,6 +652,7 @@ export class Rivals {
   onDeath(u, source) {
     if (u.caravan) { this.game.caravans?.onDeath(u, source); return; }
     const r = this.list[u.rivalId]; if (!r) return;
+    if (u.type === 'rival_captain') this.life.onCaptainDeath(r, u);
     if (u.type === 'folk') r.pop = Math.max(4, r.pop - 1);
     else if (!u.raider) r.army = Math.max(0, r.army - 1);
   }
@@ -659,7 +673,7 @@ export class Rivals {
       list: this.list.map(r => {
         const o = { ...r };
         if (r.raid) { o.army = r.army + (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size); }
-        delete o.raid; delete o.capT; delete o._capMsgT; delete o.next; delete o.commander; delete o.commanderName;
+        delete o.raid; delete o.capT; delete o._capMsgT; delete o.next; delete o.commander; delete o.commanderName; delete o.alarm; delete o.captainCD; delete o.waverUntil; delete o.stratT;
         return o;
       }),
       wars: [...this.wars],

@@ -56,7 +56,7 @@ export class UI {
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
     root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
-      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.chronicle.root, this.workshop.root, this.tutorial.root, this.menus.root, this.dialogLayer);
+      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.siege.bar, this.chronicle.root, this.workshop.root, this.tutorial.root, this.menus.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {

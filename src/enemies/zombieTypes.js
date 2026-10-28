@@ -141,6 +141,11 @@ export const ZOMBIE_TYPES = {
     height: 1.8, width: 1, radius: 0.3, aggro: 12, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.5,
     human: true, job: 'merchant', hat: 'cap', hatColor: 0x7a3a8a,
   },
+  rival_captain: {
+    base: 'walker', name: 'Воевода', hp: 220, speed: 2.2, dmg: 16, cd: 0.9, reach: 1.1, blockDps: 2, bldDmg: 6,
+    height: 1.95, width: 1.05, radius: 0.32, aggro: 28, knock: 6, eye: 0x202020, groanPitch: 0.9, loot: 1.2,
+    human: true, job: 'guard', weapon: 'sword_iron', armor: 0.45, hat: 'crown', hatColor: 0xe8c040,
+  },
   militia: {
     base: 'walker', name: 'Ополченец', hp: 38, speed: 2.1, dmg: 7, cd: 0.95, reach: 0.95, blockDps: 1.2, bldDmg: 3,
     height: 1.8, width: 1, radius: 0.3, aggro: 22, knock: 3, eye: 0x202020, groanPitch: 1, loot: 0.6,

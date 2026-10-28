@@ -555,6 +555,17 @@ export class Player extends Entity {
           } else if (a.primary && combat.cooldownLeft(this, id) <= 0) this._fire(aim(), it);
           break;
         }
+        case 'summon': {
+          // the lord of the dead: raise the chosen dead where he points (the host decides if it can rise there)
+          if (pressP && (this._summonT || 0) <= g.time) {
+            this._summonT = g.time + 0.25;
+            const far = w.raycast(rayO, fwd, 48);
+            if (!far) { this._hint('Наведите на землю, где поднять мертвеца', 'bad'); break; }
+            g.net?.command?.('raise', { type: it.summon, x: far.px, y: far.py, z: far.pz });
+            this.viewmodel.play('cast'); this.model?.play('cast');
+          }
+          break;
+        }
         case 'gun': case 'spell':
           if (a.primary && combat.cooldownLeft(this, id) <= 0 && (it.kind === 'gun' ? true : (pressP || true))) this._fire(aim(), it);
           break;

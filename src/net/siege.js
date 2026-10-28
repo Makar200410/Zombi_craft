@@ -3,27 +3,37 @@
 //                host's village or at other towns, builds the town's defences (its wealth pays for the blocks) and
 //                holds it at night, when the dead come for his town too (his soldiers fight them).
 //   «Повелитель нежити» — commands the dead: dark power builds up (faster at night) and is spent to raise zombies
-//                around him (never right inside the village) or to bring the night on early. The village's guards
-//                and towers hunt him; when he falls he rises again in the wilds.
+//                where he points (his hotbar holds the dead he can call; never right inside the village) or to bring
+//                the night on early. He rises not far from the host — by day in a cave below, out of the sun. The
+//                village's guards and towers hunt him.
 // The host runs it all (Siege, below); the joined player sends commands and gets his side's state once a second.
 import * as THREE from 'three';
 
 export const ROLES = { hero: 'Герой деревни', rival: 'Командир соседней деревни', horde: 'Повелитель нежити' };
-// what the lord of the dead can raise: [type, name, cost, from wave]
+// what the lord of the dead can raise: [type, name, cost, from wave, cooldown s]
 export const HORDE = [
-  ['walker', 'Ходячий', 4, 0], ['runner', 'Бегун', 7, 0], ['crawler', 'Ползун', 6, 2], ['spitter', 'Плевун', 10, 3],
-  ['skeleton', 'Скелет', 9, 3], ['exploder', 'Взрывун', 14, 4], ['brute', 'Громила', 24, 5], ['armored', 'Бронированный', 28, 7],
-  ['screamer', 'Крикун', 22, 8], ['necromancer', 'Некромант', 60, 10], ['giant', 'Великан', 120, 12],
+  ['walker', 'Ходячий', 4, 0, 0.8], ['runner', 'Бегун', 7, 0, 1.5], ['crawler', 'Ползун', 6, 2, 1.5], ['spitter', 'Плевун', 10, 3, 4],
+  ['skeleton', 'Скелет', 9, 3, 3], ['exploder', 'Взрывун', 14, 4, 8], ['brute', 'Громила', 24, 5, 20], ['armored', 'Бронированный', 28, 7, 25],
+  ['screamer', 'Крикун', 22, 8, 30], ['necromancer', 'Некромант', 60, 10, 90], ['giant', 'Великан', 120, 12, 180],
 ];
-const HORDE_CAP = 300, HORDE_MAX = 45, WAVE_COST = 100, SAFE_R = 34;
+// Balance between the host and the lord of the dead: the dark power and the size of the horde grow with the host's
+// village (its age and the waves it has held), raising by day costs half as much again (the sun burns them anyway),
+// strong dead have their own cooldowns, nothing rises right by the village or the host's hero, the night can't be
+// called on the first day, and the host earns gold for every risen dead he puts down.
+const HORDE_CAP = 300, WAVE_COST = 100, SAFE_R = 40, HERO_R = 18, DAY_MUL = 1.5;
 
 export class Siege {
   constructor(net) {
     this.net = net; this.game = net.game;
-    this.horde = { points: 40, cd: 0, spawned: [] };
+    this.horde = { points: 30, cd: 0, spawned: [], typeCd: {} };
     this._t = 0;
     const bus = this.game.bus;
     bus.on('time:dusk', () => { if (this.net.isHost) this._nightAssault(); });
+    bus.on('zombie:killed', ({ zombie }) => {
+      if (!this.net.isHost || zombie?.lord == null) return;
+      const e = HORDE.find(h => h[0] === zombie.type);
+      this.game.state.add('gold', 1 + Math.floor((e?.[2] || 4) / 8));
+    });
   }
   get rivals() { return this.game.rivals; }
 
@@ -46,7 +56,9 @@ export class Siege {
     if (role === 'horde') {
       p.role = 'horde'; p.faction = 'undead'; p.rivalId = null;
       g.bus.emit('toast', { text: `${p.playerName} — Повелитель нежити! Мёртвые подчиняются ему`, kind: 'bad' });
-      return { role: 'horde', spawn: this._lair() };
+      const sp = this._lordSpawn();
+      p.spawnAt = sp; p.spawnT = this.game.time;
+      return { role: 'horde', spawn: sp };
     }
     p.role = 'hero';
     return { role: 'hero' };
@@ -67,8 +79,45 @@ export class Siege {
     const p = W?._edgePoint?.(Math.random() * 6.28, 10);
     return p ? [p.x, p.y, p.z] : [c + 100, this.game.world.surfaceY(c + 100, c) + 1, c];
   }
+  /** The lord of the dead rises near the host: in the open at night, in a cave under the land by day. */
+  _lordSpawn() {
+    const g = this.game;
+    if (!g.state.isNight) { const c = this._cave(); if (c) return c; }
+    return this._nearHost() || this._lair();
+  }
+  /** 45–65 blocks from the host's hero, and not inside the village. */
+  _nearHost() {
+    const g = this.game, h = g.player?.position, c = this._villageCenter();
+    if (!h) return null;
+    for (let k = 0; k < 24; k++) {
+      const a = Math.random() * Math.PI * 2, rr = 45 + Math.random() * 20;
+      const x = h.x + Math.cos(a) * rr, z = h.z + Math.sin(a) * rr;
+      if (Math.hypot(x - c.x, z - c.z) < SAFE_R + 10) continue;
+      const s = this._stand(x, z);
+      if (s) return [s.x, s.y, s.z];
+    }
+    return null;
+  }
+  /** A dark cave spot (no sky light) 25–80 blocks from the host's hero. */
+  _cave() {
+    const g = this.game, w = g.world, h = g.player?.position;
+    if (!h || w.format < 3) return null;
+    for (let k = 0; k < 60; k++) {
+      const a = Math.random() * Math.PI * 2, rr = 25 + Math.random() * 55;
+      const x = Math.floor(h.x + Math.cos(a) * rr), z = Math.floor(h.z + Math.sin(a) * rr);
+      if (!w.isGenerated(x, z)) continue;
+      const top = w.heightAt(x, z);
+      for (let y = top - 8; y > Math.max(4, top - 90); y--) {
+        if (!w.isSolid(x, y - 1, z) || w.isSolid(x, y, z) || w.isSolid(x, y + 1, z)) continue;
+        const id = w.getBlock(x, y, z);
+        if (id !== 0 || (w.getLight(x, y, z) >> 4) > 0) continue;
+        return [x + 0.5, y, z + 0.5];
+      }
+    }
+    return null;
+  }
   respawnPoint(p) {
-    if (p.role === 'horde') return this._lair();
+    if (p.role === 'horde') return this._lordSpawn();
     const r = p.role === 'rival' ? this.rivals?.get(p.town) : null;
     return r ? [r.x + 0.5, r.y + 1, r.z + 6.5] : null;
   }
@@ -106,26 +155,41 @@ export class Siege {
       return;
     }
     if (p.role === 'horde') {
-      const H = this.horde;
+      const H = this.horde, w = g.world;
       if (d.c === 'raise') {
         const e = HORDE.find(h => h[0] === d.type);
-        if (!e || (g.waves?.currentWave | 0) < e[3]) return say('Эти мертвецы ещё не пробудились', 'bad');
+        if (!e || (g.waves?.currentWave | 0) < e[3]) return say(`Эти мертвецы пробудятся к волне ${e?.[3] ?? '?'}`, 'bad');
         H.spawned = H.spawned.filter(z => !z.dead);
-        if (H.spawned.length >= HORDE_MAX) return say(`Под вашей властью уже ${HORDE_MAX} мертвецов`, 'bad');
-        if (H.points < e[2]) return say(`Нужно ${e[2]} тёмной силы`, 'bad');
-        const at = p.netPos, c = this._villageCenter();
+        const max = this.hordeMax(), cost = this.costOf(e);
+        if (H.spawned.length >= max) return say(`Под вашей властью уже ${max} мертвецов — предел растёт с каждой волной`, 'bad');
+        const cdLeft = (H.typeCd[e[0]] || 0) - g.time;
+        if (cdLeft > 0) return say(`«${e[1]}» снова можно поднять через ${Math.ceil(cdLeft)} с`, 'bad');
+        if (H.points < cost) return say(`Нужно ${cost} тёмной силы${g.state.isNight ? '' : ' (днём дороже)'}`, 'bad');
+        // where he points (a block he looks at, up to 48 blocks away), or around himself
+        const lord = p.netPos, c = this._villageCenter();
+        if (d.x != null && Math.hypot(d.x - lord.x, d.z - lord.z) > 48) return say('Слишком далеко: поднимать мёртвых можно не дальше 48 блоков от себя', 'bad');
+        const aimed = d.x != null;
+        const at = aimed ? { x: d.x + 0.5, y: d.y, z: d.z + 0.5 } : { x: lord.x, y: lord.y, z: lord.z };
         if (Math.hypot(at.x - c.x, at.z - c.z) < SAFE_R + (g.village?.radius || 0) * 0.5) return say('Слишком близко к деревне: живые не дают поднять мёртвых', 'bad');
-        const n = d.n > 1 ? Math.min(d.n | 0, Math.floor(H.points / e[2]), HORDE_MAX - H.spawned.length) : 1;
+        const hero = g.player?.position;
+        if (hero && !g.player.dead && Math.hypot(at.x - hero.x, at.z - hero.z) < HERO_R) return say('Слишком близко к герою хозяина', 'bad');
+        const n = d.n > 1 && e[2] <= 10 ? Math.min(d.n | 0, Math.floor(H.points / cost), max - H.spawned.length) : 1;
         let made = 0;
-        for (let k = 0; k < n * 3 && n > 0; k++) {
-          const a = Math.random() * Math.PI * 2, rr = 2 + Math.random() * 4;
-          const s = this._stand(at.x + Math.cos(a) * rr, at.z + Math.sin(a) * rr);
+        for (let k = 0; k < n * 4 && n > 0; k++) {
+          const a = Math.random() * Math.PI * 2, rr = k ? 1 + Math.random() * 3 : 0;
+          const x = Math.floor(at.x + Math.cos(a) * rr), z = Math.floor(at.z + Math.sin(a) * rr);
+          let s = null;
+          if (w.isGenerated(x, z)) { const y = g.underground?._standAt?.(x, Math.floor(at.y), z, 5); if (y != null) s = { x: x + 0.5, y, z: z + 0.5 }; }
+          if (!s) s = this._stand(x, z);
           if (!s) continue;
-          const z = g.waves?.spawn(e[0], s.x, s.z, { y: s.y, emerge: true, silent: true });
-          if (z) { z.lord = p.cid; H.spawned.push(z); H.points -= e[2]; if (++made >= n) break; }
-          if (H.points < e[2]) break;
+          const dead = g.waves?.spawn(e[0], s.x, s.z, { y: s.y, emerge: true, silent: true });
+          if (dead) { dead.lord = p.cid; H.spawned.push(dead); H.points -= cost; if (++made >= n) break; }
+          if (H.points < cost) break;
         }
+        if (made) H.typeCd[e[0]] = g.time + e[4] * (made > 1 ? 2 : 1);
+        if (!made) say('Здесь не встать мертвецу: укажите на землю', 'bad');
       } else if (d.c === 'night') {
+        if (g.state.day < 2) return say('Первый день деревне дают отстроиться: ночь можно призвать со второго дня', 'bad');
         if (H.cd > 0) return say(`Ночь можно призвать через ${Math.ceil(H.cd)} с`, 'bad');
         if (H.points < WAVE_COST) return say(`Нужно ${WAVE_COST} тёмной силы`, 'bad');
         if (!g.waves?.startWaveNow?.()) return say('Ночь уже идёт', 'bad');
@@ -141,6 +205,11 @@ export class Siege {
     const y = g.underground?._standAt?.(ix, w.heightAt(ix, iz) + 1, iz, 8);
     return y === null || y === undefined ? null : { x: ix + 0.5, y, z: iz + 0.5 };
   }
+  /** How many risen dead the lord may hold at once: grows with the waves the village held and its age. */
+  hordeMax() { const g = this.game; return Math.min(45, 8 + (g.waves?.currentWave | 0) * 2 + (g.state.age | 0) * 2); }
+  /** Dark power a second: faster at night, and more as the host's village grows. */
+  hordeRegen() { const g = this.game; return (g.state.isNight ? 2.2 : 0.7) * (1 + 0.12 * (g.state.age | 0)); }
+  costOf(e) { return Math.ceil(e[2] * (this.game.state.isNight ? 1 : DAY_MUL)); }
   recruitCost(r) { return 25 + r.tier * 12; }
   _villageCenter() { const th = this.game.village?.townHall; return th?.center || { x: this.game.world.size / 2, z: this.game.world.size / 2 }; }
 
@@ -167,7 +236,7 @@ export class Siege {
   /** Host, every frame: dark power, respawns, the state each side's player sees. */
   update(dt) {
     const g = this.game, H = this.horde;
-    H.points = Math.min(HORDE_CAP, H.points + dt * (g.state.isNight ? 3 : 1));
+    H.points = Math.min(HORDE_CAP, H.points + dt * this.hordeRegen());
     if (H.cd > 0) H.cd -= dt;
     this._t += dt;
     if (this._t < 1) return;
@@ -183,7 +252,9 @@ export class Siege {
         } });
       } else if (p.role === 'horde') {
         H.spawned = H.spawned.filter(z => !z.dead);
-        this.net._sendTo(p.cid, { t: 'siege', role: 'horde', horde: { points: Math.floor(H.points), cap: HORDE_CAP, cd: Math.ceil(Math.max(0, H.cd)), count: H.spawned.length, max: HORDE_MAX, wave: g.waves?.currentWave | 0, night: g.state.isNight, waveCost: WAVE_COST } });
+        if (!p.spawnAt || g.time - (p.spawnT || 0) > 10 || !!p.spawnNight !== g.state.isNight) { p.spawnAt = this._lordSpawn(); p.spawnT = g.time; p.spawnNight = g.state.isNight; }
+        this.net._sendTo(p.cid, { t: 'siege', role: 'horde', spawn: p.spawnAt, horde: { points: Math.floor(H.points), cap: HORDE_CAP, cd: Math.ceil(Math.max(0, H.cd)), count: H.spawned.length, max: this.hordeMax(), wave: g.waves?.currentWave | 0, night: g.state.isNight, waveCost: WAVE_COST, day: g.state.day,
+          regen: Math.round(this.hordeRegen() * 10) / 10, costs: Object.fromEntries(HORDE.map(e => [e[0], this.costOf(e)])), cds: Object.fromEntries(HORDE.map(e => [e[0], Math.max(0, Math.ceil((H.typeCd[e[0]] || 0) - g.time))])) } });
       }
     }
   }

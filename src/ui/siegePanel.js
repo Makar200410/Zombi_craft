@@ -21,7 +21,10 @@ export class SiegePanel {
     this.root.addEventListener('pointerdown', (e) => { if (e.target === this.root) this.close(); });
     this.body.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
     dragScroll(this.body, { x: false, y: true });
-    this.game.bus.on('siege:state', () => { if (this.open) this.render(); });
+    // always-on strip under the top bar: dark power / the town's treasury and army
+    this.bar = h('div.zc-siege-bar.ui-i', { onclick: () => this.toggle() });
+    this.game.bus.on('siege:state', (s) => { this._bar(s); if (this.open) this.render(); });
+    this.game.bus.on('siege:role', ({ role }) => { if (role !== 'rival' && role !== 'horde') this.bar.classList.remove('on'); });
   }
   get role() { return this.game.net?.isClient ? this.game.net.siegeRole : 'hero'; }
   get available() { return this.role === 'rival' || this.role === 'horde'; }
@@ -76,22 +79,36 @@ export class SiegePanel {
   }
   _horde(H) {
     this.title.textContent = 'Повелитель нежити';
-    this.sum.textContent = `Тёмная сила ${H.points}/${H.cap} · мертвецов ${H.count}/${H.max} · волна ${H.wave}`;
+    this.sum.textContent = `Тёмная сила ${H.points}/${H.cap} (+${H.regen}/с) · мертвецов ${H.count}/${H.max} · волна ${H.wave}`;
     const btns = [];
-    for (const [type, name, cost, wave] of HORDE) {
+    for (const [type, name, , wave] of HORDE) {
       if (H.wave < wave) { btns.push(h('button.zc-chipbtn.off.ui-i', { title: `Пробудится к волне ${wave}` }, `${name} — волна ${wave}`)); continue; }
-      btns.push(this._btn(`${name} (${cost})`, () => this._cmd('raise', { type }), H.points >= cost));
-      if (cost <= 10) btns.push(this._btn(`${name} ×5`, () => this._cmd('raise', { type, n: 5 }), H.points >= cost * 5));
+      const cost = H.costs?.[type] ?? 0, cd = H.cds?.[type] || 0;
+      btns.push(this._btn(cd ? `${name} — ${cd} с` : `${name} (${cost})`, () => this._cmd('raise', { type }), !cd && H.points >= cost && H.count < H.max));
+      if (cost <= 15) btns.push(this._btn(`${name} ×5`, () => this._cmd('raise', { type, n: 5 }), !cd && H.points >= cost * 5 && H.count + 5 <= H.max));
     }
     this.body.append(
       this._card('#a050e0', 'Поднять мёртвых', [
-        'Мертвецы встают вокруг вас и идут на деревню хозяина. Не ближе ~35 блоков к ней — живые мешают.',
-        H.night ? 'Ночь: тёмная сила копится втрое быстрее.' : 'День: сила копится медленно, а солнце жжёт мертвецов.',
+        'Проще всего — панелью внизу: выберите мертвеца цифрой 1–9 и кликните ЛКМ по земле. Здесь — те же мертвецы и группы по 5.',
+        `Предел войска ${H.max} растёт с волнами и эпохой деревни. У сильных мертвецов свой откат.`,
+        H.night ? 'Ночь: сила копится втрое быстрее, цена обычная.' : 'День: призыв в полтора раза дороже, а солнце жжёт мертвецов — лучше поднимать в тени и пещерах.',
+        'Не ближе ~40 блоков к деревне и 18 — к герою хозяина. За каждого павшего мертвеца хозяин получает золото.',
       ], btns),
       this._card('#e05040', 'Призвать ночь', [
-        `Тьма опустится раньше срока, и деревня встретит волну. Стоит ${H.waveCost} силы${H.cd ? `, готово через ${H.cd} с` : ''}.`,
-        'Стража и башни деревни охотятся на вас; павший повелитель восстаёт в глуши.',
-      ], [this._btn('Призвать ночь', () => this._cmd('night'), !H.cd && !H.night && H.points >= H.waveCost)]));
+        `Тьма опустится раньше срока, и деревня встретит волну. Стоит ${H.waveCost} силы${H.cd ? `, готово через ${H.cd} с` : ''}${H.day < 2 ? ' · со второго дня' : ''}.`,
+        'Стража и башни деревни охотятся на вас; павший повелитель восстаёт рядом с хозяином (днём — в пещере).',
+      ], [this._btn('Призвать ночь', () => this._cmd('night'), !H.cd && !H.night && H.day >= 2 && H.points >= H.waveCost)]));
+  }
+  _bar(s) {
+    if (!s || !this.available) { this.bar.classList.remove('on'); return; }
+    this.bar.classList.add('on');
+    if (s.role === 'horde') {
+      const H = s.horde;
+      this.bar.textContent = `☠ Тёмная сила ${H.points}/${H.cap} (+${H.regen}/с${H.night ? '' : ', днём призыв дороже'}) · мертвецов ${H.count}/${H.max} — мертвец 1–9, ЛКМ по земле · G`;
+    } else {
+      const t = s.town;
+      this.bar.textContent = `⚑ «${t.name}» · казна ${t.wealth} · войско ${t.army}/${t.cap}${t.raid ? ' · отряд в походе' : ''} — G: командование`;
+    }
   }
   update() {}
 }

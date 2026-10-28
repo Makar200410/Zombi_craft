@@ -110,11 +110,13 @@ export class Zombie extends Entity {
     this.peaceful = !!opts.peaceful;
     if (opts.name) this.name = opts.name;
     const helmet = this.sunproof && !this.cave && !this.human;
-    const hat = helmet ? 'helmet' : T.hat || null;
+    // townsfolk of a rival village can be given a trade: its outfit, hat and tool (opts.job / hat / held)
+    this.job = opts.job || T.job || null;
+    const hat = helmet ? 'helmet' : opts.hat !== undefined ? opts.hat : T.hat || null;
     const hatColor = helmet ? 0x6d6a60 : opts.hatColor ?? T.hatColor;
     this.model = T.model ? new CreatureModel({ ...T.model, width: T.width / 1.4 })
-      : new HumanoidModel({ skin: this.human ? getHumanSkin(T.job || 'idle', seed) : getZombieSkin(this.type, seed), height: T.height, zombie: !this.human, width: T.width, hat, hatColor });
-    if (this.human && T.weapon) this.model.setHeld?.(T.weapon);
+      : new HumanoidModel({ skin: this.human ? getHumanSkin(this.job || 'idle', seed) : getZombieSkin(this.type, seed), height: T.height, zombie: !this.human, width: T.width, hat, hatColor });
+    if (this.human && (opts.held || T.weapon)) this.model.setHeld?.(opts.held || T.weapon);
     // emissive uses the skin texture, so torch glow / night corpse-light keep the pixel detail
     this.model.material.emissiveMap = this.model.material.map;
     this.model.material.needsUpdate = true;
@@ -527,7 +529,8 @@ export class Zombie extends Entity {
         }
         else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.4) this.target = null;
       } else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.5) this.target = null;
-      if (this.wanderer && this.target && this.home && pos.distanceTo(this.home) > 32) this.target = null;
+      // people keep near their post: wanderers stay by home, patrols (lead) don't chase far from their town
+      if ((this.wanderer || this.lead) && this.target && this.home && pos.distanceTo(this.home) > (this.lead && !this.wanderer ? 60 : 32)) this.target = null;
     }
   }
   _los(e) {

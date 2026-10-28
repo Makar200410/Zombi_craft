@@ -17,7 +17,7 @@ import { JOBS } from '../village/names.js';
 import { B, BLOCKS } from '../core/blocks.js';
 import { encodeChanges, decodeChanges } from '../systems/save.js';
 import { RECIPES } from '../systems/crafting.js';
-import { ITEMS } from '../core/items.js';
+import { ITEMS, HORDE_HOTBAR } from '../core/items.js';
 import { Siege, ROLES } from './siege.js';
 import { decodeBlueprint } from '../systems/blueprints.js';
 
@@ -326,9 +326,11 @@ export class Net {
     const hello = {
       hero: 'Вы в мире друга! Деревней управляет хозяин, а вы — герой: исследуйте, стройте, сражайтесь.',
       rival: 'Вы — командир соседней деревни и в войне с хозяином! Откройте «Командование» (G): нанимайте воинов, шлите отряды, а ночью держите оборону от мёртвых.',
-      horde: 'Вы — Повелитель нежити! «Командование» (G): копите тёмную силу и поднимайте мёртвых, чтобы взять деревню хозяина. Её стража охотится на вас.',
+      horde: 'Вы — Повелитель нежити! Ваша панель внизу — это мертвецы: выберите цифрой 1–9 и кликните ЛКМ по земле, чтобы поднять его там. Тёмная сила копится сама (ночью втрое быстрее). G — командование: призыв ночи и группы по 5.',
     };
     g.bus.emit('toast', { text: hello[this.siegeRole] || hello.hero, kind: 'good' });
+    // the lord of the dead holds the dead he can call instead of weapons (his own hotbar comes back when he leaves)
+    if (this.siegeRole === 'horde' && p) { this._ownHotbar = [...p.hotbar]; p.hotbar = [...HORDE_HOTBAR]; p.selected = 0; p._emitHotbar?.(); g.bus.emit('hotbar:changed', {}); }
     g.bus.emit('siege:role', { role: this.siegeRole });
     g.bus.emit('net:changed', {});
     progress(1, '');
@@ -336,6 +338,7 @@ export class Net {
   }
   _leave(why) {
     const g = this.game;
+    if (this._ownHotbar && g.player) { g.player.hotbar = this._ownHotbar; this._ownHotbar = null; g.bus.emit('hotbar:changed', {}); }
     this.siegeRole = 'hero'; this.siegeState = null; g.bus.emit('siege:role', { role: 'hero' });
     for (const e of this.proxies?.values() || []) g.entities.remove(e);
     for (const e of this.heroes?.values() || []) g.entities.remove(e);
@@ -387,7 +390,11 @@ export class Net {
         break;
       case 'toast': g.bus.emit('toast', { text: m.text, kind: m.kind }); break;
       case 'rivals': g.rivals?.deserialize(m.s); g.rivals?._restampLoaded(); break;
-      case 'siege': this.siegeState = m; g.bus.emit('siege:state', m); break;
+      case 'siege':
+        this.siegeState = m;
+        if (m.spawn && g.village) g.village.netSpawn = new THREE.Vector3(...m.spawn);      // the lord rises near the host (by day in a cave)
+        g.bus.emit('siege:state', m);
+        break;
       case 'bp': if (m.from !== this.myName) this._takeBlueprint(m.code, m.from); break;
     }
   }
