@@ -1,7 +1,8 @@
 // Builds chunk geometry buffers (world-space positions) with smooth lighting + ambient occlusion.
 // Output buckets: solid (opaque + cutout cubes), plants (cross sprites, double sided), water, glass.
-import { BLOCKS, B } from '../core/blocks.js';
-import { CHUNK, SECTION, LIGHT_BLOCKING } from './World.js';
+import { BLOCKS, B, WATER_IDS } from '../core/blocks.js';
+import { CHUNK, SECTION, LIGHT_BLOCKING, SOLID } from './World.js';
+import { cornerHeight, waterFlow } from './waterShape.js';
 
 // face: n (normal), u, v (tangent axes, u×v=n), base corner
 const FACES = [
@@ -70,6 +71,8 @@ export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
     return c ? c[(x & 15) + 16 * ((z & 15) + 16 * y)] : 0;
   };
   const occ = (x, y, z) => LIGHT_BLOCKING[get(x, y, z)];
+  const solidAt = (id) => SOLID[id];
+  const flow = { x: 0, z: 0, fall: false };
 
   const P = new Array(12), UV = new Array(8), L = new Array(16);
   const aoArr = [0, 0, 0, 0];
@@ -81,7 +84,16 @@ export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
     const shape = SHAPE[id], render = RENDER[id];
     const def = BLOCKS[id];
     if (shape === 2) { if (!(lowDetail && id === B.TALL_GRASS)) crossQuads(x, y, z, id, def); continue; }
-    const isLiquid = shape === 3, isLava = id === B.LAVA;
+    const isLiquid = shape === 3, isLava = id === B.LAVA, isWater = WATER_IDS[id] === 1;
+    // water: sloped surface (corner heights like Minecraft) and a flow direction for the animated current
+    let flowA = 0, flowS = 0, waterTop = false;
+    if (isWater) {
+      waterTop = !WATER_IDS[get(x, y + 1, z)];
+      waterFlow(get, solidAt, x, y, z, flow);
+      const len = Math.hypot(flow.x, flow.z);
+      flowS = Math.min(1, len * 1.6);
+      flowA = flowS > 0.02 ? ((Math.atan2(flow.z, flow.x) / (Math.PI * 2)) + 1) % 1 : 0;
+    }
     const emissive = (def.light > 0 && shape === 1 && id !== B.GLOW_MOSS && id !== B.AMETHYST) || isLava;   // moss & geodes only light their surroundings
     for (let f = 0; f < 6; f++) {
       const F = FACES[f];
@@ -89,7 +101,7 @@ export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
       const nb = get(nx, ny, nz);
       // visibility rules
       if (isLiquid) {
-        if (nb === id) continue;
+        if (nb === id || (isWater && WATER_IDS[nb])) continue;
         if (LIGHT_BLOCKING[nb]) continue;
         if (f !== 2 && nb !== 0 && SHAPE[nb] === 1 && RENDER[nb] !== 3) continue;
       } else {
@@ -100,13 +112,13 @@ export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
       const t = uvOf(isLiquid && !isLava ? 'water' : def.tiles[F.tile]);
       // corner positions
       let top = 1;
-      if (isLiquid && get(x, y + 1, z) !== id) top = 0.875;
+      if (isLava && get(x, y + 1, z) !== id) top = 0.875;
       for (let c = 0; c < 4; c++) {
         const a = (c === 1 || c === 2) ? 1 : 0, b = (c >= 2) ? 1 : 0;
         let px = x + F.base[0] + F.u[0] * a + F.v[0] * b;
         let py = y + F.base[1] + F.u[1] * a + F.v[1] * b;
         let pz = z + F.base[2] + F.u[2] * a + F.v[2] * b;
-        if (isLiquid && py > y + 0.5) py = y + top;
+        if (isLiquid && py > y + 0.5) py = y + (isWater ? (waterTop ? cornerHeight(get, solidAt, px, y, pz) : 1) : top);
         P[c * 3] = px; P[c * 3 + 1] = py; P[c * 3 + 2] = pz;
         UV[c * 2] = a ? t[2] : t[0];
         UV[c * 2 + 1] = b ? t[1] : t[3];
@@ -122,10 +134,11 @@ export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
         if (!s1) { const l = lightAt(nx + su0, ny + su1, nz + su2); sky += l >> 4; blk += l & 15; cnt++; }
         if (!s2) { const l = lightAt(nx + sv0, ny + sv1, nz + sv2); sky += l >> 4; blk += l & 15; cnt++; }
         if (!cc && !(s1 && s2)) { const l = lightAt(nx + su0 + sv0, ny + su1 + sv1, nz + su2 + sv2); sky += l >> 4; blk += l & 15; cnt++; }
-        L[c * 4] = (isLiquid && !isLava) || render === 3 ? 1 : (0.45 + 0.55 * ao / 3);
+        L[c * 4] = isWater ? flowA : render === 3 ? 1 : (0.45 + 0.55 * ao / 3);
         L[c * 4 + 1] = sky / cnt / 15;
         L[c * 4 + 2] = blk / cnt / 15;
-        L[c * 4 + 3] = emissive ? 2 : (render === 2 ? 0.25 : 0);
+        // water: w = 0.4 + current strength (1.4 = pouring down the sides), read by the water shader
+        L[c * 4 + 3] = isWater ? (flow.fall && f !== 2 && f !== 3 ? 1.4 : flowS > 0.02 ? 0.4 + flowS * 0.9 : 0) : emissive ? 2 : (render === 2 ? 0.25 : 0);
       }
       const flip = aoArr[0] + aoArr[2] < aoArr[1] + aoArr[3];
       const bucket = isLava ? solid : isLiquid ? water : render === 3 ? glass : solid;   // lava is opaque and glows

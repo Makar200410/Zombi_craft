@@ -1,6 +1,6 @@
 // Village: buildings, villagers, jobs, construction, population, selection, save/load.
 import * as THREE from 'three';
-import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
 import { oak, birch, spruce } from '../world/trees.js';
 import { mulberry32 } from '../core/rng.js';
 import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS, setEraTier } from './buildings.js';
@@ -267,7 +267,7 @@ export class Village {
     for (let z = z0; z < z0 + L.d; z++) for (let x = x0; x < x0 + L.w; x++) {
       const gy = this.groundY(x, z);
       hs.push(gy);
-      if (w.getBlock(x, gy + 1, z) === B.WATER || gy < w.sea - 1) water = true;
+      if (WATER_IDS[w.getBlock(x, gy + 1, z)] || gy < w.sea - 1) water = true;
     }
     hs.sort((a, b) => a - b);
     const y = hs[Math.floor(hs.length / 2)];
@@ -498,7 +498,7 @@ export class Village {
       const inside = x >= x0 && z >= z0 && x < x0 + L.w && z < z0 + L.d;
       if (inside && !b.contains(x, z)) {
         const gy = this.groundY(x, z);
-        if (w.getBlock(x, gy + 1, z) === B.WATER || gy < w.sea - 1) return { ok: false, reason: 'вокруг вода' };
+        if (WATER_IDS[w.getBlock(x, gy + 1, z)] || gy < w.sea - 1) return { ok: false, reason: 'вокруг вода' };
       }
       if (!id || id === b.id) continue;
       const other = this.byId.get(id);
@@ -1250,7 +1250,7 @@ export class Village {
       for (const c of cells) {
         const id = w.getBlock(c.x, y, c.z);
         if (!BLOCKS[id].solid || id === B.BEDROCK) {
-          if (id !== B.AIR && id !== B.WATER && id !== B.TORCH && BLOCKS[id].shape === 'cross') { found = { x: c.x, y, z: c.z }; break; }
+          if (id !== B.AIR && !WATER_IDS[id] && id !== B.TORCH && BLOCKS[id].shape === 'cross') { found = { x: c.x, y, z: c.z }; break; }
           continue;
         }
         if (this.quarryReserved.has(c.x + ',' + y + ',' + c.z)) { pendingReserved = true; continue; }

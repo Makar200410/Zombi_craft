@@ -158,6 +158,10 @@ def(110, 'mech_saw', { label: 'Механическая пила', tiles: { top:
 def(111, 'crusher', { label: 'Дробилка руды', tiles: { top: 'crusher_top', side: 'casing_side' }, hardness: 3, cost: { iron: 6, stone: 6 }, drop: { iron: 3 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
 def(112, 'mech_fan', { label: 'Вентилятор', tiles: { top: 'casing_top', side: 'fan_side' }, hardness: 3, cost: { iron: 4, wood: 2 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 2 });
 def(113, 'casing', { label: 'Механический корпус', tiles: { top: 'casing_top', side: 'casing_side' }, hardness: 3, cost: { stone: 2, iron: 1 }, drop: { stone: 1 }, tool: 'pick', minAge: 2 });
+// flowing water (Minecraft-like, see src/systems/fluids.js): `water` is a source; water_1..water_7 flow away from it,
+// one level lower per block; water_fall is a falling column. They all look and behave like water.
+for (let l = 1; l <= 7; l++) def(113 + l, 'water_' + l, { label: 'Текущая вода', tiles: 'water', shape: 'liquid', render: 'transparent', solid: false, hardness: 0, placeable: false, replaceable: true });
+def(121, 'water_fall', { label: 'Падающая вода', tiles: 'water', shape: 'liquid', render: 'transparent', solid: false, hardness: 0, placeable: false, replaceable: true });
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {
@@ -173,6 +177,15 @@ export const isSolid = (id) => BLOCKS[id] ? BLOCKS[id].solid : false;
 export const isOpaqueCube = (id) => { const b = BLOCKS[id]; return !!b && b.shape === 'cube' && b.render === 'opaque'; };
 export const LOG_BLOCKS = new Set([B.LOG, B.SPRUCE_LOG, B.BIRCH_LOG]);
 export const LEAF_BLOCKS = new Set([B.LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES, B.ACACIA_LEAVES]);
+/** Water of any kind (source, flowing, falling). */
+export const WATER_IDS = new Uint8Array(256);
+/** Flow level: 0 source / falling, 1..7 flowing, -1 not water. */
+export const WATER_LEVEL = new Int8Array(256).fill(-1);
+WATER_IDS[B.WATER] = 1; WATER_LEVEL[B.WATER] = 0;
+WATER_IDS[B.WATER_FALL] = 1; WATER_LEVEL[B.WATER_FALL] = 0;
+for (let l = 1; l <= 7; l++) { WATER_IDS[B['WATER_' + l]] = 1; WATER_LEVEL[B['WATER_' + l]] = l; }
+export const WATER_FLOW = [B.WATER, B.WATER_1, B.WATER_2, B.WATER_3, B.WATER_4, B.WATER_5, B.WATER_6, B.WATER_7];
+export const isWater = (id) => WATER_IDS[id] === 1;
 export const MECHANISMS = [B.SHAFT, B.COGWHEEL, B.WATER_WHEEL, B.WINDMILL, B.STEAM_ENGINE, B.MECH_DRILL, B.MECH_SAW, B.CRUSHER, B.MECH_FAN, B.CASING];
 export const ORE_BLOCKS = new Set([B.COAL_ORE, B.IRON_ORE, B.GOLD_ORE, B.CRYSTAL_ORE, B.AMETHYST]);
 // Blocks the player can pick in the build palette (in order).

@@ -12,7 +12,7 @@
 //   isEnemy(a, b)  — friendly fire is never allowed (same faction never takes damage)
 import * as THREE from 'three';
 import { ITEMS } from '../core/items.js';
-import { B, BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, WATER_IDS } from '../core/blocks.js';
 import { LightPool, Effects } from './effects.js';
 import { Projectiles, PROJECTILES } from './projectiles.js';
 
@@ -457,7 +457,7 @@ export class Combat {
     // ground debris
     if (g.world) {
       const gy = Math.floor(center.y - 0.5), id = g.world.getBlock(center.x, gy, center.z);
-      if (id && BLOCKS[id] && id !== B.WATER) P.emit({ pos: center, count: Math.round(16 * s), colors: P.tileColors(BLOCKS[id].tiles.side), speed: radius * 1.8, dir: { x: 0, y: radius * 1.6, z: 0 }, gravity: 18, life: 1.1, size: 0.16, drag: 0.85 });
+      if (id && BLOCKS[id] && !WATER_IDS[id]) P.emit({ pos: center, count: Math.round(16 * s), colors: P.tileColors(BLOCKS[id].tiles.side), speed: radius * 1.8, dir: { x: 0, y: radius * 1.6, z: 0 }, gravity: 18, life: 1.1, size: 0.16, drag: 0.85 });
       this.effects.ring(_v2.set(center.x, (g.world.surfaceY(center.x, center.z) + 1), center.z), 0xffd8a0, radius * 0.3, radius * 2.2, big ? 0.55 : 0.35, { opacity: 0.7 });
     }
     this.lights.flash(center, opts.kind === 'frost' ? 0x8ac8ff : 0xffa050, big ? 90 : 40, big ? 0.7 : 0.4, radius * 5, 3);
@@ -480,13 +480,13 @@ export class Combat {
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (d > r + (Math.random() - 0.5) * 0.8) continue;
       const id = w.getBlock(x, y, z);
-      if (!id || id === B.WATER || id === B.BEDROCK) continue;
+      if (!id || WATER_IDS[id] || id === B.BEDROCK) continue;
       let building = null;
       try { building = village?.buildingAt?.(x, y, z) || null; } catch (e) { building = null; }
       if (mode === 'natural') {
         if (building || !NATURAL.has(id)) continue;
         // don't erase player edits (anything placed is in world.changes and not natural terrain)
-        if (w.setBlock(x, y, z, B.AIR)) { removed++; if (removed % 4 === 0) g.particles.blockBreak(x, y, z, id); }
+        if (w.setBlock(x, y, z, B.AIR)) { removed++; g.fluids?.touch(x, y, z); if (removed % 4 === 0) g.particles.blockBreak(x, y, z, id); }
       } else if (mode === 'all') {
         w.hitBlock(x, y, z, 6 * (1 - d / (r + 1)), source);
       }

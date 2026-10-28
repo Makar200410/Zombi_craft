@@ -1,10 +1,13 @@
 // Axis-separated AABB vs voxel collision. entity: position (feet), velocity, radius, height.
-import { B, LEAF_BLOCKS } from '../core/blocks.js';
+import { B, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
+import { waterFlow } from './waterShape.js';
+import { SOLID } from './World.js';
 
 const LEAF = new Uint8Array(256);
 for (const id of LEAF_BLOCKS) LEAF[id] = 1;
 
 export const GRAVITY = 28;
+const _flow = { x: 0, z: 0, fall: false };
 
 /** foliage = true: leaves don't block — everyone walks through tree crowns (slowed a little) instead of getting caught. */
 export function collides(world, px, py, pz, r, h, foliage = false) {
@@ -22,18 +25,28 @@ export function moveEntity(world, e, dt) {
   const feet = world.getBlock(p.x, p.y + 0.1, p.z), body = world.getBlock(p.x, p.y + h * 0.6, p.z);
   // lava is a thick liquid that sets you on fire
   e.inLava = feet === B.LAVA || body === B.LAVA;
-  e.inWater = feet === B.WATER || body === B.WATER || e.inLava;
+  e.inWater = WATER_IDS[feet] === 1 || WATER_IDS[body] === 1 || e.inLava;
   if (e.inLava && !e.dead && e.damage) {
     e.burnTimer = Math.max(e.burnTimer || 0, 4);
     e._lavaAcc = (e._lavaAcc || 0) + dt;
     if (e._lavaAcc > 0.5) { e._lavaAcc = 0; e.damage(7, null, { kind: 'fire' }); }
   }
-  e.headInWater = world.getBlock(p.x, p.y + h * 0.9, p.z) === B.WATER;
+  e.headInWater = WATER_IDS[world.getBlock(p.x, p.y + h * 0.9, p.z)] === 1;
   // pushing through leaves is a bit slower
   e.inFoliage = fo && (LEAF[feet] || LEAF[body]) === 1;
   const hs = e.inFoliage ? 0.7 : 1;
   if (!e.flying) {
-    if (e.inWater) { v.y -= GRAVITY * 0.25 * dt; v.y = Math.max(v.y, -3); v.x *= Math.pow(0.2, dt); v.z *= Math.pow(0.2, dt); }
+    if (e.inWater) {
+      v.y -= GRAVITY * 0.25 * dt; v.y = Math.max(v.y, -3); v.x *= Math.pow(0.2, dt); v.z *= Math.pow(0.2, dt);
+      // currents carry swimmers along (and waterfalls push them down), like flowing water in Minecraft
+      if (!e.inLava && WATER_IDS[feet]) {
+        const fx = Math.floor(p.x), fy = Math.floor(p.y + 0.1), fz = Math.floor(p.z);
+        const f = waterFlow((x, y, z) => world.getBlock(x, y, z), (id) => SOLID[id], fx, fy, fz, _flow);
+        const len = Math.hypot(f.x, f.z);
+        if (len > 0.01) { const k = Math.min(1, len) * 9 * dt / len; v.x += f.x * k; v.z += f.z * k; }
+        if (feet === B.WATER_FALL) v.y -= 14 * dt;
+      }
+    }
     else v.y -= GRAVITY * dt;
     v.y = Math.max(v.y, -50);
   }

@@ -1,7 +1,7 @@
 // The hero: first/third-person movement, hotbar, mining/placing, weapons & spells, death/respawn.
 import * as THREE from 'three';
 import { STATIONS } from '../systems/crafting.js';
-import { B as _B } from '../core/blocks.js';
+import { B as _B, WATER_IDS } from '../core/blocks.js';
 const STATION_OF_BLOCK = { [_B.WORKBENCH]: 'workbench', [_B.FURNACE]: 'furnace', [_B.IRON_BLOCK]: 'anvil', [_B.ARCANE_TABLE]: 'arcane' };
 import { Entity } from '../entities/Entity.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
@@ -231,10 +231,10 @@ export class Player extends Entity {
         if (x < 2 || z < 2 || x >= w.size - 2 || z >= w.size - 2) continue;
         const y = w.surfaceY(x, z) + 1;
         const below = w.getBlock(x, y - 1, z);
-        if (below === B.WATER || BLOCKS[below]?.render === 'cutout') continue;
+        if (WATER_IDS[below] || BLOCKS[below]?.render === 'cutout') continue;
         if (bAt(x, y - 1, z) || bAt(x, y, z) || bAt(x, y + 1, z)) continue;
         if (!w.isWalkable(x, y, z)) continue;
-        if (w.getBlock(x, y, z) === B.WATER) continue;
+        if (WATER_IDS[w.getBlock(x, y, z)]) continue;
         return new THREE.Vector3(x + 0.5, y, z + 0.5);
       }
     }
@@ -696,7 +696,7 @@ export class Player extends Entity {
     const w = this.game.world;
     const hb = BLOCKS[hit.id];
     let x = hit.px, y = hit.py, z = hit.pz;
-    if (hb && hb.replaceable && hit.id !== B.WATER) { x = hit.x; y = hit.y; z = hit.z; }
+    if (hb && hb.replaceable && !WATER_IDS[hit.id]) { x = hit.x; y = hit.y; z = hit.z; }
     if (!w.inBounds(x, y, z)) return null;
     const cur = BLOCKS[w.getBlock(x, y, z)];
     const id = this.buildBlock, b = BLOCKS[id];

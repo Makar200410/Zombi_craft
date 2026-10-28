@@ -1,7 +1,7 @@
 // A* over walkable voxel cells. Moves: 4 horizontal neighbours (+ diagonals when both sides free),
 // step up 1, drop down up to 3. Returns list of cell positions {x,y,z} (feet cells) or null.
 import { SOLID } from './World.js';
-import { B, LEAF_BLOCKS } from '../core/blocks.js';
+import { B, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
 
 class Heap {
   constructor() { this.a = []; }
@@ -39,7 +39,7 @@ export function findPath(world, from, to, opts = {}) {
     return SOLID[id] === 1 && !LEAF_BLOCKS.has(id);     // leaves can be walked through
   };
   const passable = (x, y, z) => !solid(x, y, z) && !solid(x, y + 1, z) && world.getBlock(x, y, z) !== B.LAVA;
-  const standable = (x, y, z) => passable(x, y, z) && (solid(x, y - 1, z) || (allowWater && world.getBlock(x, y - 1, z) === B.WATER));
+  const standable = (x, y, z) => passable(x, y, z) && (solid(x, y - 1, z) || (allowWater && WATER_IDS[world.getBlock(x, y - 1, z)] === 1));
   const fx = Math.floor(from.x), fz = Math.floor(from.z);
   let fy = Math.floor(from.y);
   if (!standable(fx, fy, fz)) { if (standable(fx, fy + 1, fz)) fy++; else if (standable(fx, fy - 1, fz)) fy--; }
@@ -73,7 +73,7 @@ export function findPath(world, from, to, opts = {}) {
       if (ny === -999) continue;
       const k2 = key(nx, ny, nz);
       let n = nodes.get(k2);
-      const inWater = world.getBlock(nx, ny, nz) === B.WATER;
+      const inWater = WATER_IDS[world.getBlock(nx, ny, nz)] === 1;
       const g = cur.g + (d >= 4 ? 1.414 : 1) + (ny > cur.y ? 0.6 : 0) + (inWater ? 3 : 0);
       if (n && (n.closed || n.g <= g)) continue;
       if (!n) { n = { x: nx, y: ny, z: nz, g, f: 0, parent: cur, closed: false }; nodes.set(k2, n); }

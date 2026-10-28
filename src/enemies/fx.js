@@ -1,7 +1,7 @@
 // Visual/sound helpers for the undead + a tiny projectile system for enemy spells
 // (necromancer shadow bolts, and acid when the combat module doesn't provide fireProjectile).
 import * as THREE from 'three';
-import { B } from '../core/blocks.js';
+import { B, WATER_IDS } from '../core/blocks.js';
 
 export function groundBurst(game, x, y, z, { purple = false, big = false } = {}) {
   const p = game.particles; if (!p) return;
@@ -35,7 +35,7 @@ export function fallbackExplode(game, pos, radius, damage, source, breakBlocks) 
       if (d > radius - 0.3) continue;
       const x = Math.floor(pos.x) + dx, y = Math.floor(pos.y) + dy, z = Math.floor(pos.z) + dz;
       const id = w.getBlock(x, y, z);
-      if (id === B.AIR || id === B.WATER || id === B.BEDROCK) continue;
+      if (id === B.AIR || WATER_IDS[id] || id === B.BEDROCK) continue;
       const res = w.hitBlock(x, y, z, 10 * (1 - d / radius) + 1.5, source);
       if (!res.broken) continue;
       const bld = game.village?.buildingAt?.(x, y, z);

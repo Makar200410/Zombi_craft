@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { B, BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
 import { TerrainGen, SEA_LEVEL } from './terrain.js';
 import { TerrainGenV1 } from './terrainV1.js';
 import { TerrainGenV2 } from './terrainV2.js';
@@ -253,7 +253,7 @@ export class World {
     return 0;
   }
   isWalkable(x, y, z) {
-    return this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z) && this.getBlock(x, y, z) !== B.WATER && this.getBlock(x, y, z) !== B.LAVA;
+    return this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z) && !WATER_IDS[this.getBlock(x, y, z)] && this.getBlock(x, y, z) !== B.LAVA;
   }
 
   setBlock(x, y, z, id, opts = {}) {
@@ -294,7 +294,7 @@ export class World {
     x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
     const id = this.getBlock(x, y, z);
     const b = BLOCKS[id];
-    if (!b || id === B.AIR || id === B.WATER || id === B.LAVA || !isFinite(b.hardness)) return { broken: false, id, progress: 0 };
+    if (!b || id === B.AIR || WATER_IDS[id] || id === B.LAVA || !isFinite(b.hardness)) return { broken: false, id, progress: 0 };
     const i = this.index(x, y, z);
     const d = this.damage.get(i) || { dmg: 0, t: 0 };
     d.dmg += dmg; d.t = this.game ? this.game.time : 0;
@@ -345,7 +345,7 @@ export class World {
     const solidOnly = !!opts.solidOnly, seeLeaves = !opts.throughLeaves;
     for (let i = 0; i < 400; i++) {
       const id = this.getBlock(x, y, z);
-      if (id !== B.AIR && (!solidOnly || SOLID[id]) && (id !== B.WATER || opts.includeWater) && (seeLeaves || !LEAF_BLOCKS.has(id))) {
+      if (id !== B.AIR && (!solidOnly || SOLID[id]) && (!WATER_IDS[id] || opts.includeWater) && (seeLeaves || !LEAF_BLOCKS.has(id))) {
         const p = new THREE.Vector3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
         return { x, y, z, id, nx, ny, nz, px: x + nx, py: y + ny, pz: z + nz, dist: t, point: p };
       }

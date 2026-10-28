@@ -1,7 +1,7 @@
 // The underground of deep worlds: depth layers the player is told about when going down, treasure chests (in caves,
 // mineshafts and dungeons) whose loot gets better the deeper they lie, the monsters that live down there (they
 // come out of the dark near the player) and the spawner cages and bosses of the dungeons.
-import { B } from '../core/blocks.js';
+import { B, WATER_IDS } from '../core/blocks.js';
 import { ITEMS, RESOURCE_LABELS } from '../core/items.js';
 
 /** Depth layers (format-2 worlds: blocks below sea level). */
@@ -180,7 +180,7 @@ export class Underground {
     const w = this.game.world;
     for (let d = 0; d <= range; d++) for (const yy of d ? [y - d, y + d] : [y]) {
       if (yy < 2 || yy >= w.height - 2) continue;
-      if (w.isSolid(x, yy - 1, z) && !w.isSolid(x, yy, z) && !w.isSolid(x, yy + 1, z) && w.getBlock(x, yy, z) !== B.LAVA && w.getBlock(x, yy, z) !== B.WATER) return yy;
+      if (w.isSolid(x, yy - 1, z) && !w.isSolid(x, yy, z) && !w.isSolid(x, yy + 1, z) && w.getBlock(x, yy, z) !== B.LAVA && !WATER_IDS[w.getBlock(x, yy, z)]) return yy;
     }
     return null;
   }

@@ -18,7 +18,7 @@ const NAME_COLORS = {
 const COL = new Uint32Array(256);
 const SKIP = new Uint8Array(256);   // look through (air, plants)
 for (const b of BLOCKS) if (b) {
-  COL[b.id] = NAME_COLORS[b.name] ?? 0x808080;
+  COL[b.id] = NAME_COLORS[b.name] ?? (b.name.startsWith('water_') ? NAME_COLORS.water : 0x808080);
   if (b.id === 0 || (b.shape === 'cross' && !/wheat/.test(b.name))) SKIP[b.id] = 1;
 }
 

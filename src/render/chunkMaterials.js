@@ -54,7 +54,18 @@ uniform vec3 uBlockLightColor;
 uniform float uBlockLightStrength;
 uniform float uTime;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
-${water ? '' : `
+${water ? `
+if (vLight.w > 0.35 && vLight.w < 1.45) {
+  // the current (Minecraft's flowing water): bright ripples sliding along the flow, falling down waterfalls
+  float a = vLight.x * 6.2831853;
+  vec2 fd = vec2(cos(a), sin(a));
+  bool pour = vLight.w > 1.35 || vUp < 0.5;
+  float ph = pour ? (vPos.y * 2.6 + uTime * 6.0 + dot(vPos.xz, vec2(1.7, 2.3))) : (dot(vPos.xz, fd) * 2.6 - uTime * 3.4 + dot(vPos.xz, vec2(-fd.y, fd.x)) * 0.6);
+  float r = sin(ph) * 0.5 + 0.5;
+  float s = pour ? 1.0 : clamp(vLight.w - 0.4, 0.0, 1.0);
+  diffuseColor.rgb *= 1.0 + 0.28 * s * (r * r - 0.3);
+  diffuseColor.a = min(1.0, diffuseColor.a + 0.06 * s);
+}` : `
 {
   // weather on surfaces open to the sky (sky light ~1): wet = darker and a bit cooler, snow on top faces
   float open = smoothstep(0.82, 0.97, vLight.y);
@@ -65,7 +76,7 @@ ${water ? '' : `
 }`}`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>
 {
-  float ao = vLight.x;
+  float ao = ${water ? '1.0' : 'vLight.x'};
   float sky = vLight.y * vLight.y;               // perceptual falloff
   float blk = pow(vLight.z, 1.6);
   float skyVis = sky * uSkyLight;

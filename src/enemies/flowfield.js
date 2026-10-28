@@ -8,7 +8,7 @@
 //
 // Distances are computed with Dijkstra from goal cells (building footprints / town hall) outward,
 // budgeted across frames into a back buffer that is swapped in when finished.
-import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
+import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
 
 const SOLID = new Uint8Array(256);
 const HARD = new Float32Array(256);
@@ -118,7 +118,7 @@ export class FlowField {
     }
     this.stand[i] = s;
     this.obst[i] = obst;
-    const fw = at(s) === B.WATER, hw = at(s + 1) === B.WATER;
+    const fw = WATER_IDS[at(s)] === 1, hw = WATER_IDS[at(s + 1)] === 1;
     this.water[i] = fw ? (hw ? 2 : 1) : 0;
   }
 
