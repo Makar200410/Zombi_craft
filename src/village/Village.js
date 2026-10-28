@@ -20,6 +20,20 @@ const ROOM = 4;    // free ground kept around the starting buildings so they can
 
 export { BUILDING_TYPES, BUILDING_ORDER, JOBS, JOB_ORDER };
 
+/**
+ * Which building stands on each column (building id, 0 none) — kept for a window around the village (the town
+ * never spreads further), so the map costs the same however big the world is.
+ */
+class FootMap {
+  constructor(world, size = 1024) {
+    this.n = Math.min(size, world.size);
+    this.ox = Math.max(0, Math.floor(world.size / 2 - this.n / 2)); this.oz = this.ox;
+    this.a = new Int32Array(this.n * this.n);
+  }
+  get(x, z) { x -= this.ox; z -= this.oz; return x >= 0 && z >= 0 && x < this.n && z < this.n ? this.a[z * this.n + x] : 0; }
+  set(x, z, v) { x -= this.ox; z -= this.oz; if (x >= 0 && z >= 0 && x < this.n && z < this.n) this.a[z * this.n + x] = v; }
+}
+
 export class Village {
   constructor(game) {
     this.game = game;
@@ -95,7 +109,7 @@ export class Village {
     this.treeCache.clear(); this.treeReserved.clear(); this.plotReserved.clear(); this.quarryReserved.clear();
     this.pathQueue = [];
     const w = this.game.world;
-    this.foot = w ? new Int32Array(w.size * w.size) : null;
+    this.foot = w ? new FootMap(w) : null;
     this.placement.cancel();
     this.setSelection(null);
     this.ghostsDirty = true;
@@ -279,7 +293,7 @@ export class Village {
     const gap = def.line ? 0 : 1 + (opts.room || 0);
     for (let z = z0 - gap; z < z0 + L.d + gap; z++) for (let x = x0 - gap; x < x0 + L.w + gap; x++) {
       if (x < 0 || z < 0 || x >= w.size || z >= w.size) continue;
-      const id = this.foot[z * w.size + x];
+      const id = this.foot.get(x, z);
       if (!id) continue;
       const inside = x >= x0 && z >= z0 && x < x0 + L.w && z < z0 + L.d;
       const other = this.byId.get(id);
@@ -327,7 +341,7 @@ export class Village {
     this.byId.set(b.id, b);
     this.nextBuildingId = Math.max(this.nextBuildingId, b.id + 1);
     const w = this.game.world;
-    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) if (x >= 0 && z >= 0 && x < w.size && z < w.size) this.foot[z * w.size + x] = b.id;
+    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) if (x >= 0 && z >= 0 && x < w.size && z < w.size) this.foot.set(x, z, b.id);
     b.blocks.forEach((bl, i) => this.cellIndex.set(w.index(bl.x, bl.y, bl.z), { b, i }));
     if (b.type === 'town_hall') this.townHall = b;
     this.recalcRadius();
@@ -337,7 +351,7 @@ export class Village {
     if (i >= 0) this.buildings.splice(i, 1);
     this.byId.delete(b.id);
     const w = this.game.world;
-    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) if (this.foot[z * w.size + x] === b.id) this.foot[z * w.size + x] = 0;
+    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) if (this.foot.get(x, z) === b.id) this.foot.set(x, z, 0);
     for (const bl of b.blocks) { const k = w.index(bl.x, bl.y, bl.z); if (this.cellIndex.get(k)?.b === b) this.cellIndex.delete(k); }
     for (const v of [...b.workers]) this.assign(v, null);
     for (const v of this.villagers) { if (v.home === b) v.home = null; if (v.buildTarget === b) v.buildTarget = null; }
@@ -477,8 +491,7 @@ export class Village {
     const w = this.game.world;
     for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) {
       if (x < 0 || z < 0 || x >= w.size || z >= w.size) continue;
-      const i = z * w.size + x;
-      if (on) this.foot[i] = b.id; else if (this.foot[i] === b.id) this.foot[i] = 0;
+      if (on) this.foot.set(x, z, b.id); else if (this.foot.get(x, z) === b.id) this.foot.set(x, z, 0);
     }
   }
   /**
@@ -494,7 +507,7 @@ export class Village {
     if (x0 < m || z0 < m || x0 + L.w > w.size - m || z0 + L.d > w.size - m) return { ok: false, reason: 'рядом край мира' };
     const blockers = new Set();
     for (let z = z0 - 1; z < z0 + L.d + 1; z++) for (let x = x0 - 1; x < x0 + L.w + 1; x++) {
-      const id = this.foot[z * w.size + x];
+      const id = this.foot.get(x, z);
       const inside = x >= x0 && z >= z0 && x < x0 + L.w && z < z0 + L.d;
       if (inside && !b.contains(x, z)) {
         const gy = this.groundY(x, z);
@@ -616,7 +629,7 @@ export class Village {
     const w = this.game.world;
     x = Math.floor(x); z = Math.floor(z);
     if (!this.foot || x < 0 || z < 0 || x >= w.size || z >= w.size) return null;
-    const id = this.foot[z * w.size + x];
+    const id = this.foot.get(x, z);
     if (!id) return null;
     const b = this.byId.get(id);
     if (!b) return null;
@@ -1025,7 +1038,7 @@ export class Village {
       const a = this.rng() * Math.PI * 2, rr = Math.sqrt(this.rng()) * r;
       const x = Math.floor(c.x + Math.cos(a) * rr), z = Math.floor(c.z + Math.sin(a) * rr);
       if (x < 2 || z < 2 || x >= w.size - 2 || z >= w.size - 2) continue;
-      const fid = this.foot[z * w.size + x];
+      const fid = this.foot.get(x, z);
       if (fid) { const b = this.byId.get(fid); if (b && b.state === 'complete' && !b.def.line) continue; }
       const gy = this.groundY(x, z);
       if (w.isWalkable(x, gy + 1, z)) return { x: x + 0.5, y: gy + 1, z: z + 0.5 };
@@ -1142,11 +1155,11 @@ export class Village {
       const x = Math.floor(base.center.x + Math.cos(a) * r), z = Math.floor(base.center.z + Math.sin(a) * r);
       const gy = w.surfaceY(x, z);
       if (w.getBlock(x, gy, z) !== B.GRASS || w.getBlock(x, gy + 1, z) !== B.AIR && BLOCKS[w.getBlock(x, gy + 1, z)].solid) continue;
-      if (this.buildingAt(x, gy + 1, z) || this.foot?.[z * w.size + x]) continue;
+      if (this.buildingAt(x, gy + 1, z) || this.foot?.get(x, z)) continue;
       // keep room around the sapling and away from other trees
       let clear = true;
       for (let dz = -2; dz <= 2 && clear; dz++) for (let dx = -2; dx <= 2 && clear; dx++) {
-        if (this.foot?.[(z + dz) * w.size + (x + dx)]) clear = false;
+        if (this.foot?.get(x + dx, z + dz)) clear = false;
         for (let dy = 0; dy <= 3 && clear; dy++) if (LOG_BLOCKS.has(w.getBlock(x + dx, gy + dy, z + dz))) clear = false;
       }
       if (!clear) continue;

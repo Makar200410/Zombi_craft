@@ -29,6 +29,7 @@ const WALL_TYPES = new Set(['wall', 'stone_wall', 'palisade', 'gate']);
 const OBST_K = 2.6;          // path cost per point of block hardness (≈ seconds of smashing vs. walking)
 const INF = 1e9;
 const MAX_DIST = 900;         // the dead spawn ~100 blocks out; no need to flood the whole (huge) world
+const WINDOW = 1024;          // the field covers this square around the village (the world itself can be far bigger)
 const CH = 16;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
@@ -36,7 +37,8 @@ export class FlowField {
   constructor(game) {
     this.game = game;
     this.world = null;
-    this.size = 0;
+    this.size = 0;             // side of the window (columns); world column (x, z) is cell (x - ox, z - oz)
+    this.ox = 0; this.oz = 0;
     this.dist = null;          // Float32Array — current (complete) field
     this.goalOwner = null;     // Int16Array — index into this.goalBuildings (-1 none)
     this.goalBuildings = [];
@@ -54,8 +56,9 @@ export class FlowField {
     });
   }
   _chunkColumns(cx, cz) {
-    const S = this.size;
-    for (let z = cz * CH; z < Math.min(S, cz * CH + CH); z++) for (let x = cx * CH; x < Math.min(S, cx * CH + CH); x++) this._column(x, z);
+    const x0 = Math.max(cx * CH, this.ox), z0 = Math.max(cz * CH, this.oz);
+    const x1 = Math.min(cx * CH + CH, this.ox + this.size), z1 = Math.min(cz * CH + CH, this.oz + this.size);
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) this._column(x, z);
   }
 
   // ---------- column table ----------
@@ -64,8 +67,9 @@ export class FlowField {
     if (!w) return false;
     if (w === this.world) return true;
     this.world = w;
-    this.size = w.size;
-    const n = w.size * w.size;
+    this.size = Math.min(WINDOW, w.size);
+    this.ox = Math.max(0, Math.floor(w.size / 2 - this.size / 2)); this.oz = this.ox;
+    const n = this.size * this.size;
     this.stand = new Int16Array(n);
     this.obst = new Float32Array(n).fill(INF);   // columns of chunks that don't exist yet are impassable
     this.water = new Uint8Array(n);
@@ -74,7 +78,7 @@ export class FlowField {
     this._spare = null;
     this._job = null;
     const N = w.chunksX || Math.ceil(w.size / CH);
-    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) {
+    for (let cz = Math.floor(this.oz / CH); cz < Math.ceil((this.oz + this.size) / CH); cz++) for (let cx = Math.floor(this.ox / CH); cx < Math.ceil((this.ox + this.size) / CH); cx++) {
       if (w.generated && !w.generated[cz * N + cx]) continue;
       this._chunkColumns(cx, cz);
     }
@@ -90,7 +94,8 @@ export class FlowField {
 
   /** Recompute the stand height / obstacle cost for one column. */
   _column(x, z) {
-    const w = this.world, S = w.size, col = w.colAt(x, z), base = (x & 15) + 16 * (z & 15);
+    const w = this.world, S = this.size, col = w.colAt(x, z), base = (x & 15) + 16 * (z & 15);
+    if (x < this.ox || z < this.oz || x >= this.ox + S || z >= this.oz + S) return;
     const at = (y) => (y < 0 ? B.BEDROCK : y >= w.height || !col ? 0 : col[base + 256 * y]);
     let y = w.height - 1;
     while (y > 0 && !SOLID[at(y)]) y--;
@@ -101,7 +106,7 @@ export class FlowField {
       y--;
     }
     let s = y + 1;
-    const i = z * S + x;
+    const i = (z - this.oz) * S + (x - this.ox);
     // leaves don't block the undead (they push through crowns), so only trunks, walls and rock count
     const blk = (y) => SOLID[at(y)] && !LEAF[at(y)];
     const a = blk(s), b = blk(s + 1), c = blk(s + 2);
@@ -125,8 +130,9 @@ export class FlowField {
   // ---------- events ----------
   onBlockChanged(x, z) {
     if (!this._ensureWorld()) return;
-    if (x < 0 || z < 0 || x >= this.size || z >= this.size) return;
-    const i = z * this.size + x;
+    const lx = x - this.ox, lz = z - this.oz;
+    if (lx < 0 || lz < 0 || lx >= this.size || lz >= this.size) return;
+    const i = lz * this.size + lx;
     const ps = this.stand[i], po = this.obst[i];
     this._column(x, z);
     if (this.stand[i] !== ps || this.obst[i] !== po) this.dirty = true;
@@ -146,10 +152,10 @@ export class FlowField {
       if (!b || b.state === 'destroyed' || b.state === 'planned') continue;
       const type = typeof b.type === 'string' ? b.type : b.type?.id;
       if (WALL_TYPES.has(type)) continue;
-      let cells = buildingCells(b, S);
+      let cells = buildingCells(b, S, this.ox, this.oz);
       // a mine's quarry pit is part of its plot but not something to walk into: zombies attack the shed instead
       if (b.quarry) {
-        const pit = new Set(b.quarry.cells.map(c => c.z * S + c.x));
+        const pit = new Set(b.quarry.cells.map(c => (c.z - this.oz) * S + (c.x - this.ox)));
         cells = cells.filter(c => !pit.has(c));
         for (const c of pit) this._pit.add(c);
       }
@@ -160,7 +166,7 @@ export class FlowField {
     if (!goals.length) {
       // no buildings (yet): march on the town hall position or the map center
       const th = v?.townHall;
-      const cx = Math.floor(th?.x ?? S / 2), cz = Math.floor(th?.z ?? S / 2);
+      const cx = Math.floor((th?.x ?? this.ox + S / 2) - this.ox), cz = Math.floor((th?.z ?? this.oz + S / 2) - this.oz);
       for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
         const x = cx + dx, z = cz + dz;
         if (x >= 0 && z >= 0 && x < S && z < S) { goals.push(z * S + x); owners.push(th ? 0 : -1); }
@@ -288,13 +294,13 @@ export class FlowField {
   // ---------- queries ----------
   distAt(x, z) {
     if (!this.dist) return INF;
-    x = Math.floor(x); z = Math.floor(z);
+    x = Math.floor(x) - this.ox; z = Math.floor(z) - this.oz;
     if (x < 0 || z < 0 || x >= this.size || z >= this.size) return INF;
     return this.dist[z * this.size + x];
   }
   buildingAtCell(x, z) {
     if (!this.goalOwner) return null;
-    x = Math.floor(x); z = Math.floor(z);
+    x = Math.floor(x) - this.ox; z = Math.floor(z) - this.oz;
     if (x < 0 || z < 0 || x >= this.size || z >= this.size) return null;
     const o = this.goalOwner[z * this.size + x];
     return o >= 0 ? this.goalBuildings[o] || null : null;
@@ -305,8 +311,8 @@ export class FlowField {
    */
   next(x, z, out) {
     if (!this.dist || !this.version) return -1;
-    const S = this.size;
-    const cx = Math.floor(x), cz = Math.floor(z);
+    const S = this.size, ox = this.ox, oz = this.oz;
+    const cx = Math.floor(x) - ox, cz = Math.floor(z) - oz;
     if (cx < 0 || cz < 0 || cx >= S || cz >= S) return -1;
     const d = this.dist, stand = this.stand, obst = this.obst;
     const here = d[cz * S + cx];
@@ -323,29 +329,29 @@ export class FlowField {
       }
       if (v < bd) { bd = v; best = n; }
     }
-    if (best < 0) return here >= INF ? -1 : (out.x = cx + 0.5, out.z = cz + 0.5, here);
-    out.x = (best % S) + 0.5; out.z = ((best / S) | 0) + 0.5;
+    if (best < 0) return here >= INF ? -1 : (out.x = cx + ox + 0.5, out.z = cz + oz + 0.5, here);
+    out.x = (best % S) + ox + 0.5; out.z = ((best / S) | 0) + oz + 0.5;
     out.y = stand[best];
     return bd;
   }
   standAt(x, z) {
     if (!this.stand) return 0;
-    x = Math.floor(x); z = Math.floor(z);
+    x = Math.floor(x) - this.ox; z = Math.floor(z) - this.oz;
     if (x < 0 || z < 0 || x >= this.size || z >= this.size) return 0;
     return this.stand[z * this.size + x];
   }
   isObstacle(x, z) {
     if (!this.obst) return false;
-    x = Math.floor(x); z = Math.floor(z);
+    x = Math.floor(x) - this.ox; z = Math.floor(z) - this.oz;
     if (x < 0 || z < 0 || x >= this.size || z >= this.size) return false;
     return this.obst[z * this.size + x] > 0;
   }
 }
 
 /** Columns (flat indices) covered by a building. Tolerates several building shapes. */
-export function buildingCells(b, S) {
+export function buildingCells(b, S, ox = 0, oz = 0) {
   const out = new Set();
-  const add = (x, z) => { x = Math.floor(x); z = Math.floor(z); if (x >= 0 && z >= 0 && x < S && z < S) out.add(z * S + x); };
+  const add = (x, z) => { x = Math.floor(x) - ox; z = Math.floor(z) - oz; if (x >= 0 && z >= 0 && x < S && z < S) out.add(z * S + x); };
   try {
     if (b.w > 0 && b.d > 0 && b.x !== undefined) {
       for (let z = 0; z < b.d; z++) for (let x = 0; x < b.w; x++) add(b.x + x, b.z + z);

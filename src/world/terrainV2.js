@@ -89,7 +89,7 @@ export class TerrainGenV2 {
     const world = this.world, size = world.size, height = world.height, seed = this.seed, SEA = this.sea;
     const { n, n2, n3 } = this;
     const x0 = ccx * CH, z0 = ccz * CH, x1 = Math.min(size, x0 + CH), z1 = Math.min(size, z0 + CH);
-    const heights = world.heights, biome = world.biome, blocks = world.colAt(x0, z0, true);
+    const blocks = world.colAt(x0, z0, true);
     const rnd = mulberry32((seed ^ Math.imul(ccx + 7919, 73856093) ^ Math.imul(ccz + 104729, 19349663)) >>> 0);
     const idx = (x, y, z) => (x - x0) + 16 * ((z - z0) + 16 * y);     // this chunk's own column array
     const dists = new Float32Array(CH * CH);
@@ -97,7 +97,7 @@ export class TerrainGenV2 {
     // ---------------------------------------------------------------- rock, soil and water
     for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
       const c = this.column(x, z);
-      heights[z * size + x] = c.h; biome[z * size + x] = c.b; dists[(z - z0) * CH + (x - x0)] = c.dist;
+      world.setColumn(x, z, c.h, c.b); dists[(z - z0) * CH + (x - x0)] = c.dist;
       const h = c.h, b = c.b;
       blocks[idx(x, 0, z)] = B.BEDROCK;
       const bed2 = hash2(x, z, seed) < 0.5, bed3 = hash2(x, z, seed + 1) < 0.2;
@@ -137,7 +137,7 @@ export class TerrainGenV2 {
     // surface only away from the village
     const CAV0 = SEA - 33, CAV1 = SEA - 13;        // cavern layer
     for (let z = Math.max(1, z0); z < Math.min(size - 1, z1); z++) for (let x = Math.max(1, x0); x < Math.min(size - 1, x1); x++) {
-      const h = heights[z * size + x];
+      const h = world.heightAt(x, z);
       const dist = dists[(z - z0) * CH + (x - x0)];
       const tunnels = n3.noise2(x / 38 + 300, z / 38 - 300) > -0.25;
       const mouth = dist > 90 && n2.noise2(x / 50 - 70, z / 50 + 70) > 0.45;      // where tunnels may break the surface
@@ -168,7 +168,7 @@ export class TerrainGenV2 {
     // the floors of the caves: lava pools in the depths, lakes and mushroom groves in the cavern layer
     const LAVA_Y = 6;
     for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
-      const h = heights[z * size + x];
+      const h = world.heightAt(x, z);
       const lake = n3.noise2(x / 70 + 500, z / 70) > 0.32;
       const shrooms = n2.noise2(x / 90 - 200, z / 90 + 200) > 0.38;
       for (let y = 2; y < Math.min(h - 3, CAV1 + 2); y++) {
@@ -212,12 +212,12 @@ export class TerrainGenV2 {
     // surface outcrops in the hills so early iron/coal is visible
     if (rnd() < 40 * this.perChunk * 1.5) {
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);
-      if (inChunk(x, z) && biome[z * size + x] === 2) blocks[idx(x, heights[z * size + x], z)] = rnd() < 0.8 ? B.COAL_ORE : B.IRON_ORE;
+      if (inChunk(x, z) && world.biomeAt(x, z) === 2) blocks[idx(x, world.heightAt(x, z), z)] = rnd() < 0.8 ? B.COAL_ORE : B.IRON_ORE;
     }
     // amethyst geodes in the depths
     if (rnd() < 0.07) {
       const cx = x0 + 4 + Math.floor(rnd() * 8), cz = z0 + 4 + Math.floor(rnd() * 8), cy = 9 + Math.floor(rnd() * (DEEP - 8)), R = 3 + rnd() * 1.2;
-      if (cy + R < heights[cz * size + cx] - 6) {
+      if (cy + R < world.heightAt(cx, cz) - 6) {
         for (let y = Math.floor(cy - R - 1); y <= cy + R + 1; y++) for (let z = cz - 5; z <= cz + 5; z++) for (let x = cx - 5; x <= cx + 5; x++) {
           if (!inChunk(x, z) || y < 3) continue;
           const d = Math.hypot(x - cx, (y - cy) * 1.15, z - cz), i = idx(x, y, z);
@@ -236,7 +236,7 @@ export class TerrainGenV2 {
       if (rnd() > 0.32) continue;
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);
       if (!inChunk(x, z) || dists[(z - z0) * CH + (x - x0)] < 50) continue;
-      const h = heights[z * size + x];
+      const h = world.heightAt(x, z);
       const start = 4 + Math.floor(rnd() * Math.max(1, h - 12));
       for (let y = start; y < h - 8; y++) {
         const i = idx(x, y, z), below = blocks[idx(x, y - 1, z)];
@@ -248,9 +248,9 @@ export class TerrainGenV2 {
     }
     // ---------------------------------------------------------------- vegetation
     for (let z = Math.max(3, z0); z < Math.min(size - 3, z1); z++) for (let x = Math.max(3, x0); x < Math.min(size - 3, x1); x++) {
-      const h = heights[z * size + x];
+      const h = world.heightAt(x, z);
       const top = blocks[idx(x, h, z)];
-      const b = biome[z * size + x];
+      const b = world.biomeAt(x, z);
       const r = hash2(x, z, seed + 77);
       const dist = dists[(z - z0) * CH + (x - x0)];
       if (h + 1 >= height - 8) continue;
@@ -322,7 +322,7 @@ export class TerrainGenV2 {
         const hr = hash2(x * 3 + dy, z * 5 - dy, seed + 55);
         if (dy === 2 && (Math.abs(dx) + Math.abs(dz) > 1 || hr < 0.3)) continue;
         if (Math.abs(dx) + Math.abs(dz) === 2 && hash2(x, z, seed + 56) < 0.5) continue;
-        const y = heights[z * size + x] + dy;
+        const y = world.heightAt(x, z) + dy;
         if (y >= height - 2) continue;
         for (let yy = y; yy < y + 6 && yy < height; yy++) { const k = idx(x, yy, z); const id = blocks[k]; if (id === B.LOG || id === B.LEAVES || id === B.BIRCH_LOG || id === B.BIRCH_LEAVES || id === B.SPRUCE_LOG || id === B.SPRUCE_LEAVES || id === B.TALL_GRASS) blocks[k] = B.AIR; }
         const roll = hash2(x + dy * 17, z, seed + 57);
@@ -337,7 +337,7 @@ export class TerrainGenV2 {
    * gaps, cobwebs, a rare torch and treasure chests.
    */
   _mineshafts(x0, z0, x1, z1, idx, inChunk, dists, rnd) {
-    const world = this.world, size = world.size, blocks = world.colAt(x0, z0, true), heights = world.heights, seed = this.seed, SEA = this.sea;
+    const world = this.world, size = world.size, blocks = world.colAt(x0, z0, true), seed = this.seed, SEA = this.sea;
     const R = 96;
     for (let rz = Math.floor(z0 / R); rz <= Math.floor((z1 - 1) / R); rz++) for (let rx = Math.floor(x0 / R); rx <= Math.floor((x1 - 1) / R); rx++) {
       if (hash2(rx, rz, seed + 61) > 0.42) continue;
@@ -346,7 +346,7 @@ export class TerrainGenV2 {
       const lines = 4, step = 20;
       const corridor = (x, z, along) => {
         if (!inChunk(x, z) || dists[(z - z0) * CH + (x - x0)] < 70) return;
-        if (fy + 4 >= heights[z * size + x] - 3) return;                    // never break the surface
+        if (fy + 4 >= world.heightAt(x, z) - 3) return;                    // never break the surface
         const u = along === 'x' ? x : z;
         const frame = (u % 4) === 0;
         const across = along === 'x' ? z : x;

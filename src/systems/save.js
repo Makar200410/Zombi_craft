@@ -13,7 +13,7 @@ class ByteWriter {
   constructor(n = 1024) { this.buf = new Uint8Array(n); this.len = 0; }
   _grow(n) { if (this.len + n > this.buf.length) { const b = new Uint8Array(Math.max(this.buf.length * 2, this.len + n)); b.set(this.buf); this.buf = b; } }
   byte(v) { this._grow(1); this.buf[this.len++] = v & 255; }
-  varint(v) { this._grow(5); while (v >= 0x80) { this.buf[this.len++] = (v & 0x7f) | 0x80; v = Math.floor(v / 128); } this.buf[this.len++] = v; }
+  varint(v) { this._grow(10); while (v >= 0x80) { this.buf[this.len++] = (v & 0x7f) | 0x80; v = Math.floor(v / 128); } this.buf[this.len++] = v; }
   bytes() { return this.buf.subarray(0, this.len); }
 }
 class ByteReader {

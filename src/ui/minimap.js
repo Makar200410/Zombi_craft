@@ -44,25 +44,37 @@ export class Minimap {
   rebuild() {
     const w = this.game.world; if (!w) return;
     this.world = w;
-    const S = w.size;
-    this.terrain.width = this.terrain.height = S;
+    // the terrain image covers a window around the player (worlds can be far bigger than any canvas)
+    const W = this.W = Math.min(512, w.size);
+    this.terrain.width = this.terrain.height = W;
     this.tctx = this.terrain.getContext('2d');
-    this.img = this.tctx.createImageData(S, S);
-    this.heights = new Int16Array(S * S);
+    this.img = this.tctx.createImageData(W, W);
+    this.heights = new Int16Array(W * W);
     this.u32 = new Uint32Array(this.img.data.buffer);
+    const f = this.game.player?.position;
+    this._recenter(f ? f.x : w.size / 2, f ? f.z : w.size / 2);
+    this.dirtyCols.clear();
+  }
+  /** Moves the terrain window so that (fx, fz) is in its middle and redraws the chunks that exist there. */
+  _recenter(fx, fz) {
+    const w = this.world, S = w.size, W = this.W;
+    this.wx0 = Math.max(0, Math.min(S - W, Math.floor((fx - W / 2) / 16) * 16));
+    this.wz0 = Math.max(0, Math.min(S - W, Math.floor((fz - W / 2) / 16) * 16));
     this.u32.fill(0xff1c140e);            // unexplored land (the big world is generated as you go)
     const N = w.chunksX || Math.ceil(S / 16);
-    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) if (!w.generated || w.generated[cz * N + cx]) this._chunk(cx, cz, true);
+    const cx0 = this.wx0 >> 4, cz0 = this.wz0 >> 4, n = Math.ceil(W / 16);
+    for (let cz = cz0; cz < cz0 + n; cz++) for (let cx = cx0; cx < cx0 + n; cx++) if (!w.generated || w.generated[cz * N + cx]) this._chunk(cx, cz, true);
     this.tctx.putImageData(this.img, 0, 0);
     this._rect = null;
-    this.dirtyCols.clear();
   }
   /** (Re)draw one 16×16 chunk of the terrain image. */
   _chunk(cx, cz, noRect) {
-    const S = this.world.size, x0 = cx * 16, z0 = cz * 16, x1 = Math.min(S, x0 + 16), z1 = Math.min(S, z0 + 16);
-    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) this.heights[x + z * S] = this._colHeight(x, z);
-    for (let z = z0; z < Math.min(S, z1 + 1); z++) for (let x = x0; x < Math.min(S, x1 + 1); x++) this._shade(x, z);
-    if (!noRect) { this._grow(x0, z0); this._grow(x1, z1); this._imgDirty = true; }
+    const W = this.W, wx0 = this.wx0, wz0 = this.wz0;
+    const x0 = Math.max(cx * 16, wx0), z0 = Math.max(cz * 16, wz0), x1 = Math.min(wx0 + W, cx * 16 + 16), z1 = Math.min(wz0 + W, cz * 16 + 16);
+    if (x1 <= x0 || z1 <= z0) return;
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) this.heights[(x - wx0) + (z - wz0) * W] = this._colHeight(x, z);
+    for (let z = z0; z < Math.min(wz0 + W, z1 + 1); z++) for (let x = x0; x < Math.min(wx0 + W, x1 + 1); x++) this._shade(x, z);
+    if (!noRect) { this._grow(x0 - wx0, z0 - wz0); this._grow(x1 - 1 - wx0, z1 - 1 - wz0); this._imgDirty = true; }
   }
   _grow(x, z) {
     const r = this._rect || (this._rect = { x0: x, z0: z, x1: x, z1: z });
@@ -76,7 +88,9 @@ export class Minimap {
     return 0;
   }
   _shade(x, z) {
-    const w = this.world, S = w.size, i = x + z * S;
+    const w = this.world, W = this.W, lx = x - this.wx0, lz = z - this.wz0;
+    if (lx < 0 || lz < 0 || lx >= W || lz >= W) return;
+    const i = lx + lz * W;
     const y = this.heights[i];
     const id = w.rawGet(x, y, z);
     let c = COL[id];
@@ -85,7 +99,7 @@ export class Minimap {
       let d = 0; for (let yy = y - 1; yy > 0 && d < 8 && w.rawGet(x, yy, z) === 7; yy--) d++;
       const k = 1.1 - d * 0.07; r *= k; g *= k; b *= k;
     } else {
-      const hw = x > 0 ? this.heights[i - 1] : y, hn = z > 0 ? this.heights[i - S] : y;
+      const hw = lx > 0 ? this.heights[i - 1] : y, hn = lz > 0 ? this.heights[i - W] : y;
       const k = 1 + ((y - hw) + (y - hn)) * 0.07 + (y - w.sea - 4) * 0.008;
       const kk = Math.max(0.6, Math.min(1.35, k));
       r *= kk; g *= kk; b *= kk;
@@ -113,17 +127,24 @@ export class Minimap {
   update(dt) {
     if (!this.world || this.world !== this.game.world) { if (this.game.world) this.rebuild(); else return; }
     this._t += dt;
+    // keep the terrain window around the player / the strategy camera
+    const f = this.game.mode === 'command' ? this.game.renderer?.shadowFocus : this.game.player?.position;
+    if (f && this.W < this.world.size) {
+      const m = 130, lx = f.x - this.wx0, lz = f.z - this.wz0;
+      const canX = (lx < m && this.wx0 > 0) || (lx > this.W - m && this.wx0 < this.world.size - this.W);
+      const canZ = (lz < m && this.wz0 > 0) || (lz > this.W - m && this.wz0 < this.world.size - this.W);
+      if (canX || canZ) this._recenter(f.x, f.z);
+    }
     if (this.dirtyCols.size) {
-      const S = this.world.size;
+      const S = this.world.size, W = this.W;
       let n = 0;
       for (const i of this.dirtyCols) {
         this.dirtyCols.delete(i);
-        const x = i % S, z = (i / S) | 0;
-        this.heights[i] = this._colHeight(x, z);
-        this._shade(x, z);
-        if (x + 1 < S) this._shade(x + 1, z);
-        if (z + 1 < S) this._shade(x, z + 1);
-        this._grow(x, z); this._grow(Math.min(S - 1, x + 1), Math.min(S - 1, z + 1));
+        const x = i % S, z = (i - x) / S, lx = x - this.wx0, lz = z - this.wz0;
+        if (lx < 0 || lz < 0 || lx >= W || lz >= W) continue;
+        this.heights[lx + lz * W] = this._colHeight(x, z);
+        this._shade(x, z); this._shade(x + 1, z); this._shade(x, z + 1);
+        this._grow(lx, lz); this._grow(Math.min(W - 1, lx + 1), Math.min(W - 1, lz + 1));
         if (++n > 400) break;
       }
       this._imgDirty = true;
@@ -162,7 +183,7 @@ export class Minimap {
     const k = px / span;
     const mx = (wx) => (wx - x0) * k, mz = (wz) => (wz - z0) * k;
     x.fillStyle = '#10141c'; x.fillRect(0, 0, px, px);
-    x.drawImage(this.terrain, x0, z0, span, span, 0, 0, px, px);
+    x.drawImage(this.terrain, x0 - this.wx0, z0 - this.wz0, span, span, 0, 0, px, px);
     // night tint
     const nf = g.state.nightFactor || 0;
     if (nf > 0.05) { x.fillStyle = `rgba(10,14,40,${(nf * 0.35).toFixed(3)})`; x.fillRect(0, 0, px, px); }

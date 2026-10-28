@@ -31,8 +31,8 @@ export class ChunkRenderer {
     if (v === undefined) {
       const w = this.world, S = w.size;
       v = w.height;
-      for (let z = cz * CHUNK; z < Math.min(S, cz * CHUNK + CHUNK); z++) for (let x = cx * CHUNK; x < Math.min(S, cx * CHUNK + CHUNK); x++) v = Math.min(v, w.heights[z * S + x]);
-      this._minH.set(k, v);
+      for (let z = cz * CHUNK; z < Math.min(S, cz * CHUNK + CHUNK); z++) for (let x = cx * CHUNK; x < Math.min(S, cx * CHUNK + CHUNK); x++) v = Math.min(v, w.heightAt(x, z));
+      if (w.isGenerated(cx * CHUNK, cz * CHUNK)) this._minH.set(k, v);
     }
     return v;
   }

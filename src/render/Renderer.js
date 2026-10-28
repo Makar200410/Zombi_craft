@@ -242,7 +242,7 @@ export class Renderer {
     if (w && this.game.mode !== 'command') {
       const x = Math.floor(cam.x), z = Math.floor(cam.z);
       if (x >= 0 && z >= 0 && x < w.size && z < w.size) {
-        const depth = w.heights[z * w.size + x] - cam.y;
+        const depth = w.heightAt(x, z) - cam.y;
         target = Math.min(1, Math.max(0, (depth - 5) / 10));
         if (w.format >= 3 && cam.y < 92) hell = 1;
       }

@@ -116,8 +116,8 @@ export class Weather {
     // the tundra is always cold; in the desert light rain dries up before it reaches the ground (and it never snows)
     let coldHere = 0, dryHere = 0;
     if (cx >= 0 && cz >= 0 && cx < W.size && cz < W.size) {
-      const i = cz * W.size + cx, bi = W.biome[i];
-      coldHere = bi === 9 ? 1 : bi === 2 ? Math.min(1, Math.max(0, (W.heights[i] - W.sea - 14) / 8)) : 0;
+      const bi = W.biomeAt(cx, cz);
+      coldHere = bi === 9 ? 1 : bi === 2 ? Math.min(1, Math.max(0, (W.heightAt(cx, cz) - W.sea - 14) / 8)) : 0;
       dryHere = bi === 6 ? 1 : 0;
     }
     this.cold = lerp(this.cold, coldHere, Math.min(1, dt * 0.5));

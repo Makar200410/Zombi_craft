@@ -10,14 +10,16 @@ export const HEIGHT = 64;          // height of worlds made before the deep unde
 export { SEA_LEVEL };
 /**
  * World shapes: 1 = the first worlds (shallow), 2 = biomes and a first layered underground,
- * 3 = a Terraria-deep underground (~320 blocks of caves, caverns and the underworld).
+ * 3 = a Terraria-deep underground (~320 blocks of caves, caverns and the underworld),
+ * 4 = the same, 16× wider (the world is generated and freed chunk by chunk around the player).
  */
 export const WORLD_FORMATS = {
   1: { size: 1216, height: 64, sea: SEA_LEVEL },
   2: { size: 1024, height: 96, sea: 44 },
   3: { size: 1024, height: 384, sea: 320 },
+  4: { size: 16384, height: 384, sea: 320 },      // a Minecraft-scale world (16 × 16 km) with rival villages
 };
-export const WORLD_FORMAT = 3;
+export const WORLD_FORMAT = 4;
 
 const LIGHT_BLOCKING = new Uint8Array(256);
 const EMIT = new Uint8Array(256);
@@ -50,11 +52,10 @@ export class World {
     const N = this.chunksX * this.chunksX;
     this.cols = new Array(N).fill(null);                  // chunk → Uint8Array(256 * height) block ids
     this.lcols = new Array(N).fill(null);                 // chunk → light (hi nibble sky, lo nibble block light)
-    this.top = new Int16Array(size * size);               // highest light-blocking block per column (-1 none)
+    this.meta = new Array(N).fill(null);                  // chunk → {top, h, b}: per column highest light-blocking cell, terrain height, biome
     this.dirty = new Set();                                // section keys 'cx,cz,sy' needing remesh
     this.generated = new Uint8Array(N);                    // chunks whose terrain exists
-    this.heights = new Int16Array(size * size);
-    this.biome = new Uint8Array(size * size);
+    this.loaded = new Set();                               // chunk keys (cz * chunksX + cx) of generated chunks
     this.pending = new Map();                              // chunk key -> [[idx, id]] saved edits waiting for their chunk
     this.gen = null;
     this.damage = new Map();                               // idx -> {dmg, t}
@@ -71,8 +72,23 @@ export class World {
   colAt(x, z, create = false) {
     const k = (z >> 4) * this.chunksX + (x >> 4);
     let c = this.cols[k];
-    if (!c && create) { c = this.cols[k] = new Uint8Array(256 * this.height); this.lcols[k] = new Uint8Array(256 * this.height); }
+    if (!c && create) {
+      c = this.cols[k] = new Uint8Array(256 * this.height); this.lcols[k] = new Uint8Array(256 * this.height);
+      if (!this.meta[k]) this.meta[k] = { top: new Int16Array(256).fill(-1), h: new Int16Array(256), b: new Uint8Array(256) };
+    }
     return c;
+  }
+  // per-column data of generated chunks (0 / -1 elsewhere): highest light-blocking cell, terrain height, biome
+  _meta(x, z) { return (x < 0 || z < 0 || x >= this.size || z >= this.size) ? null : this.meta[(z >> 4) * this.chunksX + (x >> 4)]; }
+  topOf(x, z) { const m = this._meta(x, z); return m ? m.top[(x & 15) + 16 * (z & 15)] : -1; }
+  setTop(x, z, v) { const m = this._meta(x, z); if (m) m.top[(x & 15) + 16 * (z & 15)] = v; }
+  heightAt(x, z) { const m = this._meta(x, z); return m ? m.h[(x & 15) + 16 * (z & 15)] : 0; }
+  biomeAt(x, z) { const m = this._meta(x, z); return m ? m.b[(x & 15) + 16 * (z & 15)] : 0; }
+  /** Terrain height and biome of a column (written by the generators). */
+  setColumn(x, z, h, b) {
+    this.colAt(x, z, true);
+    const m = this._meta(x, z); if (!m) return;
+    const i = (x & 15) + 16 * (z & 15); m.h[i] = h; m.b[i] = b;
   }
   /** Fast block read for integer in-bounds coordinates (0 where nothing was generated). */
   rawGet(x, y, z) {
@@ -130,9 +146,10 @@ export class World {
     const k = cz * this.chunksX + cx;
     if (this.generated[k]) return false;
     if (!this.gen) this.gen = this._makeGen();
-    if (!this.cols[k]) { this.cols[k] = new Uint8Array(256 * this.height); this.lcols[k] = new Uint8Array(256 * this.height); }
+    this.colAt(cx * CHUNK, cz * CHUNK, true);
     this.gen.generateChunk(cx, cz);
     this.generated[k] = 1;
+    this.loaded.add(k);
     const key = cx + ',' + cz;
     const pend = this.pending.get(key);
     if (pend) { for (const [i, id] of pend) this.setIdx(i, id); this.pending.delete(key); }
@@ -152,7 +169,8 @@ export class World {
     const k = cz * this.chunksX + cx;
     if (!this.generated[k]) return false;
     this.generated[k] = 0;
-    this.cols[k] = null; this.lcols[k] = null;
+    this.loaded.delete(k);
+    this.cols[k] = null; this.lcols[k] = null; this.meta[k] = null;
     const key = cx + ',' + cz;
     // the chunk's saved edits wait for it again
     const ch = this.changes;
@@ -178,8 +196,8 @@ export class World {
     if (this.format < 3) return 0;
     const N = this.chunksX, k2 = keepR * keepR, v2 = villageR * villageR;
     let n = 0;
-    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) {
-      if (!this.generated[cz * N + cx]) continue;
+    for (const k of [...this.loaded]) {
+      const cx = k % N, cz = (k - cx) / N;
       const mx = cx * CHUNK + 8, mz = cz * CHUNK + 8;
       if ((mx - px) ** 2 + (mz - pz) ** 2 < k2 || (mx - vx) ** 2 + (mz - vz) ** 2 < v2) continue;
       if (this.unloadChunk(cx, cz)) n++;
@@ -373,7 +391,8 @@ export class World {
   computeAllLight() {
     let x0 = Infinity, z0 = Infinity, x1 = -1, z1 = -1;
     const N = this.chunksX;
-    for (let cz = 0; cz < N; cz++) for (let cx = 0; cx < N; cx++) if (this.generated[cz * N + cx]) {
+    for (const k of this.loaded) {
+      const cx = k % N, cz = (k - cx) / N;
       if (cx < x0) x0 = cx; if (cz < z0) z0 = cz; if (cx > x1) x1 = cx; if (cz > z1) z1 = cz;
     }
     if (x1 < 0) return;
@@ -405,11 +424,11 @@ export class World {
     x0 = Math.max(0, x0); z0 = Math.max(0, z0); x1 = Math.min(size - 1, x1); z1 = Math.min(size - 1, z1);
     if (x1 < x0 || z1 < z0) return;
     const sq = [], bq = [];
-    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) this.top[z * size + x] = this._colTop(x, z);
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) this.setTop(x, z, this._colTop(x, z));
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       const c = this.colAt(x, z);
       if (!c) continue;
-      const lc = this.lcols[(z >> 4) * this.chunksX + (x >> 4)], base = (x & 15) + 16 * (z & 15), t = this.top[z * size + x];
+      const lc = this.lcols[(z >> 4) * this.chunksX + (x >> 4)], base = (x & 15) + 16 * (z & 15), t = this.topOf(x, z);
       for (let y = 0; y < H; y++) {
         const li = base + 256 * y;
         const e = EMIT[c[li]];
@@ -419,12 +438,12 @@ export class World {
     }
     // sky light only needs to spread sideways from columns next to taller neighbours
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
-      const t = this.top[z * size + x];
+      const t = this.topOf(x, z);
       let maxN = t;
-      if (x > x0) maxN = Math.max(maxN, this.top[z * size + x - 1]);
-      if (x < x1) maxN = Math.max(maxN, this.top[z * size + x + 1]);
-      if (z > z0) maxN = Math.max(maxN, this.top[(z - 1) * size + x]);
-      if (z < z1) maxN = Math.max(maxN, this.top[(z + 1) * size + x]);
+      if (x > x0) maxN = Math.max(maxN, this.topOf(x - 1, z));
+      if (x < x1) maxN = Math.max(maxN, this.topOf(x + 1, z));
+      if (z > z0) maxN = Math.max(maxN, this.topOf(x, z - 1));
+      if (z < z1) maxN = Math.max(maxN, this.topOf(x, z + 1));
       for (let y = t + 1; y <= maxN + 1 && y < H; y++) sq.push(x, y, z);
     }
     const seedBorder = (x, y, z) => {
@@ -475,8 +494,8 @@ export class World {
     const x0 = Math.max(0, cx - R), x1 = Math.min(size - 1, cx + R);
     const z0 = Math.max(0, cz - R), z1 = Math.min(size - 1, cz + R);
     // update the top of the changed column; only the part of the box that can change is recomputed
-    const oldTop = this.top[cz * size + cx], newTop = this._colTop(cx, cz);
-    this.top[cz * size + cx] = newTop;
+    const oldTop = this.topOf(cx, cz), newTop = this._colTop(cx, cz);
+    this.setTop(cx, cz, newTop);
     const y0 = Math.max(0, Math.min(cy, oldTop, newTop) - R), y1 = Math.min(H - 1, cy + R);
     const box = [x0, y0, z0, x1, y1, z1];
     const sq = [], bq = [];
@@ -486,7 +505,7 @@ export class World {
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       const c = this.colAt(x, z);
       if (!c) continue;
-      const lc = this.lcols[(z >> 4) * this.chunksX + (x >> 4)], base = (x & 15) + 16 * (z & 15), t = this.top[z * size + x];
+      const lc = this.lcols[(z >> 4) * this.chunksX + (x >> 4)], base = (x & 15) + 16 * (z & 15), t = this.topOf(x, z);
       for (let y = y0; y <= y1; y++) {
         const li = base + 256 * y;
         old[(x - x0) + w * ((z - z0) + d * (y - y0))] = lc[li];

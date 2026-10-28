@@ -129,7 +129,6 @@ export class TerrainGen extends TerrainGenV2 {
   generateChunk(ccx, ccz) {
     const world = this.world, size = world.size, H = world.height, seed = this.seed, SEA = this.sea, L = this.L;
     const x0 = ccx * CH, z0 = ccz * CH, x1 = Math.min(size, x0 + CH), z1 = Math.min(size, z0 + CH);
-    const heights = world.heights, biome = world.biome;
     const blocks = world.colAt(x0, z0, true);
     const idx = (x, y, z) => (x - x0) + 16 * ((z - z0) + 16 * y);
     const inChunk = (x, z) => x >= x0 && z >= z0 && x < x1 && z < z1 && x > 0 && z > 0 && x < size - 1 && z < size - 1;
@@ -138,7 +137,7 @@ export class TerrainGen extends TerrainGenV2 {
     const cols = [];
     for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
       const c = this.column(x, z);
-      heights[z * size + x] = c.h; biome[z * size + x] = c.b;
+      world.setColumn(x, z, c.h, c.b);
       c.zone = this.zone(x, z, c.b);
       cols[(z - z0) * CH + (x - x0)] = c;
     }
@@ -284,7 +283,7 @@ export class TerrainGen extends TerrainGenV2 {
     // surface outcrops in the hills so early iron/coal is visible
     if (rnd() < 40 * this.perChunk * 1.5) {
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);
-      if (inChunk(x, z) && biome[z * size + x] === 2) blocks[idx(x, heights[z * size + x], z)] = rnd() < 0.8 ? B.COAL_ORE : B.IRON_ORE;
+      if (inChunk(x, z) && world.biomeAt(x, z) === 2) blocks[idx(x, world.heightAt(x, z), z)] = rnd() < 0.8 ? B.COAL_ORE : B.IRON_ORE;
     }
     // amethyst geodes
     for (let g = 0; g < 2; g++) {
@@ -362,7 +361,7 @@ export class TerrainGen extends TerrainGenV2 {
         const hr = hash2(x * 3 + dy, z * 5 - dy, seed + 55);
         if (dy === 2 && (Math.abs(dx) + Math.abs(dz) > 1 || hr < 0.3)) continue;
         if (Math.abs(dx) + Math.abs(dz) === 2 && hash2(x, z, seed + 56) < 0.5) continue;
-        const y = heights[z * size + x] + dy;
+        const y = world.heightAt(x, z) + dy;
         if (y >= H - 2) continue;
         for (let yy = y; yy < y + 6 && yy < H; yy++) { const k = idx(x, yy, z); const id = blocks[k]; if (id === B.LOG || id === B.LEAVES || id === B.BIRCH_LOG || id === B.BIRCH_LEAVES || id === B.SPRUCE_LOG || id === B.SPRUCE_LEAVES || id === B.TALL_GRASS) blocks[k] = B.AIR; }
         const roll = hash2(x + dy * 17, z, seed + 57);
