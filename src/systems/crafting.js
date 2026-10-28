@@ -144,7 +144,7 @@ export class Crafting {
         if (ITEMS[r.item]?.kind === 'armor') this.game.player?.equipArmor?.(r.item);
         g.bus.emit('item:unlocked', { id: r.item });
         g.bus.emit('toast', { text: 'Создано: ' + r.name, kind: 'good' });
-        g.audio?.play('level_up', { volume: 0.7 });
+        g.audio?.play('quest_done', { volume: 0.7 });
         this._equip(r.item);
       } else {
         this.queue.push({ id: r.id, left: r.time, total: r.time });

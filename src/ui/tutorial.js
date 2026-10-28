@@ -102,7 +102,7 @@ export class Tutorial {
     this.step = -1;
     try { localStorage.setItem(KEY, '1'); } catch (e) { /* ignore */ }
     this.hide();
-    if (!skipped) { this.ui.toast('Обучение пройдено. Повторить его можно в меню паузы.', 'good'); this.game.audio?.play?.('level_up', { volume: 0.6 }); }
+    if (!skipped) { this.ui.toast('Обучение пройдено. Повторить его можно в меню паузы.', 'good'); this.game.audio?.play?.('quest_done', { volume: 0.6 }); }
   }
   hide() { toggle(this.root, 'show', false); this._glow(null); }
   _glow(el) {

@@ -400,6 +400,28 @@ const SOUND_BUILDERS = {
     }
     return maxD;
   },
+  // soft rewards (quests, finds, new items): a quiet two-note music-box chime instead of a fanfare
+  quest_done(ctx, out, { pitch, now }) {
+    let maxD = 0;
+    [[659.25, 0], [987.77, 0.13]].forEach(([f, dt]) => {
+      const t = now + dt;
+      const a = tone(ctx, out, t, { type: 'sine', freq: f * pitch, duration: 0.9, attack: 0.004, decay: 0.85, gainPeak: 0.11 });
+      const b = tone(ctx, out, t, { type: 'sine', freq: f * 2.76 * pitch, duration: 0.35, attack: 0.002, decay: 0.33, gainPeak: 0.025 });   // bell partial
+      maxD = Math.max(maxD, dt + Math.max(a, b));
+    });
+    return maxD;
+  },
+  // a building level / a new age: a warm, slow major arpeggio that rings out softly
+  upgrade_done(ctx, out, { pitch, now }) {
+    let maxD = 0;
+    [[261.63, 0], [329.63, 0.12], [392, 0.24], [523.25, 0.38]].forEach(([f, dt], i) => {
+      const t = now + dt;
+      const a = tone(ctx, out, t, { type: 'sine', freq: f * pitch, duration: 1.4, attack: 0.02, decay: 1.3, gainPeak: i === 3 ? 0.1 : 0.08 });
+      const b = tone(ctx, out, t, { type: 'triangle', freq: f * 2 * pitch, duration: 0.6, attack: 0.01, decay: 0.55, gainPeak: 0.02 });
+      maxD = Math.max(maxD, dt + Math.max(a, b));
+    });
+    return maxD;
+  },
   level_up(ctx, out, { pitch, now }) {
     let maxD = 0;
     [1, 1.25, 1.5, 2].forEach((r, i) => {

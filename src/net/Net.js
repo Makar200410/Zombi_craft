@@ -162,7 +162,7 @@ export class Net {
           owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0, rivals: g.rivals?.serialize?.(),
         });
         g.bus.emit('toast', { text: `${name} присоединился(ась) к игре!`, kind: 'good' });
-        g.audio?.play('level_up', { volume: 0.5 });
+        g.audio?.play('quest_done', { volume: 0.6 });
         g.bus.emit('net:changed', {});
         break;
       }
@@ -336,7 +336,7 @@ export class Net {
       case 'item':
         g.crafting?.owned.add(m.item); g.crafting?._equip?.(m.item);
         g.bus.emit('toast', { text: 'Создано: ' + (ITEMS[m.item]?.name || m.item), kind: 'good' });
-        g.audio?.play('level_up', { volume: 0.7 });
+        g.audio?.play('quest_done', { volume: 0.7 });
         break;
       case 'toast': g.bus.emit('toast', { text: m.text, kind: m.kind }); break;
       case 'rivals': g.rivals?.deserialize(m.s); g.rivals?._restampLoaded(); break;

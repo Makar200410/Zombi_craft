@@ -611,7 +611,7 @@ export class Village {
     b.refreshMaxHp(); b.hp = b.maxHp;
     this.recalcPop();
     this.toast(`«${b.def.name}» улучшено до ${b.level} уровня!`, 'good');
-    this.game.audio?.play('level_up', { pos: b.center });
+    this.game.audio?.play('upgrade_done', { volume: 0.9 });
     this.celebrate(b);
     if (b.jobSlots) this.autoAssign(b);
     this.bus.emit('building:upgraded', { building: b });

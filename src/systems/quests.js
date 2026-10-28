@@ -211,7 +211,7 @@ export class Quests {
     if (q.reward && Object.keys(q.reward).length) st.addAll(q.reward);
     const rw = Object.entries(q.reward || {}).map(([k, n]) => `+${n} ${(RESOURCE_LABELS[k] || k).toLowerCase()}`).join(', ');
     g.bus.emit('toast', { text: `Задание выполнено: «${q.title}»` + (rw ? `. Награда: ${rw}` : ''), kind: 'good' });
-    g.audio?.play('research_done', { volume: 0.8 });
+    g.audio?.play('quest_done', { volume: 0.8 });
     g.bus.emit('quest:done', { id: q.id });
     const before = new Set(this.active.map(x => x.q));
     this.version++;

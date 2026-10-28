@@ -459,7 +459,7 @@ export class Rivals {
         for (const k of [...this.wars]) { const [a, b] = k.split(':').map(Number); if (a === r.i || b === r.i) this.wars.delete(k); }
         for (const o of this.list) if (o.owner === r.i) o.owner = null;
         g.bus.emit('toast', { text: `«${r.name}» захвачена! Теперь это ваш вассал: каждое утро она платит дань.${prevOwner !== null ? ' Её прежний хозяин в ярости.' : ''}`, kind: 'good' });
-        g.audio?.play('level_up', { volume: 0.9 });
+        g.audio?.play('upgrade_done', { volume: 0.9 });
         if (typeof prevOwner === 'number' && this.list[prevOwner] && this.list[prevOwner].rel !== 'war') this.declareWar(this.list[prevOwner], `«${this.list[prevOwner].name}» объявляет войну за потерю «${r.name}»!`);
         for (const u of this.units.get(r.i) || []) { if (u.type === 'folk') u.peaceful = true; u.target = null; }
       }

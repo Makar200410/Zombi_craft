@@ -81,7 +81,7 @@ export const SAMPLE_GAIN = {
   rifle_shot: 0.7, mg_shot: 0.45, cannon_shot: 0.9, rocket_launch: 0.8, laser_shot: 0.55, explosion: 1,
   fireball_cast: 0.7, fire_impact: 0.6, frost_cast: 0.6, frost_impact: 0.55, lightning: 0.75, heal: 0.6, meteor_fall: 0.9,
   zombie_groan: 0.7, zombie_roar: 0.85, zombie_hurt: 0.6, zombie_die: 0.8, zombie_gib: 0.75, zombie_spit: 0.6, villager_hurt: 0.55, player_hurt: 0.9, death: 0.9,
-  ui_click: 0.5, ui_open: 0.45, ui_close: 0.4, coins: 0.7, research_done: 0.75, build_complete: 0.7, level_up: 0.8, wave_horn: 0.9, wave_cleared: 0.85,
+  ui_click: 0.5, ui_open: 0.45, ui_close: 0.4, coins: 0.7, research_done: 0.75, quest_done: 0.8, upgrade_done: 0.8, build_complete: 0.7, level_up: 0.8, wave_horn: 0.9, wave_cleared: 0.85,
   wind_gust: 0.6, wind_leaves: 0.6, thunder_roll: 1, thunder_far: 0.9,
 };
 /** New sound names without a procedural version fall back to a similar synthesized one while loading. */

@@ -124,7 +124,7 @@ export class Underground {
     g.state.stats.chests = (g.state.stats.chests || 0) + 1;
     g.bus.emit('toast', { text: 'Сундук: ' + parts.join(', '), kind: 'good' });
     g.audio?.play('coins', { pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, volume: 0.9 });
-    g.audio?.play('level_up', { volume: 0.45 });
+    g.audio?.play('quest_done', { volume: 0.5 });
     g.particles?.emit({ pos: { x: x + 0.5, y: y + 0.7, z: z + 0.5 }, count: 30, colors: [0xffe070, 0xfff2b0, 0xffb020], additive: true, speed: 3, dir: { x: 0, y: 3, z: 0 }, gravity: 4, life: 1, size: 0.18 });
   }
 

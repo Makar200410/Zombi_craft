@@ -73,7 +73,7 @@ export function advanceAge(game) {
     if (n) game.bus.emit('toast', { text: 'Город перестраивается в стиле новой эпохи', kind: 'info' });
     if (v.townHall) v.celebrate(v.townHall);
   }
-  game.audio?.play('level_up', { volume: 1 });
+  game.audio?.play('upgrade_done', { volume: 1 });
   game.bus.emit('toast', { text: `Новая эпоха: ${c.age.name}!`, kind: 'good' });
   game.bus.emit('toast', { text: c.age.desc, kind: 'info' });
   game.bus.emit('toast', { text: 'Нежить почуяла вашу силу — следующей ночью будет осада!', kind: 'bad' });
