@@ -84,6 +84,7 @@ export function meshChunk(world, cx, cz, sy, atlas, opts = {}) {
     const shape = SHAPE[id], render = RENDER[id];
     const def = BLOCKS[id];
     if (shape === 2) { if (!(lowDetail && id === B.TALL_GRASS)) crossQuads(x, y, z, id, def); continue; }
+    if (def.noMesh) continue;
     const isLiquid = shape === 3, isLava = id === B.LAVA, isWater = WATER_IDS[id] === 1;
     // water: sloped surface (corner heights like Minecraft) and a flow direction for the animated current
     let flowA = 0, flowS = 0, waterTop = false;

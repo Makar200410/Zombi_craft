@@ -43,6 +43,7 @@ export const KINETIC = {
   [B.BELT]: { role: 'shaft', stress: 0.5 },
   [B.MECH_PISTON]: { role: 'machine', stress: 4 },
   [B.TUNNEL_DRILL]: { role: 'machine', stress: 6 },
+  [B.DYNAMO]: { role: 'machine', stress: 4 },
 };
 export const MECH_HELP = {
   [B.SHAFT]: 'Вал: передаёт вращение соседним механизмам.',

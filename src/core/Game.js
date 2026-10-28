@@ -9,6 +9,7 @@ import { Kinetics } from '../systems/kinetics.js';
 import { Rivals } from '../systems/rivals.js';
 import { Caravans } from '../systems/caravans.js';
 import { Blueprints } from '../systems/blueprints.js';
+import { Electric } from '../systems/electric.js';
 import { Net } from '../net/Net.js';
 import { EventBus } from './events.js';
 import { GameState } from './state.js';
@@ -89,12 +90,13 @@ export class Game {
     this.rivals = new Rivals(this);
     this.caravans = new Caravans(this);
     this.blueprints = new Blueprints(this);
+    this.electric = new Electric(this);
     this.net = new Net(this);
     this.weather = new Weather(this);
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.fluids, this.kinetics, this.rivals, this.caravans, this.blueprints, this.save, this.net];
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.fluids, this.kinetics, this.electric, this.rivals, this.caravans, this.blueprints, this.save, this.net];
     for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.save, this.net, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);

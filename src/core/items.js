@@ -4,7 +4,7 @@
 // projectile: key understood by src/combat/projectiles.js
 // sprite: icon/held-item sprite name drawn by src/art/icons.js (getItemSprite(name) -> 32x32 canvas)
 
-import { BLOCKS, PALETTE, MECHANISMS } from './blocks.js';
+import { BLOCKS, PALETTE, MECHANISMS, ELECTRICS } from './blocks.js';
 
 export const ITEMS = {};
 function item(id, o) { ITEMS[id] = { id, research: null, cooldown: 0.5, damage: 0, range: 3, manaCost: 0, ammo: null, sprite: id, ...o }; }
@@ -59,7 +59,7 @@ export const ARMOR_TIERS = [
 for (const t of ARMOR_TIERS) ARMOR_SLOTS.forEach((slot, i) => item(`armor_${t.id}_${slot}`, { name: t.names[i], kind: 'armor', slot, def: t.def[i], tier: t.id, color: t.color, research: t.research, desc: `Защита +${t.def[i]}` }));
 
 // --- blocks as hotbar items (like Minecraft): building blocks and mechanisms; placing one spends village resources
-for (const id of [...new Set([...PALETTE, ...MECHANISMS])]) {
+for (const id of [...new Set([...PALETTE, ...MECHANISMS, ...ELECTRICS])]) {
   const b = BLOCKS[id];
   if (b) item('blk_' + id, { name: b.label, kind: 'block', blockId: id, minAge: b.minAge || 0, sprite: null });
 }

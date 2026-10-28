@@ -28,6 +28,8 @@ function def(id, name, o = {}) {
     replaceable: !!o.replaceable,     // can be overwritten by placing (air, plants, water)
     tool: o.tool || 'any',            // 'axe' | 'pick' | 'shovel' | 'any' — faster with the right tool
     kinetic: o.kinetic || null,       // mechanisms: 'source' | 'shaft' | 'machine'
+    noMesh: !!o.noMesh,               // a 'model' drawn only by its system (no block cube under it)
+    electric: o.electric || null,     // electricity (see src/systems/electric.js): 'wire' | 'source' | 'store' | 'switch' | 'use'
     minAge: o.minAge || 0,            // age that unlocks placing it
   };
   BLOCKS[id] = b;
@@ -169,6 +171,22 @@ def(122, 'belt', { shape: 'model', label: 'Конвейер', tiles: { top: 'bel
 def(123, 'mech_piston', { shape: 'model', label: 'Механический поршень', tiles: { top: 'piston_top', side: 'piston_side', bottom: 'casing_top' }, hardness: 3, cost: { wood: 4, iron: 4 }, drop: { iron: 2 }, tool: 'pick', kinetic: 'machine', minAge: 3 });
 def(124, 'piston_pole', { label: 'Шток поршня', tiles: { top: 'piston_pole_top', side: 'piston_pole' }, render: 'cutout', hardness: 2, drop: { iron: 1 }, placeable: false, tool: 'pick' });
 def(125, 'tunnel_drill', { label: 'Бур-проходчик', tiles: { top: 'casing_top', side: 'tunnel_drill_side' }, hardness: 4, light: 4, cost: { iron: 12, steel: 2, stone: 6 }, drop: { iron: 4 }, tool: 'pick', kinetic: 'machine', minAge: 4 });
+
+// Electricity (see src/systems/electric.js): cables carry power from dynamos (driven by rotation), solar panels and
+// batteries to defences — turrets, floodlights, gates that close by themselves when the dead come, electric fences.
+def(126, 'cable', { label: 'Медный кабель', tiles: { top: 'cable', side: 'cable' }, render: 'cutout', hardness: 1, cost: { iron: 1 }, drop: { iron: 1 }, tool: 'pick', electric: 'wire', minAge: 4 });
+def(127, 'dynamo', { label: 'Динамо-машина', tiles: { top: 'casing_top', side: 'dynamo_side' }, hardness: 3, cost: { iron: 8, wood: 2 }, drop: { iron: 3 }, tool: 'pick', kinetic: 'machine', electric: 'source', minAge: 4 });
+def(128, 'solar_panel', { label: 'Солнечная панель', tiles: { top: 'solar_top', side: 'casing_side', bottom: 'casing_top' }, hardness: 2, cost: { steel: 4, iron: 4 }, drop: { iron: 2 }, tool: 'pick', electric: 'source', minAge: 7 });
+def(129, 'battery', { label: 'Аккумулятор', tiles: { top: 'battery_top', side: 'battery_side' }, hardness: 3, cost: { iron: 10, gold: 2 }, drop: { iron: 4 }, tool: 'pick', electric: 'store', minAge: 4 });
+def(130, 'switch_off', { label: 'Рубильник', tiles: { top: 'casing_top', side: 'switch_off' }, hardness: 1.5, cost: { iron: 2, wood: 1 }, drop: { iron: 1 }, tool: 'pick', electric: 'switch', minAge: 4 });
+def(131, 'switch_on', { label: 'Рубильник (вкл.)', tiles: { top: 'casing_top', side: 'switch_on' }, hardness: 1.5, drop: { iron: 1 }, placeable: false, tool: 'pick', electric: 'wire', minAge: 4 });
+def(132, 'e_turret', { shape: 'model', noMesh: true, render: 'cutout', label: 'Электротурель', tiles: { top: 'casing_top', side: 'turret_side' }, hardness: 4, cost: { iron: 14, steel: 4 }, drop: { iron: 5 }, tool: 'pick', electric: 'use', minAge: 5 });
+def(133, 'floodlight', { label: 'Прожектор', tiles: { top: 'floodlight_off', side: 'casing_side' }, hardness: 2, cost: { iron: 4, gold: 1 }, drop: { iron: 2 }, tool: 'pick', electric: 'use', minAge: 4 });
+def(134, 'floodlight_on', { label: 'Прожектор (горит)', tiles: { top: 'floodlight_on', side: 'casing_side' }, hardness: 2, light: 15, drop: { iron: 2 }, placeable: false, tool: 'pick', electric: 'use', minAge: 4 });
+def(135, 'gate_closed', { label: 'Автоворота', tiles: { top: 'casing_top', side: 'gate_closed' }, hardness: 8, cost: { iron: 6, steel: 1 }, drop: { iron: 3 }, tool: 'pick', electric: 'use', minAge: 4 });
+def(136, 'gate_open', { label: 'Автоворота (открыты)', tiles: { top: 'gate_open', side: 'gate_open' }, render: 'cutout', solid: false, hardness: 8, drop: { iron: 3 }, placeable: false, tool: 'pick', electric: 'use', minAge: 4 });
+def(137, 'electric_fence', { label: 'Электрозабор', tiles: { top: 'casing_top', side: 'electric_fence' }, render: 'cutout', hardness: 4, cost: { iron: 3 }, drop: { iron: 1 }, tool: 'pick', electric: 'use', minAge: 4 });
+export const ELECTRICS = [B.CABLE, B.DYNAMO, B.SOLAR_PANEL, B.BATTERY, B.SWITCH_OFF, B.E_TURRET, B.FLOODLIGHT, B.GATE_CLOSED, B.ELECTRIC_FENCE];
 
 // Every tile name used by blocks + extra overlay tiles. textures.js must draw all of these.
 export const TILE_NAMES = (() => {

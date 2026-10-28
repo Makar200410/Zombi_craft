@@ -2027,6 +2027,23 @@ GEN.tunnel_drill_side = (p, r) => {
   for (let x = 2; x < 30; x++) { p.set(x, 2, hex(((x >> 2) & 1) ? '#f0c020' : '#202020')); p.set(x, 29, hex(((x >> 2) & 1) ? '#f0c020' : '#202020')); }
 };
 
+// electricity: a copper cable in black insulation, dynamo, solar cells, battery, switch, turret, floodlight, gates, fence
+const COPPER = hexes(['#5a2a10', '#8a4a1c', '#b8682e', '#d88a48', '#f0b070']);
+GEN.cable = (p) => { p.map((x, y) => { const h = y >= 12 && y < 20, v = x >= 12 && x < 20; if (!h && !v) return [0, 0, 0, 0]; const e = (h && (y === 12 || y === 19)) || (v && (x === 12 || x === 19)); return e ? hex('#141414') : ((x + y) % 7 === 0 ? COPPER[4] : hex('#2a2a2a')); }); for (let k = 14; k < 18; k++) { p.set(k, 15, COPPER[3]); p.set(15, k, COPPER[3]); } };
+GEN.dynamo_side = (p, r) => { casingFrame(p, r); for (let y = 6; y < 26; y++) for (let x = 6; x < 26; x++) p.set(x, y, ((x + y) % 4 < 2) ? COPPER[2] : COPPER[3]); for (let x = 6; x < 26; x++) { p.set(x, 15, P.iron[1]); p.set(x, 16, P.iron[1]); } blob(p, 15.5, 15.5, 3, 3, BRASS, {}); };
+GEN.solar_top = (p) => { p.map((x, y) => (x % 8 === 0 || y % 8 === 0) ? P.iron[5] : hex(((x + y) % 9 === 0) ? '#3a6ad8' : (y % 8 < 4 ? '#1a2a6a' : '#203480'))); };
+GEN.battery_top = (p, r) => { casingFrame(p, r); for (const cx of [10, 22]) blob(p, cx, 16, 3, 3, cx < 16 ? hexes(['#600', '#a22', '#e44', '#f88']) : hexes(['#222', '#444', '#666', '#888']), {}); };
+GEN.battery_side = (p, r) => { casingFrame(p, r); for (let y = 6; y < 26; y++) for (let x = 10; x < 22; x++) p.set(x, y, y < 12 ? hex('#303030') : hex(y % 4 ? '#3ad050' : '#2aa040')); };
+const lever = (p, r, on) => { casingFrame(p, r); for (let y = 8; y < 24; y++) for (let x = 12; x < 20; x++) p.set(x, y, hex('#2a2a2a')); for (let k = 0; k < 10; k++) { const yy = on ? 15 - k : 16 + k; p.set(15, yy, P.iron[5]); p.set(16, yy, P.iron[4]); } blob(p, 15.5, on ? 6 : 26, 2.5, 2.5, on ? hexes(['#060', '#0a0', '#2e2', '#8f8']) : hexes(['#600', '#a00', '#e22', '#f88']), {}); };
+GEN.switch_off = (p, r) => lever(p, r, false);
+GEN.switch_on = (p, r) => lever(p, r, true);
+GEN.turret_side = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (let y = 13; y < 19; y++) p.set(x, y, P.iron[1]); blob(p, 15.5, 15.5, 5, 5, P.iron, {}); };
+GEN.floodlight_off = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (let y = 4; y < 28; y++) { const d = Math.hypot(x - 15.5, y - 15.5); if (d < 11) p.set(x, y, hex(d < 8 ? '#6a6e60' : '#9a9e90')); } };
+GEN.floodlight_on = (p, r) => { casingFrame(p, r); for (let x = 4; x < 28; x++) for (let y = 4; y < 28; y++) { const d = Math.hypot(x - 15.5, y - 15.5); if (d < 11) p.set(x, y, hex(d < 5 ? '#ffffff' : d < 8 ? '#fff6c8' : '#f0d890')); } };
+GEN.gate_closed = (p) => { p.map((x, y) => (x < 2 || x > 29 || y < 2 || y > 29) ? P.iron[1] : (x % 8 < 2 ? P.iron[2] : ((y % 10) < 2 ? P.iron[3] : P.iron[4 + ((x + y) % 3 === 0 ? 1 : 0)]))); for (let x = 2; x < 30; x++) { p.set(x, 14, hex(((x >> 2) & 1) ? '#f0c020' : '#202020')); p.set(x, 15, hex(((x >> 2) & 1) ? '#f0c020' : '#202020')); } };
+GEN.gate_open = (p) => { p.map((x, y) => (x < 3 || x > 28 || y < 3) ? P.iron[2] : [0, 0, 0, 0]); };
+GEN.electric_fence = (p) => { p.map((x, y) => (x < 3 || x > 28) ? P.iron[1] : ((y % 8) === 3 ? hex(((x >> 1) & 1) ? '#ffe060' : '#a0a0a0') : [0, 0, 0, 0])); };
+
 // ------------------------------------------------------------------ overlays
 const DESTROY_COUNTS = [3, 6, 10, 15, 21, 28];
 function destroy(p, stage) {

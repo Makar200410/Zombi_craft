@@ -4,6 +4,7 @@
 import { ITEMS, ARMOR_SLOTS, ARMOR_SLOT_NAMES, RESOURCE_LABELS } from '../core/items.js';
 import { BLOCKS } from '../core/blocks.js';
 import { MECH_HELP } from '../systems/kinetics.js';
+import { ELEC_HELP } from '../systems/electric.js';
 import { TECHS } from '../systems/research.js';
 import { AGES } from '../systems/ages.js';
 import { h, img, glyph, glyphImg, itemIcon, clear, toggle, dragScroll } from './dom.js';
@@ -17,12 +18,12 @@ const TABS = [
 ];
 // research of the gunpowder age and later: those weapons go to the «Технологии» tab
 const TECH_RESEARCH = new Set(['gunpowder', 'steam_power', 'machine_guns', 'rocketry', 'ai', 'nanotech']);
-const isTech = (it) => it.kind === 'gun' || (it.kind !== 'armor' && TECH_RESEARCH.has(it.research)) || (it.kind === 'block' && !!(BLOCKS[it.blockId]?.kinetic || BLOCKS[it.blockId]?.minAge));
+const isTech = (it) => it.kind === 'gun' || (it.kind !== 'armor' && TECH_RESEARCH.has(it.research)) || (it.kind === 'block' && !!(BLOCKS[it.blockId]?.kinetic || BLOCKS[it.blockId]?.electric || BLOCKS[it.blockId]?.minAge));
 const KIND_NAMES = { melee: 'Ближний бой', ranged: 'Стрелковое', gun: 'Огнестрельное', spell: 'Магия', tool: 'Инструменты', build: 'Строительство' };
 const KINETIC_NAMES = { source: 'Механизмы: источники', shaft: 'Механизмы: передача', machine: 'Механизмы: машины', undefined: 'Механизмы: корпуса' };
 // what each mechanism does (src/systems/kinetics.js); right-clicking a placed one shows its network
 const MECH_DESC = { casing: 'Корпус для механизмов (декор).' };
-for (const [id, text] of Object.entries(MECH_HELP)) MECH_DESC[BLOCKS[id].name] = text;
+for (const [id, text] of Object.entries({ ...MECH_HELP, ...ELEC_HELP })) MECH_DESC[BLOCKS[id].name] = text;
 
 export class InventoryPanel {
   constructor(ui) {
@@ -84,7 +85,9 @@ export class InventoryPanel {
       ids = ids.filter(id => isTech(ITEMS[id]));
       const out = [['Технологичное оружие', ids.filter(id => ITEMS[id].kind !== 'block')]];
       const blocks = ids.filter(id => ITEMS[id].kind === 'block');
-      for (const k of ['source', 'shaft', 'machine', undefined]) out.push([KINETIC_NAMES[k], blocks.filter(id => (BLOCKS[ITEMS[id].blockId].kinetic || undefined) === k)]);
+      const elec = blocks.filter(id => BLOCKS[ITEMS[id].blockId].electric);
+      for (const k of ['source', 'shaft', 'machine', undefined]) out.push([KINETIC_NAMES[k], blocks.filter(id => !elec.includes(id) && (BLOCKS[ITEMS[id].blockId].kinetic || undefined) === k)]);
+      out.push(['Электричество и оборона', elec]);
       return out;
     }
     ids = ids.filter(id => !isTech(ITEMS[id]));

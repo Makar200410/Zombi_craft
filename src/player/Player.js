@@ -567,6 +567,10 @@ export class Player extends Entity {
         } else if (pressS) {
           if (id === 'blueprint_frame') g.blueprints?.cancel();
           else if (this.target.entity && this.target.entity.faction === 'village') g.bus.emit('select:entity', { entity: this.target.entity });
+          else if (this.target.block && BLOCKS[this.target.block.id]?.electric && g.electric) {
+            const tb = this.target.block;
+            g.bus.emit('toast', { text: g.electric.interact(tb.x, tb.y, tb.z), kind: 'info' });
+          }
           else if (this.target.block && BLOCKS[this.target.block.id]?.kinetic && g.kinetics) {
             const tb = this.target.block;
             g.bus.emit('toast', { text: g.kinetics.interact(tb.x, tb.y, tb.z), kind: 'info' });
