@@ -231,7 +231,11 @@ export class UI {
   openResearch(id) { this._unlockPointer(); this.game.input?.releasePointer?.(); this.research.show(id); }
   onPanelClosed() {}
   _unlockPointer() {
-    if (document.pointerLockElement) { this._intentionalUnlock = performance.now(); try { document.exitPointerLock(); } catch (e) { /* ignore */ } }
+    if (document.pointerLockElement) {
+      this._intentionalUnlock = performance.now();
+      if (this.game.input) this.game.input._intentionalUnlock = true;      // the input system must not take it for Esc either
+      try { document.exitPointerLock(); } catch (e) { /* ignore */ }
+    }
   }
   _lockPointer() {
     const g = this.game;

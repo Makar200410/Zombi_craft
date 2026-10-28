@@ -191,7 +191,8 @@ export class Input {
     if (was && !this.locked) {
       this._mouse.primary = this._mouse.secondary = false;
       const g = this.game;
-      if (!this._intentionalUnlock && g.running && !g.paused && g.mode === 'explore') g.bus.emit('ui:pause-request', {});
+      // losing the mouse means Esc — unless we let it go ourselves or a panel (inventory, crafting …) is open
+      if (!this._intentionalUnlock && g.running && !g.paused && g.mode === 'explore' && !g.ui?.modalOpen) g.bus.emit('ui:pause-request', {});
     }
     this._intentionalUnlock = false;
     this.game.bus.emit('input:lock', { locked: this.locked });

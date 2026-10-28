@@ -215,16 +215,39 @@ export class Game {
     }
   }
 
+  /**
+   * Main-menu backdrop: a slow, steady flight around the village. The height is fixed for the whole circle
+   * (above the tallest thing on it), the camera looks at the town hall, and position and aim are smoothed,
+   * so nothing wobbles with the ground below.
+   */
   _menuCamera(dt) {
-    this.menuOrbit += dt * 0.04;
-    const c = this.world.size / 2;
-    const r = 55;
-    const x = c + Math.cos(this.menuOrbit) * r, z = c + Math.sin(this.menuOrbit) * r;
-    const y = Math.max(this.world.surfaceY(x, z) + 14, 44);
-    this.camera.position.set(x, y, z);
-    this.camera.lookAt(c, 26, c);
-    this.renderer.shadowFocus.set(c, 26, c);
+    const w = this.world, th = this.village?.townHall;
+    const cx = th?.center?.x ?? w.size / 2, cz = th?.center?.z ?? w.size / 2;
+    let m = this._menuShot;
+    if (!m || m.world !== w || Math.abs(m.cx - cx) > 1 || Math.abs(m.cz - cz) > 1) {
+      // survey the circle once: the flight height clears every tree and roof on it
+      const R = 60;
+      let top = 0;
+      for (let k = 0; k < 96; k++) {
+        const a = k / 96 * Math.PI * 2;
+        for (const rr of [R - 10, R, R + 10]) top = Math.max(top, w.surfaceY(cx + Math.cos(a) * rr, cz + Math.sin(a) * rr));
+      }
+      const ground = th ? th.y : w.surfaceY(cx, cz);
+      m = this._menuShot = { world: w, cx, cz, R, ground, height: Math.max(top + 8, ground + 26), pos: null, aim: null };
+    }
+    this.menuOrbit += dt * 0.03;
+    const a = this.menuOrbit;
+    const r = m.R + Math.sin(a * 0.7) * 6;
+    const want = { x: cx + Math.cos(a) * r, y: m.height + Math.sin(a * 0.45) * 3, z: cz + Math.sin(a) * r };
+    const aim = { x: cx + Math.cos(a * 0.37) * 5, y: m.ground + 6 + Math.sin(a * 0.6) * 1.5, z: cz + Math.sin(a * 0.37) * 5 };
+    const k = m.pos ? 1 - Math.exp(-dt * 1.5) : 1;
+    m.pos = m.pos || { ...want }; m.aimP = m.aimP || { ...aim };
+    for (const q of ['x', 'y', 'z']) { m.pos[q] += (want[q] - m.pos[q]) * k; m.aimP[q] += (aim[q] - m.aimP[q]) * k; }
+    this.camera.position.set(m.pos.x, m.pos.y, m.pos.z);
+    this.camera.lookAt(m.aimP.x, m.aimP.y, m.aimP.z);
+    this.renderer.shadowFocus.set(cx, m.ground, cz);
     this.state.timeOfDay = (this.state.timeOfDay + dt / 400) % 1;
+    w.pumpGeneration?.(cx, cz, 180, 3);      // fill in the land around the backdrop while the menu is open
   }
 }
 
