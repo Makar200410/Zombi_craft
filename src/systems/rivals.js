@@ -27,6 +27,8 @@ const PLAN = [
   ['power_plant', 8], ['radar', 9], ['house', 9], ['shield_generator', 10],
 ];
 const TOWERS = new Set(['watchtower', 'cannon_tower', 'tesla_tower', 'turret', 'laser_tower', 'mg_nest']);
+/** Growth paces handed out to the towns (shuffled): how fast each one earns, builds and enters new ages. */
+const DRIVES = [1.8, 1.45, 1.2, 1.0, 0.85, 0.7, 0.55, 0.45];
 const NEAR = 130;           // the town's people exist as entities when the player is this close
 const FAR = 190;            // and are sent home beyond this
 const MAX_DEFENDERS = 9;
@@ -78,8 +80,11 @@ export class Rivals {
     if (!sites || w.format < 4) return;
     const rnd = mulberry32((w.seed ^ 0xa11e5) >>> 0);
     const names = [...NAMES].sort(() => rnd() - 0.5);
+    // towns don't grow alike: each gets its own pace — a couple of thriving ones far ahead, some laggards
+    const drives = DRIVES.slice(0, sites.length).sort(() => rnd() - 0.5);
     sites.forEach((s, k) => {
-      this.list.push({
+      const drive = drives[k] ?? 1;
+      this.list.push({ drive,
         i: k, name: names[k % names.length], x: s.x, z: s.z, y: s.h, color: RIVAL_COLORS[k % RIVAL_COLORS.length],
         aggro: Math.round((0.15 + rnd() * 0.8) * 100) / 100,
         tier: 1, built: 4 + Math.floor(rnd() * 3), wealth: 0, army: 3 + Math.floor(rnd() * 3), pop: 12,
@@ -87,7 +92,12 @@ export class Rivals {
         tierT: 0, warT: 120 + rnd() * 300, battleT: 0,
       });
     });
-    for (const r of this.list) this._recount(r);
+    // the thriving towns start ahead
+    for (const r of this.list) {
+      const head = r.drive >= 1.5 ? 2 : r.drive >= 1.15 ? 1 : 0;
+      if (head) { r.tier += head; r.built = Math.max(r.built, this._eligible(r) - 1); r.army += head * 3; }
+      this._recount(r);
+    }
     if (this.list.length) setTimeout(() => this.game.bus.emit('toast', { text: `Вокруг вашей деревни ${this.list.length} соседних деревень. Они растут, воюют между собой и могут напасть на вас — смотрите «Соседи» (N).`, kind: 'info' }), 25000);
   }
 
@@ -304,7 +314,8 @@ export class Rivals {
 
   _grow(r, dt) {
     const g = this.game, playerTier = Math.min(10, (g.state.age | 0) + 1);
-    r.wealth += (r.pop * 0.05 + r.tier * 0.4) * dt;
+    const drive = r.drive || 1;
+    r.wealth += (r.pop * 0.05 + r.tier * 0.4) * dt * drive;
     // vassals keep a part for their master
     if (r.owner !== null && r.owner !== 'player') { const o = this.list[r.owner]; if (o) { o.wealth += r.wealth * 0.002 * dt; r.wealth *= 1 - 0.002 * dt; } }
     // build the next planned building
@@ -316,14 +327,17 @@ export class Rivals {
     }
     // a new age: never more than one ahead of the player (aggressive towns two)
     r.tierT += dt;
-    const cap = Math.min(10, playerTier + (r.aggro > 0.7 ? 2 : 1));
+    // how far ahead of the player a town may get: the fastest ones three ages, the slowest stay at the player's
+    const lead = drive >= 1.5 ? 3 : drive >= 1.1 ? 2 : drive >= 0.8 ? 1 : 0;
+    const cap = Math.min(10, playerTier + lead + (r.aggro > 0.7 && lead < 3 ? 1 : 0));
+    const ageTime = 360 / drive;
     const tierCost = 200 * r.tier * r.tier;
     // what the town is saving up for (shown in «Соседи»)
     const plan = this._plan(r);
     if (r.built < elig) r.next = { what: BUILDING_TYPES[plan[r.built]?.type]?.name || 'здание', pct: Math.min(99, Math.round(r.wealth / (40 + r.built * 12 * r.tier) * 100)) };
-    else if (r.tier < cap) r.next = { what: 'эпоха «' + (AGES[r.tier]?.name || '') + '»', pct: Math.min(99, Math.round(Math.min(r.wealth / tierCost, r.tierT / 360) * 100)) };
+    else if (r.tier < cap) r.next = { what: 'эпоха «' + (AGES[r.tier]?.name || '') + '»', pct: Math.min(99, Math.round(Math.min(r.wealth / tierCost, r.tierT / ageTime) * 100)) };
     else r.next = { what: 'ждёт, пока вы догоните их по эпохе', pct: null };
-    if (r.built >= elig && r.tier < cap && r.wealth >= tierCost && r.tierT > 360) {
+    if (r.built >= elig && r.tier < cap && r.wealth >= tierCost && r.tierT > ageTime) {
       r.wealth -= tierCost; r.tierT = 0;
       const old = r.tier; r.tier++;
       this._recount(r);
@@ -641,7 +655,7 @@ export class Rivals {
   deserialize(o) {
     if (!o?.list) return;
     this._clearUnits();
-    this.list = o.list.map(r => ({ ...r, raid: null }));
+    this.list = o.list.map((r, k) => ({ ...r, raid: null, drive: r.drive ?? DRIVES[(k * 5 + 3) % DRIVES.length] }));
     this.wars = new Set(o.wars || []);
     this.plans.clear();
     for (const r of this.list) this._recount(r);

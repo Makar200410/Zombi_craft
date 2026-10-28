@@ -58,8 +58,9 @@ export class RivalsPanel {
     for (const m of ms) {
       const r = m.r, [st, col] = STATUS[m.status];
       const foes = R.warsOf(r.i).map(i => R.get(i)?.name).filter(Boolean);
+      const pace = (r.drive || 1) >= 1.4 ? 'процветает' : (r.drive || 1) >= 1.1 ? 'быстро растёт' : (r.drive || 1) >= 0.8 ? 'растёт' : 'отстаёт';
       const lines = [
-        `${AGES[r.tier - 1]?.name || ''} · жителей ${Math.round(r.pop)} · войско ${Math.floor(r.army)}/${r.armyCap} (сила ${Math.round(R.power(r))})`,
+        `${AGES[r.tier - 1]?.name || ''} (${pace}) · жителей ${Math.round(r.pop)} · войско ${Math.floor(r.army)}/${r.armyCap} (сила ${Math.round(R.power(r))})`,
         `${m.dist} блоков на ${m.dir}`,
       ];
       if (r.next) lines.push(r.next.pct === null ? `Развитие: ${r.next.what}` : `Строит: ${r.next.what} — ${r.next.pct}%`);

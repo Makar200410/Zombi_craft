@@ -10,7 +10,8 @@ export const ITEMS = {};
 function item(id, o) { ITEMS[id] = { id, research: null, cooldown: 0.5, damage: 0, range: 3, manaCost: 0, ammo: null, sprite: id, ...o }; }
 
 // --- tools
-item('build_hammer', { name: 'Молот строителя', kind: 'build', desc: 'Ставит блоки из палитры. Тратит ресурсы деревни.' });
+// the builders' hammer: only villagers carry it (the player builds with block items from the inventory)
+item('build_hammer', { name: 'Молот строителя', kind: 'build', hidden: true, desc: 'Инструмент строителей деревни.' });
 item('pickaxe_stone', { name: 'Каменная кирка', kind: 'tool', toolType: 'pick', speed: 2.0, damage: 3, cooldown: 0.35 });
 item('pickaxe_iron', { name: 'Железная кирка', kind: 'tool', toolType: 'pick', speed: 3.5, damage: 4, cooldown: 0.3, research: 'smithing' });
 item('axe_stone', { name: 'Каменный топор', kind: 'tool', toolType: 'axe', speed: 2.2, damage: 5, cooldown: 0.5 });
@@ -63,7 +64,7 @@ for (const id of [...new Set([...PALETTE, ...MECHANISMS])]) {
 }
 
 // Default hotbar layout for a new game (ids may be locked until researched).
-export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'build_hammer', 'bow', 'staff_fire', 'musket', 'staff_frost', 'staff_storm'];
+export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'blk_10', 'bow', 'staff_fire', 'musket', 'staff_frost', 'staff_storm'];
 
 export const RESOURCES = ['wood', 'stone', 'food', 'coal', 'iron_ore', 'iron', 'steel', 'gold_ore', 'gold', 'crystal', 'uranium'];
 export const RESOURCE_LABELS = { wood: 'Дерево', stone: 'Камень', food: 'Еда', iron: 'Железо', coal: 'Уголь', gold: 'Золото', iron_ore: 'Железная руда', gold_ore: 'Золотая руда', crystal: 'Кристаллы маны', steel: 'Сталь', uranium: 'Уран' };

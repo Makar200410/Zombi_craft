@@ -15,7 +15,7 @@ export const STATIONS = {
 };
 
 // Items the player starts with.
-export const STARTING_ITEMS = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'build_hammer'];
+export const STARTING_ITEMS = ['sword_wood', 'pickaxe_stone', 'axe_stone'];
 
 /** kind: 'smelt' (resource → resource, takes time in the furnace queue) | 'item' (unlocks an item for the hotbar) */
 export const RECIPES = [

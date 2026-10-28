@@ -303,6 +303,9 @@ export class Player extends Entity {
     if (Array.isArray(o.pos)) this.position.set(o.pos[0], o.pos[1], o.pos[2]);
     this.velocity.set(0, 0, 0);
     if (Array.isArray(o.hotbar) && o.hotbar.length) this.hotbar = o.hotbar.filter(id => ITEMS[id]);
+    // older saves carried the builder's hammer: blocks from the inventory took its place
+    const hi = this.hotbar.indexOf('build_hammer');
+    if (hi >= 0) this.hotbar[hi] = this.hotbar.includes('blk_10') ? null : 'blk_10';
     if (!this.hotbar.length) this.hotbar = [...DEFAULT_HOTBAR];
     this.selected = Math.min(this.hotbar.length - 1, Math.max(0, o.selected | 0));
     if (typeof o.hp === 'number' && o.hp > 0) this.hp = Math.min(this.maxHp, o.hp);
@@ -354,20 +357,16 @@ export class Player extends Entity {
     for (let i = 0; i < 9; i++) if (input.consumePressed('Digit' + (i + 1)) || input.consumePressed('Numpad' + (i + 1))) this.selectSlot(i);
     if (input.consumePressed('Digit0')) this.selectSlot(9);
     if (input.wheel) {
-      // with the build hammer in hand the wheel picks the block (hold Shift to switch items instead)
-      const pickBlocks = this.itemId === 'build_hammer' && !input.isDown('ShiftLeft') && !input.isDown('ShiftRight');
       // exactly one slot per wheel notch (a notch is ~100 px; touchpads send many small deltas)
       this._wheelAcc += input.wheel;
       const now = this.game.time;
       if (Math.abs(this._wheelAcc) >= 40 && now - (this._wheelAt || 0) > 0.07) {
         const dir = this._wheelAcc > 0 ? 1 : -1;
         this._wheelAcc = 0; this._wheelAt = now;
-        if (pickBlocks) this.cycleBuildBlock(dir); else this.selectSlot(this.selected + dir);
+        this.selectSlot(this.selected + dir);
       } else if (Math.abs(this._wheelAcc) >= 40) this._wheelAcc = 0;
     } else this._wheelAcc *= 0.8;
     if (input.consumePressed('KeyV') || input.consumePressed('F5')) this.toggleView();
-    if (input.consumePressed('KeyR')) this.cycleBuildBlock(input.isDown('ShiftLeft') ? -1 : 1);
-    if (input.consumePressed('KeyF')) this.cycleBuildBlock(-1);
   }
 
   _move(dt, input, cmd) {
@@ -483,9 +482,9 @@ export class Player extends Entity {
     const g = this.game, w = g.world, combat = g.combat, a = input.actions;
     const id = this.itemId, it = this.item;
     const unlocked = id ? this.isUnlocked(id) : true;
-    // a block in hand (Minecraft-style hotbar) places that block; the build hammer places the palette's
+    // a block in hand (Minecraft-style hotbar) places that block
     if (it?.kind === 'block') this.buildBlock = it.blockId;
-    const building = id === 'build_hammer' || it?.kind === 'block';
+    const building = it?.kind === 'block';
     const pressP = a.primary && !this._prevPrimary, releaseP = !a.primary && this._prevPrimary;
     const pressS = a.secondary && !this._prevSecondary;
     this._prevPrimary = a.primary; this._prevSecondary = a.secondary;
@@ -502,7 +501,7 @@ export class Player extends Entity {
     this.target.block = hit && !ent ? hit : (hit && ent && hit.dist < ent.dist ? hit : null);
     this.target.entity = ent ? ent.entity : null;
 
-    // placement preview for the build hammer
+    // placement preview for a block in hand
     let ghost = null;
     if (building && this.target.block) ghost = this._placeCell(this.target.block);
     this.target.place = ghost;
@@ -563,7 +562,7 @@ export class Player extends Entity {
             const tb = this.target.block;
             g.bus.emit('toast', { text: g.kinetics.describe(tb.x, tb.y, tb.z), kind: 'info' });
           }
-          else if (this.target.block) this._hint('Выберите «Молот строителя», чтобы ставить блоки. Верстак, печь, железный блок и магический стол открывают крафт');
+          else if (this.target.block) this._hint('Чтобы строить, положите блок в ячейку через инвентарь (E). Верстак, печь, железный блок и магический стол открывают крафт');
         }
       } else this._placeT = 0;
     }

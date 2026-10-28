@@ -79,7 +79,7 @@ export class InventoryPanel {
   /** Items shown on a tab, grouped: [[groupName, ids[]], ...]. */
   groups(tab) {
     const [, , kinds] = TABS.find(t => t[0] === tab);
-    let ids = Object.keys(ITEMS).filter(id => kinds.includes(ITEMS[id].kind));
+    let ids = Object.keys(ITEMS).filter(id => kinds.includes(ITEMS[id].kind) && !ITEMS[id].hidden);
     if (tab === 'tech') {
       ids = ids.filter(id => isTech(ITEMS[id]));
       const out = [['Технологичное оружие', ids.filter(id => ITEMS[id].kind !== 'block')]];
