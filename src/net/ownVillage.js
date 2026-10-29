@@ -112,9 +112,9 @@ export class OwnVillage {
       // wait for the town's land (its chunks come in around the player, who stands there)
       const r = g.rivals.get(this.town);
       let ok = true;
-      for (let dz = -64; dz <= 64 && ok; dz += 16) for (let dx = -64; dx <= 64 && ok; dx += 16) if (!w.isGenerated(r.x + dx, r.z + dz)) ok = false;
+      for (let dz = -64; dz <= 64 && ok; dz += 16) for (let dx = -64; dx <= 64 && ok; dx += 16) if (dx * dx + dz * dz <= 64 * 64 && !w.isGenerated(r.x + dx, r.z + dz)) ok = false;
       if (ok) this._begin();
-      else w.pumpGeneration?.(r.x, r.z, 80, 4);
+      else w.pumpGeneration?.(r.x, r.z, 96, 4);
       return;
     }
     this._saveT -= dt;
