@@ -92,6 +92,8 @@ CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/ · CC0 — https://cr
 | chicken_*, sheep_*, cow_*, pig_*, pig_death, horse_1, animal_death_* | 0 A.D. — actor/fauna | CC BY-SA 3.0, © Wildfire Games |
 | bird_1–3 | Battle for Wesnoth (data/core/sounds/ambient/birds*) — Karol Nowak | GNU GPL v2+ |
 | amb_night, amb_morning | Battle for Wesnoth (data/core/sounds/ambient) — Lari Nieminen | GNU GPL v2+ |
+| wolf_growl_*, wolf_hurt_*, wolf_die | Battle for Wesnoth (data/core/sounds/wolf-*) — Lari Nieminen | GNU GPL v2+ |
+| bear_roar_*, bear_attack | 0 A.D. — actor/fauna (lion_attack1, lion_select1, lion1), в игре тон понижен | CC BY-SA 3.0, © Wildfire Games |
 
 Перекодированы в OGG Vorbis, голоса животных сведены в моно.
 

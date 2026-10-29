@@ -87,6 +87,11 @@ export const SAMPLES = {
   pig: ['pig_1', 'pig_2'],
   horse: ['horse_1'],
   pig_death: ['pig_death'],
+  wolf_growl: ['wolf_growl_1', 'wolf_growl_2', 'wolf_growl_3'],
+  wolf_hurt: ['wolf_hurt_1', 'wolf_hurt_2'],
+  wolf_die: ['wolf_die'],
+  bear_roar: ['bear_roar_1', 'bear_roar_2'],
+  bear_attack: ['bear_attack'],
   animal_death: ['animal_death_1', 'animal_death_2'],
 };
 /** Relative volume of each recorded sound so they sit well together (files are loudness-normalised). */
@@ -99,10 +104,10 @@ export const SAMPLE_GAIN = {
   zombie_groan: 0.7, zombie_roar: 0.85, zombie_hurt: 0.6, zombie_die: 0.8, zombie_gib: 0.75, zombie_spit: 0.6, villager_hurt: 0.55, player_hurt: 0.9, death: 0.9,
   ui_click: 0.5, ui_open: 0.45, ui_close: 0.4, coins: 0.7, research_done: 0.75, quest_done: 0.8, upgrade_done: 0.8, build_complete: 0.7, level_up: 0.8, wave_horn: 0.9, wave_cleared: 0.85,
   wind_gust: 0.6, wind_leaves: 0.6, thunder_roll: 1, thunder_far: 0.9,
-  amb_morning: 0.55, bird_song: 0.45, chicken: 0.6, sheep: 0.65, cow: 0.7, pig: 0.6, horse: 0.6, pig_death: 0.7, animal_death: 0.7,
+  amb_morning: 0.55, bird_song: 0.45, chicken: 0.6, sheep: 0.65, cow: 0.7, pig: 0.6, horse: 0.6, pig_death: 0.7, animal_death: 0.7, wolf_growl: 0.8, wolf_hurt: 0.7, wolf_die: 0.8, bear_roar: 0.9, bear_attack: 0.9,
 };
 /** New sound names without a procedural version fall back to a similar synthesized one while loading. */
-export const SOUND_ALIAS = { pig_death: 'villager_hurt', animal_death: 'villager_hurt', zombie_roar: 'zombie_groan', zombie_gib: 'hit_zombie', rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
+export const SOUND_ALIAS = { wolf_growl: 'zombie_groan', wolf_hurt: 'zombie_hurt', wolf_die: 'zombie_die', bear_roar: 'zombie_groan', bear_attack: 'zombie_groan', pig_death: 'villager_hurt', animal_death: 'villager_hurt', zombie_roar: 'zombie_groan', zombie_gib: 'hit_zombie', rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
 export const SFX_DIR = 'audio/sfx/';
 
 /** Orchestral soundtrack by Omri Lahav & Wildfire Games (0 A.D.), per mood. */
@@ -141,6 +146,6 @@ export const CREDITS = [
   'Голоса зомби: FuzzyTuesday, mazlyn, bananplyte, tonsil5, PaulMorek (CC0), -sihiL (CC BY 3.0), missozzy, LittleRobotSoundFactory, Audionautics (CC BY) — из звукового пакета CDDA-Soundpacks (Fris0uman); Under7dude, haratman, rubberduck (CC0) — из VoxeLibre/MineClone2. Источники: freesound.org, opengameart.org.',
   'Выстрелы, пулемёт, пушка, ракета, арбалет, монеты, щелчки: Unciv (github.com/yairm210/Unciv) — Deganoth, DylanSmithSound, EvanBoyerman (CC BY 4.0/3.0); pgi, BaDoink, GameWithBepis, TheDJoe93, EathanMarkson, stijn, Breviceps, dave.des, Marregheriti (CC0).',
   'Лазер: Kenney (kenney.nl), CC0 / MIT.',
-  'Звуки природы: птицы и лес днём, река, ферма и рынок, голоса животных — 0 A.D. (© Wildfire Games, CC BY-SA 3.0); птицы, ночь и утро — Battle for Wesnoth: Karol Nowak, Lari Nieminen (GNU GPL v2+).',
+  'Звуки природы: птицы и лес днём, река, ферма и рынок, голоса животных — 0 A.D. (© Wildfire Games, CC BY-SA 3.0); птицы, ночь, утро и волки — Battle for Wesnoth: Karol Nowak, Lari Nieminen (GNU GPL v2+); медведь — рык льва из 0 A.D., тон понижен.',
   'Некоторые короткие звуки синтезируются самой игрой.',
 ];

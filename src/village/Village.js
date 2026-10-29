@@ -955,7 +955,7 @@ export class Village {
   refreshZombies() {
     const out = this.zombies; out.length = 0;
     const rv = this.game.rivals;
-    for (const e of this.game.entities.list) if (!e.dead && e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.atWarWithPlayer(e.rivalId))) out.push(e);
+    for (const e of this.game.entities.list) if (!e.dead && ((e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.atWarWithPlayer(e.rivalId))) || e.predator)) out.push(e);     // wolves and bears too
   }
   nearestZombie(pos, maxDist, los = false) {
     let best = null, bd = maxDist * maxDist;
