@@ -128,7 +128,14 @@ export class OwnVillage {
       this._peopleT = PEOPLE_EVERY;
       const vs = [];
       for (const v of g.village.villagers) if (!v.dead && !v.hidden) vs.push([v.id, v.job, v.seed | 0, v.female ? 1 : 0, +v.position.x.toFixed(2), +v.position.y.toFixed(2), +v.position.z.toFixed(2), +v.yaw.toFixed(2)]);
-      this.net.send({ t: 'pvv', v: vs });
+      // and the dead that come for it (the others see them and can fight them)
+      const zs = [], home = { x: w.homeX, z: w.homeZ };
+      for (const z of g.waves?.zombies || []) {
+        if (z.dead || z.netRemote || z.emergeT > 0 || Math.abs(z.position.x - home.x) > 160 || Math.abs(z.position.z - home.z) > 160) continue;
+        zs.push([z.id, z.type, +z.position.x.toFixed(2), +z.position.y.toFixed(2), +z.position.z.toFixed(2), +z.yaw.toFixed(2), Math.round(z.hp), Math.round(z.maxHp), (z.diving ? 1 : 0) | (z.model?.action === 'attack' ? 2 : 0)]);
+        if (zs.length >= 80) break;
+      }
+      this.net.send({ t: 'pvv', v: vs, z: zs });
     }
   }
 }

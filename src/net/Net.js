@@ -31,6 +31,7 @@ import { advanceAge } from '../systems/ages.js';
 import { OwnVillage } from './ownVillage.js';
 
 export const LAN_PORT = 27015;
+const hashId = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
 const TICK = 0.1;            // snapshot / position rate (s)
 const VIEW = 110;            // undead & villagers sent within this distance of a player
 const PLAYER_COLORS = ['#e8c040', '#40c0ff', '#ff6a5a', '#7aff60', '#d080ff', '#ffa040'];
@@ -209,6 +210,7 @@ export class Net {
         break;
       case 'set': this._remoteSet(id, d.x, d.y, d.z, d.id); break;
       case 'hit': {
+        if (typeof d.id === 'string' && d.id[0] === 'q') { this._forwardHit(d.id, d.dmg, d.kind); break; }
         const z = g.entities.list.find(e => e.id === d.id && e.kind === 'zombie');
         if (z && !z.dead && p) {
           const dir = new THREE.Vector3(z.position.x - p.position.x, 0, z.position.z - p.position.z).normalize();
@@ -220,7 +222,7 @@ export class Net {
       case 'loot': if (p) this._remoteLoot(p, d.res); break;
       case 'vedits': if (p?.role === 'rival') this._ruledEdits(d.b); break;
       case 'pvsave': if (p?.role === 'rival') this._ruledSave(p, d.data); break;
-      case 'pvv': if (p?.role === 'rival') { p.pvv = Array.isArray(d.v) ? d.v.slice(0, 60) : []; p.pvvT = g.time; } break;
+      case 'pvv': if (p?.role === 'rival') { p.pvv = Array.isArray(d.v) ? d.v.slice(0, 60) : []; p.pvz = Array.isArray(d.z) ? d.z.slice(0, 80) : []; p.pvvT = g.time; } break;
       case 'cmd': if (p) this.siege.command(p, d); break;
       case 'vcmd': if (p && p.role === 'hero') this._villageCmd(id, p, d); break;
       case 'bp': if (p) { this._takeBlueprint(d.code, p.playerName); this._sendAll({ t: 'bp', code: d.code, from: p.playerName }); } break;
@@ -312,9 +314,34 @@ export class Net {
         f.setNet(e[4], e[5], e[6], e[7]);
       }
     }
-    for (const [k, f] of this._pvFig) if (!seen.has(k)) { this._pvFig.delete(k); g.entities.remove(f); }
+    for (const [k, f] of this._pvFig) if (k[0] !== 'q' && !seen.has(k)) { this._pvFig.delete(k); g.entities.remove(f); }
+    this._pvUndead();
   }
-  _pvClear(cid) { for (const [k, f] of this._pvFig) if (k.startsWith(cid + ':')) { this._pvFig.delete(k); this.game.entities.remove(f); } }
+  /** Host: the undead attacking the rulers' villages (they live on the rulers' computers), as figures here. */
+  _pvUndead() {
+    const g = this.game, seen = new Set();
+    for (const p of this.players.values()) {
+      if (!p.pvz || g.time - (p.pvvT || 0) > 3) continue;
+      for (const e of p.pvz) {
+        const key = 'q' + p.cid + '_' + e[0];
+        seen.add(key);
+        let z = this._pvFig.get(key);
+        if (!z) {
+          z = new Zombie(g, e[1], { emerge: false, seed: hashId(key), cave: true, sunproof: true });
+          z.netRemote = true; z.netId = key; z.flying = true;
+          z.position.set(e[2], e[3], e[4]);
+          g.entities.add(z);
+          this._pvFig.set(key, z);
+        }
+        z.netPos = z.netPos || new THREE.Vector3();
+        z.netPos.set(e[2], e[3], e[4]); z.netYaw = e[5];
+        z.hp = e[6]; z.maxHp = e[7];
+        if (e[8] & 2 && !z.model.action) z.model.play('attack');
+      }
+    }
+    for (const [k, z] of this._pvFig) if (k[0] === 'q' && !seen.has(k)) { this._pvFig.delete(k); if (z.hp <= 0) z.netDie?.(); else g.entities.remove(z); }
+  }
+  _pvClear(cid) { for (const [k, f] of this._pvFig) if (k.startsWith(cid + ':') || k.startsWith('q' + cid + '_')) { this._pvFig.delete(k); this.game.entities.remove(f); } }
   /** Goods a joined player found (a chest, a hunt): into their side's stores — the host's village or their town. */
   _remoteLoot(p, res) {
     const g = this.game, got = {};
@@ -421,16 +448,17 @@ export class Net {
       const at = p.netPos, ents = [];
       for (const z of zs) {
         if (z.dead || z.emergeT > 0 || Math.abs(z.position.x - at.x) > VIEW || Math.abs(z.position.z - at.z) > VIEW) continue;
-        ents.push([z.id, 'z', z.type, +z.position.x.toFixed(2), +z.position.y.toFixed(2), +z.position.z.toFixed(2), +z.yaw.toFixed(2), Math.round(z.hp), Math.round(z.maxHp), (z.diving ? 1 : 0) | (z.model?.action === 'attack' ? 2 : 0)]);
+        ents.push([z.id, 'z', z.type, +z.position.x.toFixed(2), +z.position.y.toFixed(2), +z.position.z.toFixed(2), +z.yaw.toFixed(2), Math.round(z.hp), Math.round(z.maxHp), (z.diving ? 1 : 0) | (z.model?.action === 'attack' ? 2 : 0), z.rivalId ?? -1]);
       }
       for (const v of vs) {
         if (v.dead || v.hidden || Math.abs(v.position.x - at.x) > VIEW || Math.abs(v.position.z - at.z) > VIEW) continue;
         ents.push([v.id, 'v', v.job, v.seed | 0, v.female ? 1 : 0, +v.position.x.toFixed(2), +v.position.y.toFixed(2), +v.position.z.toFixed(2), +v.yaw.toFixed(2)]);
       }
-      // the other rulers' villagers
+      // the other rulers' villagers, and the dead that come for their villages
       for (const q of this.players.values()) {
         if (q === p || !q.pvv || g.time - (q.pvvT || 0) > 3) continue;
         for (const e of q.pvv) if (Math.abs(e[4] - at.x) <= VIEW && Math.abs(e[6] - at.z) <= VIEW) ents.push(['p' + q.cid + '_' + e[0], 'v', e[1], e[2], e[3], e[4], e[5], e[6], e[7]]);
+        for (const e of q.pvz || []) if (Math.abs(e[2] - at.x) <= VIEW && Math.abs(e[4] - at.z) <= VIEW) ents.push(['q' + q.cid + '_' + e[0], 'z', e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], -1]);
       }
       this._sendTo(p.cid, { ...base, ents, heroes: heroes.filter(h => h[0] !== p.cid) });
     }
@@ -562,7 +590,16 @@ export class Net {
   /** A joined player's block edit (applied locally right away, made real by the host). */
   sendSet(x, y, z, id) { this.send({ t: 'set', x, y, z, id }); }
   /** Damage dealt to an undead shown here (the host applies it). */
-  sendHit(z, amount, kind) { if (z.netId) this.send({ t: 'hit', id: z.netId, dmg: Math.round(amount * 10) / 10, kind }); }
+  sendHit(z, amount, kind) {
+    if (!z.netId) return;
+    if (this.isHost) { this._forwardHit(z.netId, amount, kind); return; }      // the host hit a ruler's undead
+    this.send({ t: 'hit', id: z.netId, dmg: Math.round(amount * 10) / 10, kind });
+  }
+  /** Host: a blow on one of a ruler's own undead ('q<cid>_<id>') goes to that ruler's computer. */
+  _forwardHit(netId, dmg, kind) {
+    const m = /^q(\d+)_(\d+)$/.exec(String(netId));
+    if (m) this._sendTo(+m[1], { t: 'rhit', id: +m[2], dmg: Math.min(500, +dmg || 0), kind: kind || 'phys' });
+  }
 
   _clientMsg(raw) {
     const g = this.game;
@@ -577,6 +614,12 @@ export class Net {
         break;
       }
       case 'snap': this._applySnap(m); break;
+      case 'rhit': {
+        // another player hit one of our village's undead
+        const z = g.waves?.zombies?.find(q => q.id === m.id && !q.dead);
+        if (z) z.damage(m.dmg, null, { kind: m.kind });
+        break;
+      }
       case 'vil': this._applyVillage(m); break;
       case 'hurt': g.player?.damage?.(m.amount, null, { kind: m.kind, fromNet: true }); break;
       case 'item':
@@ -637,7 +680,7 @@ export class Net {
       let px = this.proxies.get(id);
       if (e[1] === 'z') {
         if (!px) {
-          px = new Zombie(g, e[2], { emerge: false, seed: id, cave: true, sunproof: true });
+          px = new Zombie(g, e[2], { emerge: false, seed: typeof id === 'number' ? id : hashId(id), cave: true, sunproof: true, rivalId: e[10] >= 0 ? e[10] : null });
           px.netRemote = true; px.netId = id; px.flying = true;
           px.position.set(e[3], e[4], e[5]); px.yaw = e[6];
           g.entities.add(px);

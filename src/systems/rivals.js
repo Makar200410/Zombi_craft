@@ -126,6 +126,12 @@ export class Rivals {
     return r.owner !== null && this.list[r.owner]?.rel === 'war';
   }
   power(r) { return r.army * (1 + r.tier * 0.35); }
+  /** Is town i an enemy of the village this computer runs? (the host's, or a joined ruler's own town) */
+  foeOfHome(i) {
+    const net = this.game.net, me = net?.ownVillage ? net.siegeTown : 'P';
+    if (i === me || i == null) return false;
+    return me === 'P' ? this.atWarWithPlayer(i) : this.sidesAtWar(me, i);
+  }
   playerDefense() {
     const g = this.game, v = g.village;
     let d = 4 + (g.state.age | 0) * 3;
