@@ -24,7 +24,7 @@ import { JOBS } from '../village/names.js';
 import { B, BLOCKS } from '../core/blocks.js';
 import { encodeChanges, decodeChanges } from '../systems/save.js';
 import { RECIPES } from '../systems/crafting.js';
-import { ITEMS, HORDE_HOTBAR } from '../core/items.js';
+import { ITEMS, HORDE_HOTBAR, DEFAULT_HOTBAR } from '../core/items.js';
 import { Siege, ROLES } from './siege.js';
 import { decodeBlueprint } from '../systems/blueprints.js';
 import { advanceAge } from '../systems/ages.js';
@@ -376,6 +376,18 @@ export class Net {
         case 'auto': V.autoAssign(d.only != null ? V.byId.get(d.only) || null : null); break;
         case 'research': if (!g.research?.start(d.id)) g.bus.emit('toast', { text: g.research?.blockReason?.(d.id) || 'Исследование недоступно', kind: 'bad' }); else g.bus.emit('toast', { text: `${p.playerName} начал(а) исследование`, kind: 'info' }); break;
         case 'rcancel': g.research?.cancel(); break;
+        case 'dip': {
+          // a hero speaks for the host's village too
+          const R = g.rivals, r = R?.get(d.town);
+          const say = (t) => { if (t) g.bus.emit('toast', { text: t, kind: t.includes('отказ') ? 'bad' : 'info' }); };
+          if (d.act === 'war' && r) R.declareWar(r, `${p.playerName} объявил(а) войну «${r.name}»!`, { byHost: true });
+          else if (d.act === 'ally' && r) say(R.propose('P', r.i, 'ally'));
+          else if (d.act === 'peace' && r) say(R.propose('P', r.i, 'peace'));
+          else if (d.act === 'unally' && r) R.breakPact(r.i, 'P');
+          else if (d.act === 'buy' && r) R.offerPeace(r);
+          else if (d.act === 'answer') R?.answer(d.id | 0, !!d.yes, 'host');
+          break;
+        }
         case 'age': advanceAge(g); break;
         case 'wave': if (!g.waves?.startWaveNow()) g.bus.emit('toast', { text: 'Сейчас волну не вызвать', kind: 'bad' }); break;
       }
@@ -468,7 +480,19 @@ export class Net {
     g.chunkRenderer?.buildAll?.();
     w.changes = changes;
     g.state.deserialize(welcome.state || {});
-    if (g.crafting) { g.crafting.owned = new Set([...(g.crafting.owned || []), ...(welcome.owned || [])]); g.crafting.queue = []; }
+    // weapons: everyone starts with the starting ones (nothing carried over from their own games); the host's
+    // village shares what it has with its heroes, a ruler of another town gets back what they had found and made
+    const isRuler = (welcome.role || 'hero') === 'rival';
+    if (g.crafting) {
+      g.crafting.onNewGame();
+      const keep = isRuler ? welcome.pv?.owned : welcome.owned;
+      for (const id of keep || []) g.crafting.owned.add(id);
+    }
+    if (g.player) {
+      const pl = welcome.pv?.player;
+      if (isRuler && pl) { const pos = g.player.position.clone(); g.player.deserialize(pl); g.player.position.copy(pos); }
+      else { g.player.hotbar = [...DEFAULT_HOTBAR]; g.player.armor = {}; g.player._armorLook?.(); g.player.selected = 0; }
+    }
     if (g.waves) g.waves.currentWave = welcome.wave | 0;
     if (welcome.rivals) g.rivals?.deserialize(welcome.rivals);        // the towns are drawn into the chunks as they appear
     g.village?.reset?.();
@@ -482,7 +506,7 @@ export class Net {
     // the friend's computer runs the village, the undead, research and saving
     this._systems = g.systems;
     const ruler = (welcome.role || 'hero') === 'rival';
-    g.systems = ruler ? g.systems.filter(s => s !== g.quests && s !== g.save)          // a ruler's village lives here
+    g.systems = ruler ? g.systems.filter(s => s !== g.save)          // a ruler's village lives here (saved on the host)
       : g.systems.filter(s => s !== g.village && s !== g.waves && s !== g.research && s !== g.quests && s !== g.save);
     // a hero's copy of the village: placement, ghosts and labels (its life runs on the host)
     if (g.village?.mirror) g.systems.push({ update: (dt) => g.village.mirrorUpdate(dt) });

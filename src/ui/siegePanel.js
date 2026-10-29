@@ -112,8 +112,12 @@ export class SiegePanel {
       this._btn(`Нанять (${t.recruit}${unit})`, () => hire(1), gold >= t.recruit),
       this._btn(`Нанять 5 (${t.recruit * 5}${unit})`, () => hire(5), gold >= t.recruit * 5),
     ]));
-    // diplomacy: the host and every town
-    if (t.offers?.length) this.body.append(this._card('#9fe3a0', 'Вам предлагают', t.offers.map(o => `${o.from}: ${o.kind === 'ally' ? 'союз' : 'мир'}`),
+    this.body.append(...this.diplomacy(t));
+  }
+  /** The ruler's treaties: offers to answer, and war, peace or an alliance with the host and every town (also shown in «Соседи»). */
+  diplomacy(t) {
+    const out = [];
+    if (t.offers?.length) out.push(this._card('#9fe3a0', 'Вам предлагают', t.offers.map(o => `${o.from}: ${o.kind === 'ally' ? 'союз' : 'мир'}`),
       t.offers.flatMap(o => [this._btn(`Принять: ${o.kind === 'ally' ? 'союз' : 'мир'} с ${o.from}`, () => this._cmd('answer', { id: o.id, yes: 1 })), this._btn('Отказать', () => this._cmd('answer', { id: o.id, yes: 0 }), false)])));
     const REL = { war: '⚔ война', peace: 'мир', ally: '🤝 союз' };
     const sideCard = (key, name, color, info, rel, extra = []) => {
@@ -128,12 +132,13 @@ export class SiegePanel {
       } else btns.push(this._btn('Расторгнуть союз', () => this._cmd('unally', { town: key }), false));
       return this._card(color, `${name} — ${REL[rel]}`, [info, ...extra], btns);
     };
-    this.body.append(h('div.zc-rv-line', h('b', 'Дипломатия')));
-    this.body.append(sideCard('P', 'Деревня хозяина', '#ffd860', `Эпоха: ${t.host.age}. Хозяин — тоже игрок.`, t.host.rel));
+    out.push(h('div.zc-rv-line', h('b', 'Дипломатия')));
+    out.push(sideCard('P', 'Деревня хозяина', '#ffd860', `Эпоха: ${t.host.age}. Хозяин — тоже игрок.`, t.host.rel));
     for (const o of t.towns) {
       const info = `${AGES[o.tier - 1]?.name || ''} · войско ${o.army}${o.player ? ` · правит игрок ${o.player}` : ' · правит совет (компьютер)'}${o.subject ? ' · чей-то вассал' : ''}`;
-      this.body.append(sideCard(o.i, `«${o.name}»`, o.color, info, o.rel));
+      out.push(sideCard(o.i, `«${o.name}»`, o.color, info, o.rel));
     }
+    return out;
   }
   _techName(id) { return TECHS[id]?.name || id; }
   _horde(H) {

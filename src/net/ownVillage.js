@@ -28,8 +28,10 @@ export class OwnVillage {
       st.researchDone = new Set(s.researchDone || []);
       st.age = s.age | 0;
       Object.assign(st.stats, s.stats || {});
+      st.questsDone = new Set(s.questsDone || []);
     } else {
       st.researchDone = new Set(r.techs || []);
+      st.questsDone = new Set();
       st.age = Math.max(0, r.tier - 1);
       Object.assign(st.resources, { wood: 120, stone: 80, food: 80, gold: 20 + r.tier * 10, iron: r.tier >= 3 ? 20 : 0 });
     }
@@ -100,7 +102,8 @@ export class OwnVillage {
     const g = this.game, st = g.state;
     this.net.send({ t: 'pvsave', data: {
       village: g.village.serialize(), research: g.research?.serialize?.() || null, wave: g.waves?.currentWave | 0,
-      state: { resources: { ...st.resources }, researchDone: [...st.researchDone], age: st.age | 0, stats: { ...st.stats } },
+      owned: [...(g.crafting?.owned || [])], player: g.player?.serialize?.() || null, quests: g.quests?.serialize?.() || null,
+      state: { resources: { ...st.resources }, researchDone: [...st.researchDone], age: st.age | 0, stats: { ...st.stats }, questsDone: [...(st.questsDone || [])] },
       pop: g.village.villagers.filter(x => !x.dead).length,
     } });
   }

@@ -31,6 +31,7 @@ export class RivalsPanel {
     dragScroll(this.body, { x: false, y: true });
     const rr = () => { if (this.open) this.render(); };
     this.game.bus.on('rivals:changed', rr);
+    this.game.bus.on('siege:state', () => { if (this.open && this._ruler) this.render(); });
     this.game.bus.on('resources:changed', () => { if (this.open && this.trade !== null) this.render(); });
     this.game.bus.on('ui:trade', ({ town }) => { this.trade = town; if (this.open) this.render(); else this.show(); });
   }
@@ -51,12 +52,35 @@ export class RivalsPanel {
   }
   toggle() { if (this.open) this.close(); else this.show(); }
 
+  get _ruler() { const n = this.game.net; return !!n?.isClient && n.siegeRole === 'rival'; }
+  /** A diplomatic act of the host's village: done here by the host, sent to the host by a hero who shares it. */
+  _dip(act, town, extra = {}) {
+    const R = this.game.rivals, net = this.game.net;
+    if (net?.isClient) { net.send({ t: 'vcmd', op: 'dip', act, town, ...extra }); this.ui.click(); return; }
+    const r = R.get(town), say = (t) => { if (t) this.ui.toast(t, t.includes('отказ') ? 'bad' : 'info'); };
+    if (act === 'war' && r) R.declareWar(r, `Вы объявили войну «${r.name}»!`, { byHost: true });
+    else if (act === 'ally') say(R.propose('P', town, 'ally'));
+    else if (act === 'peace') say(R.propose('P', town, 'peace'));
+    else if (act === 'unally') R.breakPact(town, 'P');
+    else if (act === 'buy' && r) R.offerPeace(r);
+    else if (act === 'answer') R.answer(extra.id, !!extra.yes, 'host');
+    this.render();
+  }
   render() {
     const R = this.game.rivals;
     clear(this.body);
     if (!R?.active) {
       this.sum.textContent = '';
       this.body.append(h('div.zc-rv-empty', 'В этом мире нет соседних деревень. Они появляются в новых больших мирах.'));
+      return;
+    }
+    // a ruler of another town: their own town's treaties (orders go to the host, see net/siege.js)
+    const net = this.game.net;
+    if (this._ruler) {
+      const t = net.siegeState?.town;
+      this.sum.textContent = t ? `Ваша деревня «${t.name}» · войско ${t.army}` : '';
+      if (!t) { this.body.append(h('div.zc-rv-empty', 'Ждём донесений от хозяина мира…')); return; }
+      this.body.append(...this.ui.siege.diplomacy(t));
       return;
     }
     if (this.trade !== null && R.get(this.trade)) { this.renderTrade(R.get(this.trade)); return; }
@@ -70,8 +94,8 @@ export class RivalsPanel {
         h('div.zc-rv-head', h('b', `${R.sideName(o.from)} предлагает ${o.kind === 'ally' ? 'союз' : 'мир'}`)),
         h('div.zc-rv-line', o.kind === 'ally' ? 'Союзники не воюют друг с другом и вступают в войну, если на одного из вас нападут.' : 'Война закончится, их отряды вернутся домой.'),
         h('div.zc-rv-btns',
-          h('button.zc-chipbtn.sel.ui-i', { onclick: () => { R.answer(o.id, true, 'host'); this.render(); } }, 'Принять'),
-          h('button.zc-chipbtn.ui-i', { onclick: () => { R.answer(o.id, false, 'host'); this.render(); } }, 'Отказать'))));
+          h('button.zc-chipbtn.sel.ui-i', { onclick: () => this._dip('answer', null, { id: o.id, yes: 1 }) }, 'Принять'),
+          h('button.zc-chipbtn.ui-i', { onclick: () => this._dip('answer', null, { id: o.id, yes: 0 }) }, 'Отказать'))));
     }
     for (const m of ms) {
       const r = m.r, [st, col] = STATUS[m.status];
@@ -94,20 +118,19 @@ export class RivalsPanel {
       if (m.status === 'war') lines.push('Чтобы захватить: перебейте защитников и постойте у ратуши 8 секунд.');
       const cs = C?.status(r.i); if (cs) lines.push('🐎 ' + cs);
       const btns = [];
-      if (C?.active && m.status !== 'war') {
+      if (C?.active && m.status !== 'war' && !this.game.net?.isClient) {        // the town's caravans trade with the host's computer
         const why = C.whyNoTrade(r);
         btns.push(h('button.zc-chipbtn.ui-i' + (why ? '.off' : '.sel'), { title: why || 'Купить и продать товары', onclick: () => { if (why) { this.ui.toast(why, 'bad'); return; } this.trade = r.i; this.ui.click(); this.render(); } }, 'Торговать'));
       }
-      const say = (t) => { if (t) this.ui.toast(t, t.includes('отказ') ? 'bad' : 'info'); this.render(); };
       if (m.status === 'peace') {
-        btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => say(R.propose('P', r.i, 'ally')) }, 'Предложить союз'));
-        btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.declareWar(r, `Вы объявили войну «${r.name}»!`, { byHost: true }); this.render(); } }, 'Объявить войну'));
+        btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => this._dip('ally', r.i) }, 'Предложить союз'));
+        btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => this._dip('war', r.i) }, 'Объявить войну'));
       }
-      if (m.status === 'ally') btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.breakPact(r.i, 'P'); this.render(); } }, 'Расторгнуть союз'));
-      if (m.status === 'war' && r.owner === null && r.commander != null) btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => say(R.propose('P', r.i, 'peace')) }, 'Предложить мир'));
+      if (m.status === 'ally') btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => this._dip('unally', r.i) }, 'Расторгнуть союз'));
+      if (m.status === 'war' && r.owner === null && r.commander != null) btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => this._dip('peace', r.i) }, 'Предложить мир'));
       else if (m.status === 'war' && r.owner === null) {
-        if (r.offer) btns.push(h('button.zc-chipbtn.sel.ui-i', { onclick: () => { R.offerPeace(r); this.render(); } }, `Принять мир (+${r.offer.gold} золота)`));
-        else btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.offerPeace(r); this.render(); } }, `Купить мир (${R.peacePrice(r)} золота)`));
+        if (r.offer) btns.push(h('button.zc-chipbtn.sel.ui-i', { onclick: () => this._dip('buy', r.i) }, `Принять мир (+${r.offer.gold} золота)`));
+        else btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => this._dip('buy', r.i) }, `Купить мир (${R.peacePrice(r)} золота)`));
       }
       this.body.append(h('div.zc-rv-town', { style: `border-left-color:${r.color}` },
         h('div.zc-rv-head', h('b', r.name), h('span.zc-rv-st', { style: `color:${col}` }, st)),

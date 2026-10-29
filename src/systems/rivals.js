@@ -523,7 +523,7 @@ export class Rivals {
     }
     this.game.bus.emit('rivals:changed', {});
   }
-  offersFor(a) { const now = this.game.time; this.offers = this.offers.filter(o => now - o.t < 300); return this.offers.filter(o => o.to === a); }
+  offersFor(a) { const now = this.game.time; if (!this.game.net?.isClient) this.offers = this.offers.filter(o => now - o.t < 300); return this.offers.filter(o => o.to === a); }
   /** The player asks for peace: costs gold, and an aggressive town that is winning won't take it. */
   offerPeace(r) {
     const st = this.game.state;
@@ -826,6 +826,7 @@ export class Rivals {
       wars: [...this.wars],
       warCD: this.warCD,
       pacts: [...this.pacts],
+      ...(opts.net ? { offers: this.offers } : {}),
     };
   }
   deserialize(o) {
@@ -835,6 +836,7 @@ export class Rivals {
     this.wars = new Set(o.wars || []);
     this.warCD = Math.max(o.warCD ?? WAR_GAP, 0);
     this.pacts = new Set(o.pacts || []);
+    if (o.offers) this.offers = o.offers;
     for (const r of this.list) { r.hall = r.hall || 1; r.techs = r.techs || []; }
     this.plans.clear();
     for (const r of this.list) this._recount(r);
