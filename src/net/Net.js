@@ -6,7 +6,8 @@
 //   host → player: welcome (world seed + edits + state), blocks (edits), snap (time, resources, nearby undead /
 //                  villagers / other players, 10 times a second), vil (the village: buildings, people, research —
 //                  once a second), hurt, item, toast
-//   player → host: hello, pos (own hero), set (block edit), hit (damage dealt to an undead), craft, cmd (siege orders),
+//   player → host: lobby (which towns are free, before joining), hello, pos (own hero), set (block edit), hit (damage
+//                  dealt to an undead), craft, loot (what a player's chest or hunt gave their side), cmd (siege orders),
 //                  vcmd (a village order: place / upgrade / demolish a building, jobs, research, a new age, a wave)
 // A hero runs the village together with the host: their computer keeps a mirror of it (Village.applyMirror), the
 // command mode works on that mirror and every order is carried out by the host.
@@ -159,7 +160,7 @@ export class Net {
   _hostMsg(raw) {
     const g = this.game;
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
-    if (m.sys === 'join') return;                   // waits for the player's hello
+    if (m.sys === 'join') return;                   // waits for the player's hello (or a lobby question)
     if (m.sys === 'leave') {
       const p = this.players.get(m.id);
       if (p) { this.siege.release(p); this.players.delete(m.id); g.entities.remove(p); g.bus.emit('toast', { text: `${p.playerName} покинул(а) игру`, kind: 'info' }); g.bus.emit('net:changed', {}); }
@@ -169,10 +170,11 @@ export class Net {
     let d; try { d = JSON.parse(m.d); } catch (e) { return; }
     const p = this.players.get(id);
     switch (d.t) {
+      case 'lobby': this._sendTo(id, { t: 'lobby', towns: this.siege.lobbyTowns(), players: [...this.players.values()].map(q => q.playerName) }); break;
       case 'hello': {
         const name = String(d.name || 'Игрок').slice(0, 20);
         const rp = new RemotePlayer(g, this, id, name, PLAYER_COLORS[id % PLAYER_COLORS.length]);
-        const side = this.siege.assign(rp, ROLES[d.role] ? d.role : 'hero');
+        const side = this.siege.assign(rp, ROLES[d.role] ? d.role : 'hero', d.town ?? null);
         const sp0 = this._spawnPoint(), sp = side.spawn ? { x: side.spawn[0], y: side.spawn[1], z: side.spawn[2] } : sp0;
         rp.setNet(sp.x, sp.y, sp.z, 0);
         g.entities.add(rp);
@@ -207,6 +209,7 @@ export class Net {
         break;
       }
       case 'craft': this._remoteCraft(id, d.id); break;
+      case 'loot': if (p) this._remoteLoot(p, d.res); break;
       case 'cmd': if (p) this.siege.command(p, d); break;
       case 'vcmd': if (p && p.role === 'hero') this._villageCmd(id, p, d); break;
       case 'bp': if (p) { this._takeBlueprint(d.code, p.playerName); this._sendAll({ t: 'bp', code: d.code, from: p.playerName }); } break;
@@ -242,16 +245,39 @@ export class Net {
     }
     if (bid === B.AIR) {
       if (!isFinite(BLOCKS[prev]?.hardness)) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
-      w.breakBlock(x, y, z, 'player');
+      // a chest is opened on the joined player's own computer: its weapon is theirs and its goods come as 'loot'
+      w.breakBlock(x, y, z, prev === B.CHEST ? 'remote' : 'player');
       return;
     }
     const b = BLOCKS[bid];
     if (!b || !g.state.spend(b.cost || {})) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
     w.setBlock(x, y, z, bid);
   }
+  /** Goods a joined player found (a chest, a hunt): into their side's stores — the host's village or their town. */
+  _remoteLoot(p, res) {
+    const g = this.game, got = {};
+    for (const k in res || {}) { const n = Math.max(0, Math.min(60, res[k] | 0)); if (n) got[k] = n; }
+    if (!Object.keys(got).length) return;
+    if (p.role === 'hero') g.state.addAll(got);
+    else if (p.role === 'rival') { const r = g.rivals?.get(p.town); if (r) r.wealth += Object.values(got).reduce((a, n) => a + n, 0); }
+  }
   _remoteCraft(id, rid) {
     const g = this.game, r = RECIPES.find(x => x.id === rid);
     if (!r) return;
+    const rp = this.players.get(id);
+    if (rp?.role === 'horde') return;
+    if (rp?.role === 'rival') {
+      // a town's ruler: its own research, paid from its treasury
+      const town = g.rivals?.get(rp.town);
+      if (!town || r.kind !== 'item') { this._sendTo(id, { t: 'toast', text: 'Плавильные печи есть только в деревне хозяина', kind: 'bad' }); return; }
+      const need = ITEMS[r.item]?.research;
+      if (need && !town.techs?.includes(need)) { this._sendTo(id, { t: 'toast', text: 'Нужно исследование вашей деревни', kind: 'bad' }); return; }
+      const cost = Object.values(r.in || {}).reduce((a, n) => a + n, 0);
+      if (town.wealth < cost) { this._sendTo(id, { t: 'toast', text: `В казне не хватает богатства (${cost})`, kind: 'bad' }); return; }
+      town.wealth -= cost;
+      this._sendTo(id, { t: 'item', item: r.item });
+      return;
+    }
     if (!g.state.canAfford(r.in)) { this._sendTo(id, { t: 'toast', text: 'В деревне не хватает ресурсов', kind: 'bad' }); return; }
     if (r.kind === 'item' && !g.crafting.researched(r.item)) { this._sendTo(id, { t: 'toast', text: 'Нужно исследование', kind: 'bad' }); return; }
     g.state.spend(r.in);
@@ -288,7 +314,6 @@ export class Net {
         case 'auto': V.autoAssign(d.only != null ? V.byId.get(d.only) || null : null); break;
         case 'research': if (!g.research?.start(d.id)) g.bus.emit('toast', { text: g.research?.blockReason?.(d.id) || 'Исследование недоступно', kind: 'bad' }); else g.bus.emit('toast', { text: `${p.playerName} начал(а) исследование`, kind: 'info' }); break;
         case 'rcancel': g.research?.cancel(); break;
-        case 'loot': g.state.add('food', Math.max(0, Math.min(6, d.food | 0))); break;      // game hunted by a hero
         case 'age': advanceAge(g); break;
         case 'wave': if (!g.waves?.startWaveNow()) g.bus.emit('toast', { text: 'Сейчас волну не вызвать', kind: 'bad' }); break;
       }
@@ -333,7 +358,22 @@ export class Net {
 
   // ================================================================ joining
   /** Joins a friend's game at "ip[:port]". progress(p, text) shows loading. Returns {ok, reason}. */
-  async join(addr, name, progress = () => {}, role = 'hero') {
+  /** Asks the host at addr which towns can be led (before joining). Returns {ok, towns, players} or {ok:false, reason}. */
+  async lobby(addr) {
+    addr = String(addr || '').trim().replace(/^(https?|wss?):\/\//, '').replace(/\/.*$/, '');
+    if (!addr) return { ok: false, reason: 'Введите адрес' };
+    if (!addr.includes(':')) addr += ':' + LAN_PORT;
+    let ws;
+    try { ws = new WebSocket(`ws://${addr}/zc?role=client`); } catch (e) { return { ok: false, reason: 'Не удалось подключиться' }; }
+    return new Promise((resolve) => {
+      const done = (v) => { clearTimeout(tm); try { ws.close(); } catch (e) { /* ignore */ } resolve(v); };
+      const tm = setTimeout(() => done({ ok: false, reason: 'Хозяин не ответил' }), 8000);
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'lobby' }));
+      ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.t === 'lobby') done({ ok: true, towns: m.towns || [], players: m.players || [] }); else if (m.t === 'nohost') done({ ok: false, reason: 'На этом компьютере мир ещё не открыт для сети' }); };
+      ws.onerror = () => done({ ok: false, reason: 'Не удалось подключиться к ' + addr });
+    });
+  }
+  async join(addr, name, progress = () => {}, role = 'hero', town = null) {
     const g = this.game;
     if (this.active) this.stop();
     addr = String(addr || '').trim().replace(/^(https?|wss?):\/\//, '').replace(/\/.*$/, '');
@@ -347,7 +387,7 @@ export class Net {
       this.ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.t === 'welcome' || m.t === 'nohost') { clearTimeout(tm); resolve(m); } };
       this.ws.onclose = () => { clearTimeout(tm); resolve(null); };
       this.myName = name || 'Игрок';
-      this.ws.send(JSON.stringify({ t: 'hello', name: name || 'Игрок', role }));
+      this.ws.send(JSON.stringify({ t: 'hello', name: name || 'Игрок', role, town }));
     });
     if (!welcome || welcome.t !== 'welcome') { try { this.ws?.close(); } catch (e) { /* ignore */ } this.ws = null; return { ok: false, reason: welcome?.t === 'nohost' ? 'На этом компьютере мир ещё не открыт для сети' : 'Хозяин не ответил' }; }
     // the host's world: same seed, plus every edit made in it
@@ -384,7 +424,7 @@ export class Net {
     if (p) { p.revive?.(); p.position.set(...welcome.spawn); p.velocity.set(0, 0, 0); }
     const hello = {
       hero: 'Вы в мире друга! Деревня у вас общая: стройте, улучшайте, назначайте жителей и ведите исследования в «Командовании» (Tab), исследуйте мир и сражайтесь.',
-      rival: 'Вы — командир соседней деревни и в войне с хозяином! Откройте «Командование» (G): нанимайте воинов, шлите отряды, а ночью держите оборону от мёртвых.',
+      rival: 'Вы правите своей деревней! «Командование» (G): стройте, улучшайте ратушу, изучайте технологии, ведите деревню в новые эпохи, нанимайте войско, объявляйте войны и заключайте союзы. Ночью мёртвые придут и к вам.',
       horde: 'Вы — Повелитель нежити! Ваша панель внизу — это мертвецы: выберите цифрой 1–9 и кликните ЛКМ по земле, чтобы поднять его там. Тёмная сила копится сама (ночью втрое быстрее). G — командование: призыв ночи и группы по 5.',
     };
     g.bus.emit('toast', { text: hello[this.siegeRole] || hello.hero, kind: 'good' });
@@ -450,8 +490,16 @@ export class Net {
         break;
       case 'toast': g.bus.emit('toast', { text: m.text, kind: m.kind }); break;
       case 'rivals': g.rivals?.deserialize(m.s); g.rivals?._restampLoaded(); break;
+      case 'techs': if (this.siegeRole === 'rival') g.state.researchDone = new Set(m.techs || []); break;
       case 'siege':
         this.siegeState = m;
+        if (m.role === 'rival' && m.town) {
+          // a ruler's own town: its research opens their recipes, its treasury is what they have
+          g.state.researchDone = new Set(m.town.techs || []);
+          for (const k in g.state.resources) g.state.resources[k] = 0;
+          g.state.resources.gold = m.town.wealth;
+          g.bus.emit('resources:changed', { resources: g.state.resources });
+        }
         if (m.spawn && g.village) g.village.netSpawn = new THREE.Vector3(...m.spawn);      // the lord rises near the host (by day in a cave)
         g.bus.emit('siege:state', m);
         break;
@@ -474,8 +522,10 @@ export class Net {
   }
   _applySnap(m) {
     const g = this.game, st = g.state;
-    st.timeOfDay = m.tod; st.day = m.day; st.age = m.age;
-    if (m.res) { for (const k in st.resources) st.resources[k] = 0; Object.assign(st.resources, m.res); g.bus.emit('resources:changed', { resources: st.resources }); }
+    st.timeOfDay = m.tod; st.day = m.day;
+    const own = this.siegeRole === 'hero';          // a ruler of another town keeps their own age and treasury
+    if (own) st.age = m.age;
+    if (m.res && own) { for (const k in st.resources) st.resources[k] = 0; Object.assign(st.resources, m.res); g.bus.emit('resources:changed', { resources: st.resources }); }
     if (g.waves) g.waves.currentWave = m.wave;
     if (m.weather && g.weather && g.weather.type !== m.weather) g.weather.set(m.weather);
     // undead and villagers near us

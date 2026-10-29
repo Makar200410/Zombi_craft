@@ -151,19 +151,34 @@ export class Menus {
     // the side to play: a hero of the host's village, or against it (siege mode)
     let role = 'hero';
     try { role = localStorage.getItem('zc_net_role') || 'hero'; } catch (e) { /* ignore */ }
-    const SIDES = [['hero', 'Герой деревни', 'Защищаете деревню вместе с хозяином'], ['rival', 'Командир соседей', 'Ведёте армию соседней деревни на хозяина; ночью мёртвые идут и на вас'], ['horde', 'Повелитель нежити', 'Поднимаете мёртвых и штурмуете деревню хозяина']];
+    const SIDES = [['hero', 'Деревня хозяина', 'Правите деревней вместе с хозяином: общие здания, жители и исследования'], ['rival', 'Своя деревня', 'Выбираете одну из деревень мира и правите ею сами: стройка, ратуша, исследования, эпохи, войско, войны и союзы с другими игроками. Ночью мёртвые идут и на вас'], ['horde', 'Повелитель нежити', 'Поднимаете мёртвых и штурмуете деревню хозяина']];
     const roleHint = h('div.zc-note');
     const roleRow = h('div.zc-cats');
     const paint = () => { for (const b of roleRow.children) b.classList.toggle('sel', b.dataset.role === role); roleHint.textContent = SIDES.find(x => x[0] === role)[2]; };
     for (const [id, label] of SIDES) roleRow.append(h('button.zc-chipbtn.ui-i', { 'data-role': id, onclick: () => { role = id; this.game.audio?.play?.('ui_click'); paint(); } }, label));
     paint();
+    const fail = (reason) => { this.showMain('net'); setTimeout(() => { const e2 = this.card?.querySelector('.zc-note.warn'); if (e2) e2.textContent = reason; }, 0); };
+    const enter = async (a, n, town = null) => {
+      const prog = this.showLoading('Подключение…');
+      const r = await this.game.net.join(a, n, prog, role, town);
+      if (r.ok) { this.hide(); this.ui._setState?.('play'); }
+      else fail(r.reason);
+    };
     const go = async () => {
       const a = addrIn.value.trim(), n = nameIn.value.trim() || 'Игрок';
       try { localStorage.setItem('zc_net_addr', a); localStorage.setItem('zc_net_name', n); localStorage.setItem('zc_net_role', role); } catch (e) { /* ignore */ }
-      const prog = this.showLoading('Подключение…');
-      const r = await this.game.net.join(a, n, prog, role);
-      if (r.ok) { this.hide(); this.ui._setState?.('play'); }
-      else { this.showMain('net'); setTimeout(() => { const e2 = this.card?.querySelector('.zc-note.warn'); if (e2) e2.textContent = r.reason; }, 0); }
+      if (role !== 'rival') { enter(a, n); return; }
+      // your own village: ask the host which ones are free, and pick
+      err.textContent = 'Спрашиваем хозяина, какие деревни свободны…';
+      const L = await this.game.net.lobby(a);
+      if (!L.ok) { err.textContent = L.reason; return; }
+      if (!L.towns.length) { err.textContent = 'В мире хозяина нет других деревень (они есть только в больших мирах)'; return; }
+      clear(c);
+      c.append(h('h2.zc-h', 'Выберите деревню'),
+        h('p.zc-note', `В игре: хозяин${L.players.length ? ', ' + L.players.join(', ') : ''}. Чем ближе деревня к хозяину, тем раньше вы встретитесь.`),
+        ...L.towns.map(t => h('button.zc-btn.ui-i' + (t.free ? '' : '.off'), { style: `border-left:6px solid ${t.color}`, disabled: !t.free, onclick: () => enter(a, n, t.i) },
+          h('span', h('b', `«${t.name}»`), h('small', ` — ${t.age} · жителей ${t.pop} · войско ${t.army} · ${t.dist} блоков от хозяина${t.taken ? ` · правит ${t.taken}` : t.free ? '' : ' · под чужой властью'}`)))),
+        h('div.zc-row.end', this.btn('Назад', () => this.page('net'), 'ghost')));
     };
     c.append(
       h('p.zc-note', 'Играйте вместе в одной Wi-Fi сети: один открывает свой мир, остальные подключаются к нему как герои — исследуют, строят и сражаются в том же мире.'),

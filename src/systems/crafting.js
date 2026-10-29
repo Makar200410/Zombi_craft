@@ -126,6 +126,13 @@ export class Crafting {
       if (!this.researched(r.item)) return { ok: false, reason: 'Нужно исследование', locked: true };
     }
     if (!this.stations().has(r.station)) return { ok: false, reason: 'Нужна станция: ' + STATIONS[r.station].name, station: true };
+    const net = this.game.net;
+    if (net?.isClient && net.siegeRole === 'rival') {
+      // a town's ruler pays from the treasury (see Net._remoteCraft)
+      const need = Object.values(r.in || {}).reduce((a, n) => a + n, 0);
+      if (r.kind !== 'item') return { ok: false, reason: 'Только в деревне хозяина', station: true };
+      return (net.siegeState?.town?.wealth || 0) >= need ? { ok: true } : { ok: false, reason: `Нужно ${need} богатства`, poor: true };
+    }
     if (!st.canAfford(r.in)) return { ok: false, reason: 'Не хватает ресурсов', poor: true };
     return { ok: true };
   }
