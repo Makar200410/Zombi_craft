@@ -10,7 +10,9 @@
 //                  dealt to an undead), craft, loot (what a player's chest or hunt gave their side), cmd (siege orders),
 //                  vcmd (a village order: place / upgrade / demolish a building, jobs, research, a new age, a wave)
 // A hero runs the village together with the host: their computer keeps a mirror of it (Village.applyMirror), the
-// command mode works on that mirror and every order is carried out by the host.
+// command mode works on that mirror and every order is carried out by the host. A ruler of another town runs a real
+// village of their own on their computer (see ownVillage.js): its block edits (vedits), saves (pvsave) and people
+// (pvv) come to the host, who shows those people to everyone else.
 // A joining player picks a side (see siege.js): a hero of the village, the commander of a rival town, or the lord
 // of the dead.
 import * as THREE from 'three';
@@ -22,12 +24,14 @@ import { JOBS } from '../village/names.js';
 import { B, BLOCKS } from '../core/blocks.js';
 import { encodeChanges, decodeChanges } from '../systems/save.js';
 import { RECIPES } from '../systems/crafting.js';
-import { ITEMS, HORDE_HOTBAR } from '../core/items.js';
+import { ITEMS, HORDE_HOTBAR, DEFAULT_HOTBAR } from '../core/items.js';
 import { Siege, ROLES } from './siege.js';
 import { decodeBlueprint } from '../systems/blueprints.js';
 import { advanceAge } from '../systems/ages.js';
+import { OwnVillage } from './ownVillage.js';
 
 export const LAN_PORT = 27015;
+const hashId = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
 const TICK = 0.1;            // snapshot / position rate (s)
 const VIEW = 110;            // undead & villagers sent within this distance of a player
 const PLAYER_COLORS = ['#e8c040', '#40c0ff', '#ff6a5a', '#7aff60', '#d080ff', '#ffa040'];
@@ -98,7 +102,11 @@ export class Net {
     this.siege = new Siege(this);
     this.siegeRole = 'hero';    // a joined player's side
     this.siegeState = null;
+    this.own = new OwnVillage(this);
+    this._pvFig = new Map();    // host: figures of the joined rulers' villagers ('cid:id' -> NetFigure)
   }
+  /** A joined ruler running their own village here. */
+  get ownVillage() { return this.isClient && this.own.active; }
   get isHost() { return this.role === 'host'; }
   get isClient() { return this.role === 'client'; }
   get active() { return !!this.role; }
@@ -117,7 +125,7 @@ export class Net {
     }
     g.bus.on('rivals:changed', () => {
       if (!this.isHost || this._rivT) return;
-      this._rivT = setTimeout(() => { this._rivT = null; if (this.isHost) this._sendAll({ t: 'rivals', s: g.rivals?.serialize?.() }); }, 1500);
+      this._rivT = setTimeout(() => { this._rivT = null; if (this.isHost) this._sendAll({ t: 'rivals', s: g.rivals?.serialize?.({ net: true }) }); }, 1500);
     });
   }
 
@@ -163,7 +171,7 @@ export class Net {
     if (m.sys === 'join') return;                   // waits for the player's hello (or a lobby question)
     if (m.sys === 'leave') {
       const p = this.players.get(m.id);
-      if (p) { this.siege.release(p); this.players.delete(m.id); g.entities.remove(p); g.bus.emit('toast', { text: `${p.playerName} покинул(а) игру`, kind: 'info' }); g.bus.emit('net:changed', {}); }
+      if (p) { this.siege.release(p); this.players.delete(m.id); g.entities.remove(p); this._pvClear(m.id); g.bus.emit('toast', { text: `${p.playerName} покинул(а) игру`, kind: 'info' }); g.bus.emit('net:changed', {}); }
       return;
     }
     const id = m.from;
@@ -182,7 +190,8 @@ export class Net {
         this._sendTo(id, {
           t: 'welcome', you: id, seed: g.world.seed, size: g.world.size, format: g.world.format, role: side.role, town: side.town ?? null,
           changes: encodeChanges(g.world.changes || new Map()), state: g.state.serialize(), spawn: [sp.x, sp.y, sp.z],
-          owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0, rivals: g.rivals?.serialize?.(),
+          owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0, rivals: g.rivals?.serialize?.({ net: true }),
+          pv: side.role === 'rival' ? g.rivals?.get(side.town)?.pvData || null : null,
           vil: side.role === 'hero' ? this._villageSnap() : null,
         });
         g.bus.emit('toast', { text: `${name} присоединился(ась) к игре!`, kind: 'good' });
@@ -201,6 +210,7 @@ export class Net {
         break;
       case 'set': this._remoteSet(id, d.x, d.y, d.z, d.id); break;
       case 'hit': {
+        if (typeof d.id === 'string' && d.id[0] === 'q') { this._forwardHit(d.id, d.dmg, d.kind); break; }
         const z = g.entities.list.find(e => e.id === d.id && e.kind === 'zombie');
         if (z && !z.dead && p) {
           const dir = new THREE.Vector3(z.position.x - p.position.x, 0, z.position.z - p.position.z).normalize();
@@ -210,6 +220,9 @@ export class Net {
       }
       case 'craft': this._remoteCraft(id, d.id); break;
       case 'loot': if (p) this._remoteLoot(p, d.res); break;
+      case 'vedits': if (p?.role === 'rival') this._ruledEdits(d.b); break;
+      case 'pvsave': if (p?.role === 'rival') this._ruledSave(p, d.data); break;
+      case 'pvv': if (p?.role === 'rival') { p.pvv = Array.isArray(d.v) ? d.v.slice(0, 60) : []; p.pvz = Array.isArray(d.z) ? d.z.slice(0, 80) : []; p.pvvT = g.time; } break;
       case 'cmd': if (p) this.siege.command(p, d); break;
       case 'vcmd': if (p && p.role === 'hero') this._villageCmd(id, p, d); break;
       case 'bp': if (p) { this._takeBlueprint(d.code, p.playerName); this._sendAll({ t: 'bp', code: d.code, from: p.playerName }); } break;
@@ -231,6 +244,13 @@ export class Net {
     // the lord of the dead can't touch the world; a town's commander builds with his town's wealth
     if (rp?.role === 'horde') { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
     const town = rp?.role === 'rival' ? g.rivals?.get(rp.town) : null;
+    if (town && rp.role === 'rival') {
+      // a ruler's own village pays for its blocks on their computer
+      if (bid === B.AIR) { if (!isFinite(BLOCKS[prev]?.hardness)) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; } w.breakBlock(x, y, z, 'remote'); return; }
+      if (!BLOCKS[bid]) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
+      w.setBlock(x, y, z, bid);
+      return;
+    }
     if (town) {
       const sum = (o) => Object.values(o || {}).reduce((a, n) => a + n, 0);
       if (bid === B.AIR) {
@@ -253,6 +273,75 @@ export class Net {
     if (!b || !g.state.spend(b.cost || {})) { this._sendTo(id, { t: 'blocks', b: [x, y, z, prev] }); return; }
     w.setBlock(x, y, z, bid);
   }
+  /** A ruler's village rebuilt many blocks at once (stamped buildings, a new age's restyle). */
+  _ruledEdits(b) {
+    const w = this.game.world;
+    if (!Array.isArray(b)) return;
+    for (let i = 0; i + 3 < b.length && i < 240000; i += 4) {
+      const x = b[i] | 0, y = b[i + 1] | 0, z = b[i + 2] | 0, id = b[i + 3] | 0;
+      if (BLOCKS[id] && w.inBounds(x, y, z)) w.setBlock(x, y, z, id);
+    }
+  }
+  /** What a ruler's computer keeps of their village: saved with the host's world, in the town's record. */
+  _ruledSave(p, data) {
+    const r = this.game.rivals?.get(p.town);
+    if (!r || r.commander !== p.cid || !data) return;
+    r.pvData = data;
+    const age = data.state?.age | 0;
+    if (age + 1 > r.tier) { r.tier = Math.min(10, age + 1); this.game.rivals._recount(r); }
+    r.techs = Array.isArray(data.state?.researchDone) ? data.state.researchDone.slice(0, 64) : r.techs;
+    if (data.pop) r.pop = Math.max(4, data.pop * 2);
+  }
+  /** Host: the joined rulers' villagers, shown as figures near the host's hero. */
+  _pvFigures() {
+    const g = this.game, me = g.player?.position, seen = new Set();
+    for (const p of this.players.values()) {
+      if (!p.pvv || g.time - (p.pvvT || 0) > 3) continue;
+      for (const e of p.pvv) {
+        if (!me || Math.abs(e[4] - me.x) > VIEW || Math.abs(e[6] - me.z) > VIEW) continue;
+        const key = p.cid + ':' + e[0];
+        seen.add(key);
+        let f = this._pvFig.get(key);
+        if (!f) {
+          const J = JOBS[e[1]] || JOBS.idle;
+          let skin = null; try { skin = villagerSkin(e[1], e[2]); } catch (er) { skin = null; }
+          if (!skin) { skin = document.createElement('canvas'); skin.width = skin.height = 64; }
+          f = new NetFigure(g, { kind: 'netvillager', faction: 'neutral', skin, height: e[3] ? 1.74 : 1.8, hat: J.hat, hatColor: J.hatColor });
+          try { f.model.setHeld(J.tool && J.tool !== 'build_hammer' ? J.tool : null); } catch (er) { /* ignore */ }
+          g.entities.add(f);
+          this._pvFig.set(key, f);
+        }
+        f.setNet(e[4], e[5], e[6], e[7]);
+      }
+    }
+    for (const [k, f] of this._pvFig) if (k[0] !== 'q' && !seen.has(k)) { this._pvFig.delete(k); g.entities.remove(f); }
+    this._pvUndead();
+  }
+  /** Host: the undead attacking the rulers' villages (they live on the rulers' computers), as figures here. */
+  _pvUndead() {
+    const g = this.game, seen = new Set();
+    for (const p of this.players.values()) {
+      if (!p.pvz || g.time - (p.pvvT || 0) > 3) continue;
+      for (const e of p.pvz) {
+        const key = 'q' + p.cid + '_' + e[0];
+        seen.add(key);
+        let z = this._pvFig.get(key);
+        if (!z) {
+          z = new Zombie(g, e[1], { emerge: false, seed: hashId(key), cave: true, sunproof: true });
+          z.netRemote = true; z.netId = key; z.flying = true;
+          z.position.set(e[2], e[3], e[4]);
+          g.entities.add(z);
+          this._pvFig.set(key, z);
+        }
+        z.netPos = z.netPos || new THREE.Vector3();
+        z.netPos.set(e[2], e[3], e[4]); z.netYaw = e[5];
+        z.hp = e[6]; z.maxHp = e[7];
+        if (e[8] & 2 && !z.model.action) z.model.play('attack');
+      }
+    }
+    for (const [k, z] of this._pvFig) if (k[0] === 'q' && !seen.has(k)) { this._pvFig.delete(k); if (z.hp <= 0) z.netDie?.(); else g.entities.remove(z); }
+  }
+  _pvClear(cid) { for (const [k, f] of this._pvFig) if (k.startsWith(cid + ':') || k.startsWith('q' + cid + '_')) { this._pvFig.delete(k); this.game.entities.remove(f); } }
   /** Goods a joined player found (a chest, a hunt): into their side's stores — the host's village or their town. */
   _remoteLoot(p, res) {
     const g = this.game, got = {};
@@ -311,9 +400,22 @@ export class Net {
         case 'assign': { const v = vil(d.v); if (v) V.assign(v, d.b != null ? V.byId.get(d.b) || null : null, d.job || null); break; }
         case 'setjob': { const v = vil(d.v); if (v) V.setJob(v, d.job); break; }
         case 'builders': V.setBuilderCount(d.n | 0); break;
+        case 'trade': V.exchange(String(d.give), String(d.get), d.n | 0); break;
         case 'auto': V.autoAssign(d.only != null ? V.byId.get(d.only) || null : null); break;
         case 'research': if (!g.research?.start(d.id)) g.bus.emit('toast', { text: g.research?.blockReason?.(d.id) || 'Исследование недоступно', kind: 'bad' }); else g.bus.emit('toast', { text: `${p.playerName} начал(а) исследование`, kind: 'info' }); break;
         case 'rcancel': g.research?.cancel(); break;
+        case 'dip': {
+          // a hero speaks for the host's village too
+          const R = g.rivals, r = R?.get(d.town);
+          const say = (t) => { if (t) g.bus.emit('toast', { text: t, kind: t.includes('отказ') ? 'bad' : 'info' }); };
+          if (d.act === 'war' && r) R.declareWar(r, `${p.playerName} объявил(а) войну «${r.name}»!`, { byHost: true });
+          else if (d.act === 'ally' && r) say(R.propose('P', r.i, 'ally'));
+          else if (d.act === 'peace' && r) say(R.propose('P', r.i, 'peace'));
+          else if (d.act === 'unally' && r) R.breakPact(r.i, 'P');
+          else if (d.act === 'buy' && r) R.offerPeace(r);
+          else if (d.act === 'answer') R?.answer(d.id | 0, !!d.yes, 'host');
+          break;
+        }
         case 'age': advanceAge(g); break;
         case 'wave': if (!g.waves?.startWaveNow()) g.bus.emit('toast', { text: 'Сейчас волну не вызвать', kind: 'bad' }); break;
       }
@@ -332,6 +434,7 @@ export class Net {
     if (!this.players.size) return;
     this._vilT = (this._vilT || 0) + 1;
     if (this._vilT >= 10 || (this._vilDirty && this._vilT >= 3)) this._sendVillage();
+    this._pvFigures();
     const st = g.state;
     this._resT = (this._resT || 0) + 1;
     const base = { t: 'snap', tod: +st.timeOfDay.toFixed(4), day: st.day, age: st.age | 0, wave: g.waves?.currentWave | 0, weather: g.weather?.type };
@@ -346,11 +449,17 @@ export class Net {
       const at = p.netPos, ents = [];
       for (const z of zs) {
         if (z.dead || z.emergeT > 0 || Math.abs(z.position.x - at.x) > VIEW || Math.abs(z.position.z - at.z) > VIEW) continue;
-        ents.push([z.id, 'z', z.type, +z.position.x.toFixed(2), +z.position.y.toFixed(2), +z.position.z.toFixed(2), +z.yaw.toFixed(2), Math.round(z.hp), Math.round(z.maxHp), (z.diving ? 1 : 0) | (z.model?.action === 'attack' ? 2 : 0)]);
+        ents.push([z.id, 'z', z.type, +z.position.x.toFixed(2), +z.position.y.toFixed(2), +z.position.z.toFixed(2), +z.yaw.toFixed(2), Math.round(z.hp), Math.round(z.maxHp), (z.diving ? 1 : 0) | (z.model?.action === 'attack' ? 2 : 0), z.rivalId ?? -1]);
       }
       for (const v of vs) {
         if (v.dead || v.hidden || Math.abs(v.position.x - at.x) > VIEW || Math.abs(v.position.z - at.z) > VIEW) continue;
         ents.push([v.id, 'v', v.job, v.seed | 0, v.female ? 1 : 0, +v.position.x.toFixed(2), +v.position.y.toFixed(2), +v.position.z.toFixed(2), +v.yaw.toFixed(2)]);
+      }
+      // the other rulers' villagers, and the dead that come for their villages
+      for (const q of this.players.values()) {
+        if (q === p || !q.pvv || g.time - (q.pvvT || 0) > 3) continue;
+        for (const e of q.pvv) if (Math.abs(e[4] - at.x) <= VIEW && Math.abs(e[6] - at.z) <= VIEW) ents.push(['p' + q.cid + '_' + e[0], 'v', e[1], e[2], e[3], e[4], e[5], e[6], e[7]]);
+        for (const e of q.pvz || []) if (Math.abs(e[2] - at.x) <= VIEW && Math.abs(e[4] - at.z) <= VIEW) ents.push(['q' + q.cid + '_' + e[0], 'z', e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], -1]);
       }
       this._sendTo(p.cid, { ...base, ents, heroes: heroes.filter(h => h[0] !== p.cid) });
     }
@@ -400,7 +509,19 @@ export class Net {
     g.chunkRenderer?.buildAll?.();
     w.changes = changes;
     g.state.deserialize(welcome.state || {});
-    if (g.crafting) { g.crafting.owned = new Set([...(g.crafting.owned || []), ...(welcome.owned || [])]); g.crafting.queue = []; }
+    // weapons: everyone starts with the starting ones (nothing carried over from their own games); the host's
+    // village shares what it has with its heroes, a ruler of another town gets back what they had found and made
+    const isRuler = (welcome.role || 'hero') === 'rival';
+    if (g.crafting) {
+      g.crafting.onNewGame();
+      const keep = isRuler ? welcome.pv?.owned : welcome.owned;
+      for (const id of keep || []) g.crafting.owned.add(id);
+    }
+    if (g.player) {
+      const pl = welcome.pv?.player;
+      if (isRuler && pl) { const pos = g.player.position.clone(); g.player.deserialize(pl); g.player.position.copy(pos); }
+      else { g.player.hotbar = [...DEFAULT_HOTBAR]; g.player.armor = {}; g.player._armorLook?.(); g.player.selected = 0; }
+    }
     if (g.waves) g.waves.currentWave = welcome.wave | 0;
     if (welcome.rivals) g.rivals?.deserialize(welcome.rivals);        // the towns are drawn into the chunks as they appear
     g.village?.reset?.();
@@ -413,13 +534,16 @@ export class Net {
     this.heroes = new Map();
     // the friend's computer runs the village, the undead, research and saving
     this._systems = g.systems;
-    g.systems = g.systems.filter(s => s !== g.village && s !== g.waves && s !== g.research && s !== g.quests && s !== g.save);
+    const ruler = (welcome.role || 'hero') === 'rival';
+    g.systems = ruler ? g.systems.filter(s => s !== g.save)          // a ruler's village lives here (saved on the host)
+      : g.systems.filter(s => s !== g.village && s !== g.waves && s !== g.research && s !== g.quests && s !== g.save);
     // a hero's copy of the village: placement, ghosts and labels (its life runs on the host)
     if (g.village?.mirror) g.systems.push({ update: (dt) => g.village.mirrorUpdate(dt) });
     this.ws.onmessage = (ev) => this._clientMsg(ev.data);
     this.ws.onclose = () => { if (this.isClient) this._leave('Связь с хозяином потеряна'); };
     g.begin({ loaded: true });
     if (welcome.vil) this._applyVillage(welcome.vil);
+    if (ruler && this.own.start(welcome.town, welcome.pv)) { g.village.netSpawn = null; g.systems.push({ update: (dt) => this.own.update(dt) }); }
     const p = g.player;
     if (p) { p.revive?.(); p.position.set(...welcome.spawn); p.velocity.set(0, 0, 0); }
     const hello = {
@@ -437,6 +561,7 @@ export class Net {
   }
   _leave(why) {
     const g = this.game;
+    this.own.stop();
     if (this._ownHotbar && g.player) { g.player.hotbar = this._ownHotbar; this._ownHotbar = null; g.bus.emit('hotbar:changed', {}); }
     this.siegeRole = 'hero'; this.siegeState = null; g.bus.emit('siege:role', { role: 'hero' });
     for (const e of this.proxies?.values() || []) g.entities.remove(e);
@@ -466,7 +591,16 @@ export class Net {
   /** A joined player's block edit (applied locally right away, made real by the host). */
   sendSet(x, y, z, id) { this.send({ t: 'set', x, y, z, id }); }
   /** Damage dealt to an undead shown here (the host applies it). */
-  sendHit(z, amount, kind) { if (z.netId) this.send({ t: 'hit', id: z.netId, dmg: Math.round(amount * 10) / 10, kind }); }
+  sendHit(z, amount, kind) {
+    if (!z.netId) return;
+    if (this.isHost) { this._forwardHit(z.netId, amount, kind); return; }      // the host hit a ruler's undead
+    this.send({ t: 'hit', id: z.netId, dmg: Math.round(amount * 10) / 10, kind });
+  }
+  /** Host: a blow on one of a ruler's own undead ('q<cid>_<id>') goes to that ruler's computer. */
+  _forwardHit(netId, dmg, kind) {
+    const m = /^q(\d+)_(\d+)$/.exec(String(netId));
+    if (m) this._sendTo(+m[1], { t: 'rhit', id: +m[2], dmg: Math.min(500, +dmg || 0), kind: kind || 'phys' });
+  }
 
   _clientMsg(raw) {
     const g = this.game;
@@ -481,6 +615,12 @@ export class Net {
         break;
       }
       case 'snap': this._applySnap(m); break;
+      case 'rhit': {
+        // another player hit one of our village's undead
+        const z = g.waves?.zombies?.find(q => q.id === m.id && !q.dead);
+        if (z) z.damage(m.dmg, null, { kind: m.kind });
+        break;
+      }
       case 'vil': this._applyVillage(m); break;
       case 'hurt': g.player?.damage?.(m.amount, null, { kind: m.kind, fromNet: true }); break;
       case 'item':
@@ -493,7 +633,7 @@ export class Net {
       case 'techs': if (this.siegeRole === 'rival') g.state.researchDone = new Set(m.techs || []); break;
       case 'siege':
         this.siegeState = m;
-        if (m.role === 'rival' && m.town) {
+        if (m.role === 'rival' && m.town && !this.ownVillage) {
           // a ruler's own town: its research opens their recipes, its treasury is what they have
           g.state.researchDone = new Set(m.town.techs || []);
           for (const k in g.state.resources) g.state.resources[k] = 0;
@@ -522,11 +662,16 @@ export class Net {
   }
   _applySnap(m) {
     const g = this.game, st = g.state;
-    st.timeOfDay = m.tod; st.day = m.day;
+    // a ruler's village keeps its own clock (its nights start its waves), set right only when it drifts
+    if (!this.ownVillage || Math.abs(st.timeOfDay - m.tod) > 0.01) {
+      if (this.ownVillage && st.timeOfDay < 0.78 && m.tod >= 0.78 && m.tod - st.timeOfDay < 0.3) { st.timeOfDay = m.tod; g.bus.emit('time:dusk', { day: st.day }); }
+      st.timeOfDay = m.tod;
+    }
+    st.day = m.day;
     const own = this.siegeRole === 'hero';          // a ruler of another town keeps their own age and treasury
     if (own) st.age = m.age;
     if (m.res && own) { for (const k in st.resources) st.resources[k] = 0; Object.assign(st.resources, m.res); g.bus.emit('resources:changed', { resources: st.resources }); }
-    if (g.waves) g.waves.currentWave = m.wave;
+    if (g.waves && !this.ownVillage) g.waves.currentWave = m.wave;
     if (m.weather && g.weather && g.weather.type !== m.weather) g.weather.set(m.weather);
     // undead and villagers near us
     const seen = new Set();
@@ -536,7 +681,7 @@ export class Net {
       let px = this.proxies.get(id);
       if (e[1] === 'z') {
         if (!px) {
-          px = new Zombie(g, e[2], { emerge: false, seed: id, cave: true, sunproof: true });
+          px = new Zombie(g, e[2], { emerge: false, seed: typeof id === 'number' ? id : hashId(id), cave: true, sunproof: true, rivalId: e[10] >= 0 ? e[10] : null });
           px.netRemote = true; px.netId = id; px.flying = true;
           px.position.set(e[3], e[4], e[5]); px.yaw = e[6];
           g.entities.add(px);

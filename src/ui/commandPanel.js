@@ -1,8 +1,10 @@
 // Command mode (Clash-of-Clans style) UI: tab bar, build menu, villagers & jobs, placement bar, inspectors.
 import { TECHS } from '../systems/research.js';
 import { AGES, ageOf, checkNextAge, advanceAge } from '../systems/ages.js';
+import { MARKET_VALUE } from '../village/Village.js';
+import { RESOURCE_LABELS } from '../core/items.js';
 import {
-  h, img, glyph, glyphImg, buildingIcon, costRow, clear, setText, setStyle, toggle, fmtNum,
+  h, img, glyph, glyphImg, buildingIcon, costRow, clear, setText, setStyle, toggle, fmtNum, resourceIcon,
   BUILDING_TYPES, BUILDING_ORDER, JOB_LABELS, JOB_PLURAL, JOB_ORDER, jobIcon, STATE_LABELS, clamp, hscroll,
 } from './dom.js';
 
@@ -42,6 +44,7 @@ export class CommandPanel {
       tb('people', 'Жители', glyph('people')),
       tb('research', 'Исследования', glyph('flask')),
       tb('craft', 'Крафт', glyph('hammer')),
+      tb('mechbook', 'Механизмы', glyph('book')),
       this.waveTab);
 
     // build sheet
@@ -101,6 +104,7 @@ export class CommandPanel {
     this.ui.click();
     if (id === 'research') { this.closeTab(true); this.ui.openResearch(); return; }
     if (id === 'craft') { this.closeTab(true); this.ui.craft.show(); return; }
+    if (id === 'mechbook') { this.closeTab(true); this.ui.mechBook.show(); return; }
     if (id === 'wave') { this.callWave(); return; }
     if (this.tab === id) { this.closeTab(); return; }
     this.cancelPlacement(true);
@@ -418,6 +422,26 @@ export class CommandPanel {
     else if (s.ref.kind === 'villager') this._inspectVillager(el, s.ref);
     else this._inspectOther(el, s.ref);
   }
+  /** The market's exchange: pick what to give and what to get, swap 1 / 5 / 10 at the market's (dear) rate. */
+  _marketBox() {
+    const vil = this.game.village, st = this.game.state;
+    const mk = this._mk || (this._mk = { give: 'food', get: 'gold' });
+    const GOODS = Object.keys(MARKET_VALUE);
+    const box = h('div.zc-ins-market');
+    const draw = () => {
+      clear(box);
+      const chips = (sel, on) => h('div.zc-cats', ...GOODS.map(k => h('button.zc-chipbtn.ui-i' + (k === sel ? '.sel' : ''), { title: RESOURCE_LABELS[k] || k, onclick: () => { on(k); this.ui.click(); draw(); } },
+        img(resourceIcon(k)), ' ', String(Math.floor(st.resources[k] || 0)))));
+      const rate = vil.exchangeRate(mk.give, mk.get);
+      box.append(h('div.zc-field-lbl', 'Обмен на рынке'),
+        h('small', 'Отдать:'), chips(mk.give, (k) => { mk.give = k; }),
+        h('small', 'Получить:'), chips(mk.get, (k) => { mk.get = k; }),
+        h('div.zc-note', rate ? `Курс: ${rate} «${RESOURCE_LABELS[mk.give] || mk.give}» за 1 «${RESOURCE_LABELS[mk.get] || mk.get}». Рынок берёт большую наценку; улучшайте его, чтобы курс стал лучше.` : 'Выберите разные товары.'),
+        rate ? h('div.zc-row', ...[1, 5, 10].map(n => h('button.zc-btn.small.ui-i', { disabled: (st.resources[mk.give] || 0) < rate * n, onclick: () => { if (vil.exchange(mk.give, mk.get, n)) { this.ui.click(); setTimeout(draw, 150); } } }, h('span.zc-btn-lbl', `+${n} за ${rate * n}`)))) : null);
+    };
+    draw();
+    return box;
+  }
   _head(icon, title, sub, badge) {
     return h('div.zc-ins-head', h('div.zc-ins-ico', img(icon)), h('div.zc-ins-title', h('b', title), sub ? h('small', sub) : null),
       badge || null, this.closeBtn(() => this.deselect(true)));
@@ -440,6 +464,7 @@ export class CommandPanel {
     const jobsBox = this._ins.jobs = h('div.zc-ins-jobs');
     el.append(jobsBox);
     this._renderBuildingJobs(b);
+    if (b.type === 'market' && b.state === 'complete' && this.game.village?.exchange) el.append(this._ins.market = this._marketBox());
     const btns = h('div.zc-row.zc-ins-actions');
     const vil = this.game.village;
     if (b.type === 'laboratory') btns.append(h('button.zc-btn.primary.small.ui-i', { onclick: () => { this.ui.click(); this.ui.openResearch(); } }, img(glyph('flask'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Исследования')));

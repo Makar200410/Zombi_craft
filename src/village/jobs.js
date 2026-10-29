@@ -356,9 +356,9 @@ function* minerBrain(v) {
       // ore finds: iron is scarce in a small mine and grows with the mine's level (+30% per level)
       const r = rnd();
       const lucky = game.state.researchDone.has('mining') ? 1.5 : 1, lvl = 1 + 0.3 * ((mine.level || 1) - 1);
-      const pC = 0.2 * lucky, pI = pC + 0.07 * lvl * lucky, pG = pI + 0.03 * lvl * lucky, pX = pG + 0.02 * lucky;
+      const pC = 0.2 * lucky, pI = pC + 0.08 * lvl * lucky, pG = pI + 0.05 * lvl * lucky, pX = pG + 0.03 * lucky;
       if (r < pC) v.addCarry('coal', 1); else if (r < pI) v.addCarry('iron_ore', 1); else if (r < pG) v.addCarry('gold_ore', 1); else if (r < pX) v.addCarry('crystal', 1);
-      if (game.state.researchDone.has('nuclear') && rnd() < 0.07) v.addCarry('uranium', 1);
+      if (game.state.researchDone.has('nuclear') && rnd() < 0.1 * lvl) v.addCarry('uranium', 1);
       continue;
     }
     const key = t.x + ',' + t.y + ',' + t.z;
@@ -385,7 +385,14 @@ function* minerBrain(v) {
         const n = (k === 'iron_ore' || k === 'gold_ore') ? 1 + (rnd() < 0.12 * (lvl - 1) ? 1 : 0) : drop[k];
         v.addCarry(k, n);
       }
-      if (id === B.STONE) { const r = rnd(), lucky = game.state.researchDone.has('mining') ? 1.5 : 1; if (r < 0.08 * lucky) v.addCarry('coal', 1); else if (r < (0.08 + 0.025 * lvl) * lucky) v.addCarry('iron_ore', 1); }
+      if (id === B.STONE || id === B.DARK_STONE) {
+        // even a shallow mine turns up the valuable ores now and then: gold, mana crystals and (once nuclear
+        // physics is known) uranium — more of them as the mine is upgraded
+        const r = rnd(), lucky = game.state.researchDone.has('mining') ? 1.5 : 1;
+        const pC = 0.08 * lucky, pI = pC + 0.03 * lvl * lucky, pG = pI + 0.015 * lvl * lucky, pX = pG + 0.008 * lvl * lucky;
+        if (r < pC) v.addCarry('coal', 1); else if (r < pI) v.addCarry('iron_ore', 1); else if (r < pG) v.addCarry('gold_ore', 1); else if (r < pX) v.addCarry('crystal', 1);
+        if (game.state.researchDone.has('nuclear') && rnd() < 0.025 * lvl) v.addCarry('uranium', 1);
+      }
     }
     v.release(rel);
   }
@@ -794,8 +801,8 @@ function* gunnerBrain(v) {
   }
 }
 
-/** Merchant: tends a market stall and sells surplus goods for gold. */
-const TRADES = [['food', 80, 10], ['wood', 120, 12], ['stone', 150, 15], ['coal', 60, 8]];
+/** Merchant: tends a market stall and sells surplus goods for gold — dearly: gold is hard to come by. */
+const TRADES = [['food', 80, 25], ['wood', 120, 30], ['stone', 150, 35], ['coal', 60, 15]];
 function* merchantBrain(v) {
   const game = v.game, vil = v.village;
   v.updateTool();
@@ -810,11 +817,12 @@ function* merchantBrain(v) {
     const deal = TRADES.find(([k, keep]) => (res[k] || 0) > keep);
     if (!deal) { v.task = 'Ждёт покупателей: нет излишков'; yield* v.wait(6); continue; }
     v.task = 'Торгует на рынке';
-    yield* v.work('harvest', 8 / v.workSpeed, 0.8);
-    const [k, keep, n] = deal;
-    if ((res[k] || 0) <= keep) continue;
-    const gold = Math.max(1, Math.round(2 * (m.levelWorkBonus || 1)));
-    game.state.addAll({ [k]: -n, gold });
+    yield* v.work('harvest', 12 / v.workSpeed, 0.8);
+    const [k, keep, n0] = deal;
+    // a bigger market sells the same gold for fewer goods
+    const n = Math.max(5, Math.round(n0 / (m.levelWorkBonus || 1)));
+    if ((res[k] || 0) <= keep + n) continue;
+    game.state.addAll({ [k]: -n, gold: 1 });
     game.particles?.emit({ pos: { x: v.position.x, y: v.position.y + 2, z: v.position.z }, count: 6, colors: [0xffd84a, 0xfff0a6], additive: true, speed: 1.2, dir: { x: 0, y: 1.5, z: 0 }, gravity: 2, life: 0.8, size: 0.12 });
     yield* v.wait(1 + rnd());
   }

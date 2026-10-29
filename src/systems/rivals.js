@@ -126,6 +126,12 @@ export class Rivals {
     return r.owner !== null && this.list[r.owner]?.rel === 'war';
   }
   power(r) { return r.army * (1 + r.tier * 0.35); }
+  /** Is town i an enemy of the village this computer runs? (the host's, or a joined ruler's own town) */
+  foeOfHome(i) {
+    const net = this.game.net, me = net?.ownVillage ? net.siegeTown : 'P';
+    if (i === me || i == null) return false;
+    return me === 'P' ? this.atWarWithPlayer(i) : this.sidesAtWar(me, i);
+  }
   playerDefense() {
     const g = this.game, v = g.village;
     let d = 4 + (g.state.age | 0) * 3;
@@ -206,7 +212,8 @@ export class Rivals {
       for (let k = 0; k < Math.min(r.built, plan.length); k++) {
         const p = plan[k];
         if (p.x >= x1 || p.z >= z1 || p.x + p.mw <= x0 || p.z + p.md <= z0) continue;
-        this._draw(r, p, r.tier, x0, z0, x1, z1);
+        // a town taken by a player stays drawn as it was taken; what the player changed comes from the saved edits
+        this._draw(r, p, r.drawTier ?? r.tier, x0, z0, x1, z1);
         drawn = true;
       }
     }
@@ -303,6 +310,7 @@ export class Rivals {
   _restampLoaded() {
     const w = this.game.world; if (!w || !this.list.length) return;
     for (const r of this.list) {
+      if (r.drawTier != null) continue;           // a player's village: its blocks are its own (saved edits)
       const plan = this._plan(r);
       for (let k = 0; k < Math.min(r.built, plan.length); k++) {
         const p = plan[k];
@@ -336,8 +344,8 @@ export class Rivals {
     const drive = r.drive || 1;
     r.wealth += (r.pop * 0.05 + r.tier * 0.4) * dt * drive * (1 + 0.1 * ((r.hall || 1) - 1));
     // a town led by a player grows only by its leader's orders (see net/siege.js)
-    if (r.commander != null) {
-      r.next = { what: 'решает командир ' + (r.commanderName || ''), pct: null };
+    if (r.commander != null || r.pvData) {
+      r.next = { what: r.commander != null ? 'решает правитель ' + (r.commanderName || '') : 'ждёт своего правителя', pct: null };
       if (r.army < r.armyCap) r.army = Math.min(r.armyCap, r.army + dt / Math.max(20, 60 - r.tier * 3));
       return;
     }
@@ -521,7 +529,7 @@ export class Rivals {
     }
     this.game.bus.emit('rivals:changed', {});
   }
-  offersFor(a) { const now = this.game.time; this.offers = this.offers.filter(o => now - o.t < 300); return this.offers.filter(o => o.to === a); }
+  offersFor(a) { const now = this.game.time; if (!this.game.net?.isClient) this.offers = this.offers.filter(o => now - o.t < 300); return this.offers.filter(o => o.to === a); }
   /** The player asks for peace: costs gold, and an aggressive town that is winning won't take it. */
   offerPeace(r) {
     const st = this.game.state;
@@ -744,7 +752,8 @@ export class Rivals {
       const folk = mine.filter(u => u.type === 'folk').length;
       const soldiers = mine.filter(u => u.type !== 'folk').length;
       // townsfolk work by day and sleep at night; soldiers patrol and fight whoever their town is at war with
-      const wantFolk = g.state.isNight ? 0 : Math.min(8, Math.floor(r.pop / 4));
+      // a ruler's people live on their computer (net/ownVillage.js): the town shows only its soldiers here
+      const wantFolk = g.state.isNight || r.commander != null || r.pvData ? 0 : Math.min(8, Math.floor(r.pop / 4));
       const wantSoldiers = Math.min(MAX_DEFENDERS, Math.floor(r.army), hostile ? MAX_DEFENDERS : 3);
       if (soldiers < wantSoldiers && this.life.needCaptain(r, mine)) { const u = this._spawnAround(r, 'rival_captain', false, 10); if (u) u.captain = true; }
       else if (folk < wantFolk) this._spawnAround(r, 'folk', true, 30, this.life.folkOpts(r, this.life.pickJob(r, mine)));
@@ -810,10 +819,12 @@ export class Rivals {
     }));
   }
   warsOf(i) { const out = []; for (const k of this.wars) { const [a, b] = k.split(':').map(Number); if (a === i) out.push(b); else if (b === i) out.push(a); } return out; }
-  serialize() {
+  /** opts.net: for the network (the rulers' saved villages stay on the host). */
+  serialize(opts = {}) {
     return {
       list: this.list.map(r => {
         const o = { ...r };
+        if (opts.net) delete o.pvData;
         if (r.raid) { o.army = r.army + Math.max(0, (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size) - (r.raid.levy || 0)); }
         delete o.raid; delete o.capT; delete o._capMsgT; delete o.next; delete o.commander; delete o.commanderName; delete o.alarm; delete o.captainCD; delete o.waverUntil; delete o.stratT;
         return o;
@@ -821,6 +832,7 @@ export class Rivals {
       wars: [...this.wars],
       warCD: this.warCD,
       pacts: [...this.pacts],
+      ...(opts.net ? { offers: this.offers } : {}),
     };
   }
   deserialize(o) {
@@ -830,6 +842,7 @@ export class Rivals {
     this.wars = new Set(o.wars || []);
     this.warCD = Math.max(o.warCD ?? WAR_GAP, 0);
     this.pacts = new Set(o.pacts || []);
+    if (o.offers) this.offers = o.offers;
     for (const r of this.list) { r.hall = r.hall || 1; r.techs = r.techs || []; }
     this.plans.clear();
     for (const r of this.list) this._recount(r);

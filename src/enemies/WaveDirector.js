@@ -177,20 +177,20 @@ export class WaveDirector {
   }
 
   _makeDirections(dirs) {
-    const S = this.game.world.size, c = S / 2;
+    const w = this.game.world, hx = w.homeX, hz = w.homeZ, c = Math.min(hx, hz, w.size - hx, w.size - hz);
     this.spawnDirections = [];
     const base = Math.random() * Math.PI * 2;
     for (let i = 0; i < dirs; i++) {
       const angle = base + (i * Math.PI * 2) / dirs + (Math.random() - 0.5) * 0.8;
       const p = this._edgePoint(angle, 0);
-      this.spawnDirections.push({ angle, x: p ? p.x : c + Math.cos(angle) * c * 0.9, z: p ? p.z : c + Math.sin(angle) * c * 0.9 });
+      this.spawnDirections.push({ angle, x: p ? p.x : hx + Math.cos(angle) * c * 0.9, z: p ? p.z : hz + Math.sin(angle) * c * 0.9 });
     }
   }
 
   /** "Call the next wave early" — time-lapses to dusk, +50% reward. */
   startWaveNow() {
     const st = this.game.state;
-    if (this.game.net?.isClient) { this.game.net.send({ t: 'vcmd', op: 'wave' }); return true; }
+    if (this.game.net?.isClient && !this.game.net.ownVillage) { this.game.net.send({ t: 'vcmd', op: 'wave' }); return true; }
     if (this.waveActive || st.isNight || this._ff) return false;
     this.bonus = true;
     this._ff = { rate: Math.max(0.01, (0.78 - st.timeOfDay)) / 2.5 };
@@ -233,16 +233,17 @@ export class WaveDirector {
 
   // ------------------------------------------------------------------ spawning
   _edgePoint(angle, lateral) {
-    const w = this.game.world, S = w.size, c = S / 2;
+    const w = this.game.world, S = w.size, hx = w.homeX, hz = w.homeZ;
     const dx = Math.cos(angle), dz = Math.sin(angle);
     for (let tries = 0; tries < 10; tries++) {
       const margin = 5 + Math.random() * 8;
       // on big maps the dead rise from a ring ~90 blocks out (so they reach the village during the night),
       // on small maps from the blighted edge
-      const edge = (c - margin) / Math.max(Math.abs(dx), Math.abs(dz));
-      const t = Math.min(edge, 84 + Math.random() * 12);
+      const ex = dx > 1e-6 ? (S - margin - hx) / dx : dx < -1e-6 ? (hx - margin) / -dx : Infinity;
+      const ez = dz > 1e-6 ? (S - margin - hz) / dz : dz < -1e-6 ? (hz - margin) / -dz : Infinity;
+      const t = Math.min(ex, ez, 84 + Math.random() * 12);
       const lat = (lateral || 0) * (Math.random() * 2 - 1) * (1 + tries * 0.2);
-      let x = c + dx * t - dz * lat, z = c + dz * t + dx * lat;
+      let x = hx + dx * t - dz * lat, z = hz + dz * t + dx * lat;
       x = Math.max(3, Math.min(S - 4, x)); z = Math.max(3, Math.min(S - 4, z));
       const p = this._standPoint(x, z);
       if (p) return p;
@@ -287,7 +288,7 @@ export class WaveDirector {
     const hpMul = (opts.hpMul ?? 1) * d.hp * hpScale(wave) * grace * evo;
     const zb = new Zombie(game, type, { ...opts, hpMul, dmgMul: (opts.dmgMul ?? 1) * d.dmg * dmgScale(wave) * grace, wave });
     zb.position.set(p.x, p.y + (zb.flyer ? (opts.y !== undefined ? 1 : 3 + Math.random() * 3) : 0), p.z);
-    zb.yaw = Math.atan2(w.size / 2 - p.x, w.size / 2 - p.z);
+    zb.yaw = Math.atan2(w.homeX - p.x, w.homeZ - p.z);
     zb.progPos.copy(zb.position);
     game.entities.add(zb);
     this.zombies.push(zb);

@@ -13,6 +13,8 @@ import { GhostLayer, Scaffold, makeRing, makeRect, disposeObj, jobLabelTexture }
 import { pickName, JOBS, JOB_ORDER } from './names.js';
 
 const MAX_VILLAGERS = 40;
+/** What goods are worth at the market (see Village.exchange): gold is dear, so swapping always loses a lot. */
+export const MARKET_VALUE = { food: 1, wood: 1, stone: 1.2, coal: 2, iron_ore: 3, iron: 5, gold_ore: 6, gold: 12, crystal: 20, steel: 15, uranium: 60 };
 const SPAWN_INTERVAL = 40;
 const LEAF_OF = { [B.LOG]: B.LEAVES, [B.BIRCH_LOG]: B.BIRCH_LEAVES, [B.SPRUCE_LOG]: B.SPRUCE_LEAVES };
 const NON_TERRAIN = new Set([B.LOG, B.BIRCH_LOG, B.SPRUCE_LOG, B.LEAVES, B.BIRCH_LEAVES, B.SPRUCE_LEAVES, B.ACACIA_LEAVES, B.CACTUS]);
@@ -27,7 +29,8 @@ export { BUILDING_TYPES, BUILDING_ORDER, JOBS, JOB_ORDER };
 class FootMap {
   constructor(world, size = 1024) {
     this.n = Math.min(size, world.size);
-    this.ox = Math.max(0, Math.floor(world.size / 2 - this.n / 2)); this.oz = this.ox;
+    const fit = (c) => Math.max(0, Math.min(world.size - this.n, Math.floor(c - this.n / 2)));
+    this.ox = fit(world.homeX ?? world.size / 2); this.oz = fit(world.homeZ ?? world.size / 2);
     this.a = new Int32Array(this.n * this.n);
   }
   get(x, z) { x -= this.ox; z -= this.oz; return x >= 0 && z >= 0 && x < this.n && z < this.n ? this.a[z * this.n + x] : 0; }
@@ -215,6 +218,8 @@ export class Village {
       }
     }
     this.bus.emit('world:bulkChanged', { count: list.length });
+    // a ruler's own village on a network game: the host keeps the world, send it the whole batch
+    if (this.game.net?.ownVillage) this.game.net.send({ t: 'vedits', b: list.flat() });
   }
   onBlockChanged({ x, y, z, id }) {
     if (this._self) return;
@@ -955,7 +960,7 @@ export class Village {
   refreshZombies() {
     const out = this.zombies; out.length = 0;
     const rv = this.game.rivals;
-    for (const e of this.game.entities.list) if (!e.dead && ((e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.atWarWithPlayer(e.rivalId))) || e.predator)) out.push(e);     // wolves and bears too
+    for (const e of this.game.entities.list) if (!e.dead && ((e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.foeOfHome(e.rivalId))) || e.predator)) out.push(e);     // wolves and bears too
   }
   nearestZombie(pos, maxDist, los = false) {
     let best = null, bd = maxDist * maxDist;
@@ -1047,7 +1052,7 @@ export class Village {
   }
   plazaPoint() {
     const th = this.townHall;
-    if (!th) { const c = this.game.world.size / 2; return { x: c, y: this.groundY(c, c) + 1, z: c }; }
+    if (!th) { const w = this.game.world, x = w.homeX, z = w.homeZ; return { x, y: this.groundY(x, z) + 1, z }; }
     const d = th.door;
     return { x: d.x, y: d.y, z: d.z + 5 };
   }
@@ -1511,6 +1516,27 @@ export class Village {
       }
     }
     this.ghosts.set(list);
+  }
+
+  // ================================================================ the market's exchange
+  /** How many of `give` one `get` costs at the best market (a big markup; a higher level trims it). */
+  exchangeRate(give, get) {
+    const m = this.buildings.filter(b => b.type === 'market' && b.state === 'complete').sort((a, b) => (b.level || 1) - (a.level || 1))[0];
+    if (!m || !MARKET_VALUE[give] || !MARKET_VALUE[get] || give === get) return null;
+    const markup = Math.max(1.6, 2.6 - 0.12 * ((m.level || 1) - 1));
+    return Math.max(1, Math.ceil(MARKET_VALUE[get] / MARKET_VALUE[give] * markup));
+  }
+  /** Swap goods at the market: n of `get` for exchangeRate × n of `give`. */
+  exchange(give, get, n = 1) {
+    if (this._remote()) return this._send('trade', { give, get, n });
+    const rate = this.exchangeRate(give, get);
+    if (!rate) { this.toast('Нужен достроенный рынок', 'bad'); return false; }
+    n = Math.max(1, Math.min(100, n | 0));
+    const cost = { [give]: rate * n };
+    if (!this.game.state.spend(cost)) { this.toast('Не хватает товара на обмен', 'bad'); return false; }
+    this.game.state.add(get, n);
+    this.game.audio?.play('coins', { volume: 0.6 });
+    return true;
   }
 
   // ================================================================ network games

@@ -109,7 +109,7 @@ export class Underground {
     for (const [r, [a, b]] of Object.entries(L.res)) if (Math.random() < 0.8) got[r] = rint(a, b);
     if (!Object.keys(got).length) got.coal = rint(3, 6);
     g.state.addAll(got);
-    if (g.net?.isClient) g.net.send({ t: 'loot', res: got });          // the goods go to this player's side on the host
+    if (g.net?.isClient && !g.net.ownVillage) g.net.send({ t: 'loot', res: got });          // the goods go to this player's side on the host
     const parts = Object.entries(got).map(([r, n]) => `+${n} ${RESOURCE_LABELS[r] || r}`);
     // a rare item the player doesn't have yet
     if (Math.random() < L.item) {

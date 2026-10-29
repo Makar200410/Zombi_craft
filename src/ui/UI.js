@@ -15,6 +15,7 @@ import { QuestPanel, QuestTracker } from './questPanel.js';
 import { RivalsPanel } from './rivalsPanel.js';
 import { SiegePanel } from './siegePanel.js';
 import { ChroniclePanel } from './chroniclePanel.js';
+import { MechBook } from './mechBook.js';
 import { WorkshopPanel } from './workshop.js';
 import { Tutorial } from './tutorial.js';
 
@@ -51,12 +52,13 @@ export class UI {
     this.rivals = new RivalsPanel(this);
     this.siege = new SiegePanel(this);
     this.chronicle = new ChroniclePanel(this);
+    this.mechBook = new MechBook(this);
     this.workshop = new WorkshopPanel(this);
     this.tutorial = new Tutorial(this);
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
     root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
-      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.siege.bar, this.chronicle.root, this.workshop.root, this.tutorial.root, this.menus.root, this.dialogLayer);
+      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.siege.bar, this.chronicle.root, this.mechBook.root, this.workshop.root, this.tutorial.root, this.menus.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {
@@ -289,6 +291,7 @@ export class UI {
       if (this.rivals.open) { this.rivals.close(); e.preventDefault(); return; }
       if (this.siege.open) { this.siege.close(); e.preventDefault(); return; }
       if (this.chronicle.open) { this.chronicle.close(); e.preventDefault(); return; }
+      if (this.mechBook.open) { this.mechBook.close(); e.preventDefault(); return; }
       if (this.workshop.open) { this.workshop.close(); e.preventDefault(); return; }
       if (this.menus.current === 'pause') { this.resume(); e.preventDefault(); return; }
       if (this.menus.current === 'main') { if (this.menus.card?.dataset.page !== 'home') this.menus.page('home'); return; }
@@ -301,6 +304,7 @@ export class UI {
     if (e.code === 'KeyN' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.quests.close(); this.rivals.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyG' && g.running && !e.repeat && !this.menus.current && this.siege.available) { this.craft.close(); this.inventory.close(); this.rivals.close(); this.siege.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyK' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.workshop.toggle(); e.preventDefault(); return; }
+    if (e.code === 'KeyH' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.mechBook.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyL' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.quests.close(); this.chronicle.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyJ' && g.running && !e.repeat && !this.menus.current) { this.craft.close(); this.inventory.close(); this.quests.toggle(); e.preventDefault(); return; }
     if (e.code === 'KeyE' && g.running && !e.repeat && !this.menus.current && g.mode === 'explore') { this.craft.close(); this.inventory.toggle(); e.preventDefault(); return; }

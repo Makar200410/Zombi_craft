@@ -67,6 +67,16 @@ export class SiegePanel {
       return;
     }
     const age = AGES[t.tier - 1]?.name || '';
+    const own = !!this.game.net?.ownVillage;
+    if (own) {
+      // a real village of one's own: it is built and run in the command mode, here are its army and its treaties
+      const st = this.game.state;
+      this.sum.textContent = `Золото ${Math.floor(st.resources.gold || 0)} · войско ${t.army}/${t.cap} · ${AGES[st.age | 0]?.name || ''}`;
+      this.body.append(this._card(t.color, `«${t.name}» — ваша деревня`, [
+        'Стройте, назначайте жителей на работы, улучшайте ратушу и здания, исследуйте и переходите в новые эпохи — в «Командовании» (Tab), как в своей деревне.',
+        'Здесь — войско деревни (воины охраняют её и ходят в походы) и дипломатия с другими игроками и деревнями.',
+      ]));
+    } else {
     // the town: buildings, town hall, the next age
     const growth = [];
     if (t.next) growth.push(this._btn(`Строить: ${t.next.name} (${t.next.cost})`, () => this._cmd('build'), t.wealth >= t.next.cost));
@@ -83,18 +93,31 @@ export class SiegePanel {
       t.techs.length ? 'Изучено: ' + t.techs.map(id => this._techName(id)).join(', ') : 'Пока ничего не изучено.',
       'Исследования открывают вам рецепты оружия в «Крафте» (оплата — из казны) и путь в новые эпохи. Они только ваши: у других деревень свои.',
     ], study.length ? study : null));
+    }
     // the army
     const raid = t.raid ? (t.raid.arrived ? `Отряд штурмует деревню хозяина: в строю ${t.raid.left ?? '?'}` : `Отряд из ${t.raid.size} идёт к хозяину: ~${t.raid.eta} с`) : null;
+    const gold = own ? Math.floor(this.game.state.resources.gold || 0) : t.wealth, unit = own ? ' золота' : '';
+    const hire = (n) => {
+      if (!own) { this._cmd('recruit', { n }); return; }
+      // a ruler's own village pays in gold here
+      const cost = { gold: t.recruit * n };
+      if (!this.game.state.spend(cost)) { this.ui.toast(`Нужно ${t.recruit * n} золота`, 'bad'); return; }
+      this._cmd('recruit', { n, paid: 1 });
+    };
     this.body.append(this._card('#e0a040', 'Войско', [
-      `Воинов ${t.army} из ${t.cap}. Найм — ${t.recruit} за воина. Казармы, башни и ратуша дают место для войска.`,
+      `Воинов ${t.army} из ${t.cap}. Найм — ${t.recruit}${unit} за воина.${own ? ' Воины стоят в деревне и ходят в походы по вашему приказу; стража из жителей защищает дома.' : ' Казармы, башни и ратуша дают место для войска.'}`,
       raid, t.attackCd ? `Войско вернётся из похода через ${t.attackCd} с` : null,
       'Ночью мёртвые идут и на ваш город: держите воинов дома.',
     ], [
-      this._btn(`Нанять (${t.recruit})`, () => this._cmd('recruit'), t.wealth >= t.recruit),
-      this._btn(`Нанять 5 (${t.recruit * 5})`, () => this._cmd('recruit', { n: 5 }), t.wealth >= t.recruit * 5),
+      this._btn(`Нанять (${t.recruit}${unit})`, () => hire(1), gold >= t.recruit),
+      this._btn(`Нанять 5 (${t.recruit * 5}${unit})`, () => hire(5), gold >= t.recruit * 5),
     ]));
-    // diplomacy: the host and every town
-    if (t.offers?.length) this.body.append(this._card('#9fe3a0', 'Вам предлагают', t.offers.map(o => `${o.from}: ${o.kind === 'ally' ? 'союз' : 'мир'}`),
+    this.body.append(...this.diplomacy(t));
+  }
+  /** The ruler's treaties: offers to answer, and war, peace or an alliance with the host and every town (also shown in «Соседи»). */
+  diplomacy(t) {
+    const out = [];
+    if (t.offers?.length) out.push(this._card('#9fe3a0', 'Вам предлагают', t.offers.map(o => `${o.from}: ${o.kind === 'ally' ? 'союз' : 'мир'}`),
       t.offers.flatMap(o => [this._btn(`Принять: ${o.kind === 'ally' ? 'союз' : 'мир'} с ${o.from}`, () => this._cmd('answer', { id: o.id, yes: 1 })), this._btn('Отказать', () => this._cmd('answer', { id: o.id, yes: 0 }), false)])));
     const REL = { war: '⚔ война', peace: 'мир', ally: '🤝 союз' };
     const sideCard = (key, name, color, info, rel, extra = []) => {
@@ -109,12 +132,13 @@ export class SiegePanel {
       } else btns.push(this._btn('Расторгнуть союз', () => this._cmd('unally', { town: key }), false));
       return this._card(color, `${name} — ${REL[rel]}`, [info, ...extra], btns);
     };
-    this.body.append(h('div.zc-rv-line', h('b', 'Дипломатия')));
-    this.body.append(sideCard('P', 'Деревня хозяина', '#ffd860', `Эпоха: ${t.host.age}. Хозяин — тоже игрок.`, t.host.rel));
+    out.push(h('div.zc-rv-line', h('b', 'Дипломатия')));
+    out.push(sideCard('P', 'Деревня хозяина', '#ffd860', `Эпоха: ${t.host.age}. Хозяин — тоже игрок.`, t.host.rel));
     for (const o of t.towns) {
       const info = `${AGES[o.tier - 1]?.name || ''} · войско ${o.army}${o.player ? ` · правит игрок ${o.player}` : ' · правит совет (компьютер)'}${o.subject ? ' · чей-то вассал' : ''}`;
-      this.body.append(sideCard(o.i, `«${o.name}»`, o.color, info, o.rel));
+      out.push(sideCard(o.i, `«${o.name}»`, o.color, info, o.rel));
     }
+    return out;
   }
   _techName(id) { return TECHS[id]?.name || id; }
   _horde(H) {
@@ -148,7 +172,9 @@ export class SiegePanel {
     } else {
       const t = s.town;
       const offers = t.offers?.length ? ` · ✉ предложений: ${t.offers.length}` : '';
-      this.bar.textContent = `⚑ «${t.name}» · ${AGES[t.tier - 1]?.name || ''} · казна ${t.wealth} · войско ${t.army}/${t.cap}${t.raid ? ' · отряд в походе' : ''}${offers} — G: ваша деревня`;
+      this.bar.textContent = this.game.net?.ownVillage
+        ? `⚑ «${t.name}» — ваша деревня · войско ${t.army}/${t.cap}${t.raid ? ' · отряд в походе' : ''}${offers} — Tab: стройка и жители, G: войско и дипломатия`
+        : `⚑ «${t.name}» · ${AGES[t.tier - 1]?.name || ''} · казна ${t.wealth} · войско ${t.army}/${t.cap}${t.raid ? ' · отряд в походе' : ''}${offers} — G: ваша деревня`;
     }
   }
   update() {}

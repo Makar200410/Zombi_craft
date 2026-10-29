@@ -7,8 +7,8 @@ export class GameState {
     for (const r of RESOURCES) this.resources[r] = 0;
     Object.assign(this.resources, { wood: 80, stone: 60, food: 60, iron: 0, coal: 0, gold: 10, crystal: 0 });
     this.day = 1;
-    this.dayDuration = 200;        // seconds of daylight (0.22 → 0.78 of the cycle)
-    this.nightDuration = 150;      // seconds of night (0.78 → 0.22)
+    this.dayDuration = 600;        // seconds of daylight (0.22 → 0.78 of the cycle): 10 minutes
+    this.nightDuration = 240;      // seconds of night (0.78 → 0.22): 4 minutes
     this.timeOfDay = 0.3;          // start in the morning
     this.researchDone = new Set();
     this.age = 0;                  // index into AGES (systems/ages.js)

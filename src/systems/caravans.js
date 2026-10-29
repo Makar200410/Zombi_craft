@@ -23,7 +23,8 @@ const HOME_END = 62, TOWN_END = 50;     // roads stop short of the village centr
 export const SELLS = [
   ['food', 20, 8, 1], ['iron', 10, 22, 2], ['coal', 10, 10, 2], ['crystal', 5, 35, 2], ['steel', 5, 45, 4], ['uranium', 2, 70, 8],
 ];
-export const BUYS = [['wood', 20, 6, 1], ['stone', 20, 5, 1], ['food', 20, 6, 1], ['iron', 10, 15, 2], ['coal', 10, 6, 3]];
+// (gold is meant to be hard to earn: the towns pay little for common goods)
+export const BUYS = [['wood', 20, 2, 1], ['stone', 20, 2, 1], ['food', 20, 2, 1], ['iron', 10, 6, 2], ['coal', 10, 3, 3]];
 const LOTS = 3;                   // lots of each good per day (sold and bought)
 
 const sideways = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [-dz / l, dx / l]; };

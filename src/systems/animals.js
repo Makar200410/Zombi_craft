@@ -156,7 +156,7 @@ export class Animal extends Entity {
     const killer = source?.user || source?.owner || source;
     if (killer && (killer === g.player || killer.kind === 'player')) {
       const n = S.food[0] + Math.floor(Math.random() * (S.food[1] - S.food[0] + 1));
-      if (g.net?.isClient) g.net.send({ t: 'loot', res: { food: n } });       // the stores of this player's side are on the host
+      if (g.net?.isClient && !g.net.ownVillage) g.net.send({ t: 'loot', res: { food: n } });       // the stores of this player's side are on the host
       else g.state.add('food', n);
       g.bus.emit('village:gain', { pos: this.eye.clone(), text: `+${n} Еда`, res: 'food' });
       g.state.stats.animals = (g.state.stats.animals || 0) + 1;

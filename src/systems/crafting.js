@@ -127,7 +127,7 @@ export class Crafting {
     }
     if (!this.stations().has(r.station)) return { ok: false, reason: 'Нужна станция: ' + STATIONS[r.station].name, station: true };
     const net = this.game.net;
-    if (net?.isClient && net.siegeRole === 'rival') {
+    if (net?.isClient && net.siegeRole === 'rival' && !net.ownVillage) {
       // a town's ruler pays from the treasury (see Net._remoteCraft)
       const need = Object.values(r.in || {}).reduce((a, n) => a + n, 0);
       if (r.kind !== 'item') return { ok: false, reason: 'Только в деревне хозяина', station: true };
@@ -141,7 +141,7 @@ export class Crafting {
     const r = RECIPES.find(x => x.id === recipeId); if (!r) return false;
     const g = this.game;
     // a joined network game: the host's village pays and crafts
-    if (g.net?.isClient) { for (let i = 0; i < n; i++) g.net.send({ t: 'craft', id: recipeId }); return true; }
+    if (g.net?.isClient && !g.net.ownVillage) { for (let i = 0; i < n; i++) g.net.send({ t: 'craft', id: recipeId }); return true; }
     let done = 0;
     for (let i = 0; i < n; i++) {
       const c = this.check(r);
