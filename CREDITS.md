@@ -12,7 +12,13 @@
 
 Треки: Cradle of Civilization, Forging a City-State, Highland Mist, Harvest Festival, Sunrise,
 Calm Before the Storm, Hill of Sorrows, Red Dawn, Honor Bound, Tale of Warriors, Taiko 2,
-The Road Ahead, Epitaph, Point of No Return, Taiko 1, Mountain Idyll.
+The Road Ahead, Epitaph, Point of No Return, Taiko 1, Mountain Idyll, Elysian Fields, Juno Protect You, Celtica,
+Mediterranean Waves, Peaks of Atlas, Land Between Rivers, Whistler, Tavern in the Mist, As Seasons Change, Harvest Moon,
+An old Warhorse goes to Pasture, Water's Edge, Roman Ingenuity, The Governor, Upstart King, The Fledgling Kingdom,
+Expedition, Northern Frontier, From Every Corner, Solstice Festival, Dried Tears, Albian Nocturne, Midwinter, Mirage,
+Eastern Dreams, Karmic Confluence, Only 300 Stood, Alba Longa Burns, Celtic Pride, Rise of Macedon, Bandit Country,
+Harsh Lands Rugged People, In the Shadow of Olympus, The Hellespont, Helen Leaves Sparta, Sands of Time,
+You are Victorious! (новые треки перекодированы в Opus 44 кбит/с; апостроф и «!» убраны из имён файлов).
 Источник: https://github.com/0ad/0ad (binaries/data/mods/public/audio/music).
 
 ## Музыка пещер — `public/audio/music/cave_*.ogg`
@@ -35,6 +41,20 @@ CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/).
 | cave_the_city_falls, cave_battle_epic, cave_weight_of_revenge | The City Falls, Battle Epic, Weight of Revenge — Doug Kaufman | GNU GPL v2+ |
 | cave_vengeful | Vengeful — Jeremy Nicoll | GNU GPL v2+ |
 | cave_undead_siege | Undead Siege — Tomek Szczęsny | CC BY-SA 4.0 |
+
+Музыка данжей и руин — `public/audio/music/dungeon_*.ogg`, `ruins_*.ogg` — тоже из Battle for Wesnoth (`data/core/music`),
+перекодирована в Opus 40 кбит/с, к именам добавлены префиксы `dungeon_` / `ruins_`. Все треки — GNU GPL v2+.
+
+| Файл | Трек, автор |
+|---|---|
+| dungeon_nunc_dimittis | Nunc Dimittis — Jeremy Nicoll |
+| dungeon_the_king_is_dead | The King is Dead — Mattias Westlund |
+| dungeon_casualties_of_war, dungeon_sad | Casualties of War, Sad — Tyler Johnson |
+| dungeon_transience, dungeon_battle | Transience, Battle — Aleksi Aubry-Carlson |
+| dungeon_siege_of_laurelmor, dungeon_heroes_rite | Siege of Laurelmor, Heroes Rite — Doug Kaufman |
+| ruins_legends_of_the_north, ruins_northern_mountains, ruins_journeys_end, ruins_breaking_the_chains, ruins_silvan_sanctuary | Legends of the North, Northern Mountains, Journey's End, Breaking the Chains, Silvan Sanctuary — Mattias Westlund |
+| ruins_wanderer | Wanderer — Timothy Pinkham |
+| ruins_loyalists | Loyalists — Joseph G. Toscano |
 
 ## Звуки — `public/audio/sfx/`
 

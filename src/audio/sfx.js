@@ -816,6 +816,8 @@ export class Audio {
       return a;
     };
     this._music = { el: [mk(), mk()], fade: [0, 0], cur: 0, mood: null, last: {}, errors: 0 };
+    // a night's attack beaten off: the victory theme plays out before the day music comes back
+    try { this.game?.bus?.on('wave:end', () => { this._victoryUntil = (this.game.time || 0) + 44; }); } catch (e) { /* ignore */ }
   }
   _startTrack(mood) {
     const m = this._music; if (!m) return;
@@ -851,6 +853,7 @@ export class Audio {
       if (cave) return cave;
       const late = ((this.game?.state?.age | 0) >= 5) && this._music ? '2' : '';
       const m = this._computeMoodBase();
+      if (m !== 'wave' && this._music && (this.game?.time || 0) < (this._victoryUntil || 0)) return 'victory';
       return m + late;
     } catch (e) {
       return 'day';
@@ -860,6 +863,13 @@ export class Audio {
   _caveMood() {
     const g = this.game, p = g?.player, w = g?.world;
     if (!p || !w || w.format === 1 || g.mode !== 'explore' || !g.underground) return null;
+    // inside a dungeon or a ruined castle: its own music (a fight theme while its lord is awake)
+    const dg = this._dungeonAt(p.position);
+    if (dg && !(g.waves?.activeCount > 0)) {
+      const lord = g.waves?.zombies?.some(z => z.bossKey === dg.key && !z.dead);
+      if (lord) return 'caveboss';
+      if (dg.kind !== 'fortress') return dg.kind === 'castle' ? 'ruins' : 'dungeon';
+    }
     const y = Math.floor(p.position.y);
     const tier = g.underground.tierAt?.(y);
     if (tier === null || tier === undefined || tier < 0) return null;
@@ -869,6 +879,14 @@ export class Audio {
       Math.abs(z.position.x - p.position.x) < 40 && Math.abs(z.position.z - p.position.z) < 40 && Math.abs(z.position.y - p.position.y) < 24);
     if (boss) return 'caveboss';
     return 'cave' + Math.min(5, 1 + (tier >> 1));
+  }
+  /** The dungeon around the player (looked up once a second). */
+  _dungeonAt(pos) {
+    const t = this.game?.time || 0;
+    if (this._dgT !== undefined && t - this._dgT < 1) return this._dg;
+    this._dgT = t;
+    try { this._dg = this.game.world.gen?.dungeons?.at?.(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z)) || null; } catch (e) { this._dg = null; }
+    return this._dg;
   }
   _computeMoodBase() {
     try {
@@ -894,8 +912,8 @@ export class Audio {
       return;
     }
     if (!this._moodGains) return;
-    if (mood === 'menu') mood = 'day';
-    if (mood.startsWith('cave')) mood = mood === 'caveboss' ? 'wave' : 'night';
+    if (mood === 'menu' || mood === 'victory') mood = 'day';
+    if (mood.startsWith('cave') || mood === 'dungeon' || mood === 'ruins') mood = mood === 'caveboss' ? 'wave' : 'night';
     mood = mood.replace('2', '');
     if (mood !== this._mood) {
       this._mood = mood;
