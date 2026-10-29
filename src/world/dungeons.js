@@ -1,6 +1,6 @@
 // Big dungeons of deep worlds, in the spirit of the best Minecraft dungeon mods:
-//   • crypts — two-storey catacombs in the cavern layer (a maze of 5×5 rooms per floor joined by corridors);
-//   • great catacombs — three storeys of 6×6 rooms, the biggest of them all;
+//   • crypts — catacombs of two or three storeys in the cavern layer (a maze of 6×6 rooms per floor joined by corridors);
+//   • great catacombs — three or four storeys of 7×7 rooms, the biggest of them all;
 //   • fortresses over the lava sea of the underworld;
 //   • ruined castles on the surface — a curtain wall with corner towers and a gate around a keep of two or three
 //     storeys of halls, bridges between them and a lord of the dead in the throne room at the top.
@@ -33,21 +33,24 @@ export class Dungeons {
     const gen = this.gen, seed = gen.seed, world = gen.world, L = gen.L;
     let d = null;
     const roll = hash2(rx, rz, seed + 900);
-    const n = roll >= 0.3 && roll < 0.42 ? 6 : 5, S = n * C;
+    // the great catacombs are 7×7 rooms a floor, crypts and fortresses 6×6, castles 5×5
+    const great = roll >= 0.28 && roll < 0.48;
+    const n = great ? 7 : roll < 0.28 || (roll >= 0.48 && roll < 0.6) || roll >= 0.86 ? 6 : 5, S = n * C;
     const ox = rx * R + 12 + Math.floor(hash2(rx, rz, seed + 901) * (R - S - 24));
     const oz = rz * R + 12 + Math.floor(hash2(rx, rz, seed + 902) * (R - S - 24));
     const inWorld = ox > 12 && oz > 12 && ox + S < world.size - 12 && oz + S < world.size - 12;
     const c = gen.column(ox + S / 2, oz + S / 2);
     const cavY = (floors) => L.cavBot + 12 + (floors - 1) * FLOOR_GAP + Math.floor(hash2(rx, rz, seed + 903) * (L.cavTop - L.cavBot - 52 - (floors - 1) * FLOOR_GAP));
     if (inWorld && c.dist > 130) {
-      if (roll < 0.3) d = this._make('crypt', rx, rz, ox, oz, cavY(2), 2, n);
-      else if (roll < 0.42) d = this._make('crypt', rx, rz, ox, oz, cavY(3), 3, n);
-      else if (roll < 0.58) d = this._make('fortress', rx, rz, ox, oz, 28, 1, n);
-      else if (roll < 0.88) {
+      const f2 = hash2(rx, rz, seed + 904);
+      if (roll < 0.28) d = this._make('crypt', rx, rz, ox, oz, cavY(f2 < 0.4 ? 3 : 2), f2 < 0.4 ? 3 : 2, n);
+      else if (great) d = this._make('crypt', rx, rz, ox, oz, cavY(f2 < 0.45 ? 4 : 3), f2 < 0.45 ? 4 : 3, n);
+      else if (roll < 0.6) d = this._make('fortress', rx, rz, ox, oz, 28, 1, n);
+      else if (roll < 0.86) {
         const y0 = c.dist > 170 ? this._castleSite(ox, oz, S) : null;
-        if (y0 !== null) d = this._make('castle', rx, rz, ox, oz, y0, hash2(rx, rz, seed + 904) < 0.35 ? 3 : 2, n);
+        if (y0 !== null) d = this._make('castle', rx, rz, ox, oz, y0, f2 < 0.35 ? 3 : 2, n);
         else d = this._make('crypt', rx, rz, ox, oz, cavY(2), 2, n);
-      }
+      } else d = this._make('crypt', rx, rz, ox, oz, cavY(3), 3, n);       // every other region has a dungeon too
     }
     this.cache.set(key, d);
     return d;
