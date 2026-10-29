@@ -139,29 +139,38 @@ export class Underground {
     g.audio?.play('fire_impact', { pos: { x, y, z }, volume: 0.8, pitch: 0.7 });
   }
 
-  /** Monsters of the deep and the dungeons' spawner cages, around the player. */
+  /** The heroes the deep comes for: the player, and on a network game every joined hero of the village. */
+  _anchors() {
+    const g = this.game, out = [];
+    if (g.player && !g.player.dead) out.push({ key: g.player, pos: g.player.position });
+    if (g.net?.isHost) for (const rp of g.net.players?.values() || []) if (rp.role === 'hero' && !rp.hidden) out.push({ key: rp, pos: rp.netPos });
+    return out;
+  }
+  /** Monsters of the deep and the dungeons' spawner cages, around the player (and the joined heroes). */
   _monsters(dt) {
-    const g = this.game, p = g.player, w = g.world, W = g.waves;
-    if (!W || !p || p.dead) return;
-    const pos = p.position;
+    const g = this.game, w = g.world, W = g.waves;
+    if (!W) return;
+    const anchors = this._anchors();
+    if (!anchors.length) return;
     const mine = W.zombies.filter(z => z.cave && !z.dead && z.rivalId == null);
     // the far ones go back to the dark
     for (const z of mine) {
       if (z.bossKey) continue;              // dungeon bosses guard their lair
-      if (Math.hypot(z.position.x - pos.x, z.position.z - pos.z) > 72 || Math.abs(z.position.y - pos.y) > 48) { z.dead = true; z.removeAt = 0; z.object3d.visible = false; }
+      const near = anchors.some(a => Math.hypot(z.position.x - a.pos.x, z.position.z - a.pos.z) <= 72 && Math.abs(z.position.y - a.pos.y) <= 48);
+      if (!near) { z.dead = true; z.removeAt = 0; z.object3d.visible = false; }
     }
-    // spawner cages near the player
+    // spawner cages near any hero
     this._cageT = (this._cageT || 0) - dt;
     if (this._cageT <= 0 && w.spawners?.size) {
       this._cageT = 1;
       for (const [i, sp] of w.spawners) {
-        const d = Math.hypot(sp.x + 0.5 - pos.x, sp.y - pos.y, sp.z + 0.5 - pos.z);
+        const d = Math.min(...anchors.map(a => Math.hypot(sp.x + 0.5 - a.pos.x, sp.y - a.pos.y, sp.z + 0.5 - a.pos.z)));
         if (d > (sp.boss ? 14 : 20)) continue;
         if (w.getBlock(sp.x, sp.y, sp.z) !== B.SPAWNER) { w.spawners.delete(i); continue; }
         if (sp.boss) {
           if (g.state.bossesSlain?.has(sp.key) || mine.some(z => z.bossKey === sp.key)) continue;
           const z = this._spawnNear(sp.type, sp.x, sp.y, sp.z, 3, 1.2, { silent: true });
-          if (z) { z.bossKey = sp.key; g.bus.emit('toast', { text: `${z.name} пробудился!`, kind: 'bad' }); g.audio?.play('zombie_roar', { pos: z.position, pitch: 0.5, volume: 1 }); }
+          if (z) { z.bossKey = sp.key; g.bus.emit('toast', { text: `${z.name} пробудился!`, kind: 'bad', share: true }); g.audio?.play('zombie_roar', { pos: z.position, pitch: 0.5, volume: 1 }); }
           continue;
         }
         sp.t = (sp.t ?? 2) - 1;
@@ -175,22 +184,29 @@ export class Underground {
         }
       }
     }
-    // creatures coming out of the dark: the deeper, the more and the deadlier
+    // creatures coming out of the dark around each hero underground: the deeper, the more and the deadlier
+    this._bossT = (this._bossT ?? 30) - dt;
+    for (const a of anchors) this._darkSpawn(a, dt, mine);
+  }
+  _darkSpawn(a, dt, mine) {
+    const g = this.game, w = g.world, W = g.waves, pos = a.pos;
     const layer = layerAt(w, Math.floor(pos.y));
     if (layer.id === 'surface') return;
     const ti = depthTier(w, Math.floor(pos.y)), T = DEPTH_TIERS[ti];
-    this._spawnT = (this._spawnT ?? 4) - dt;
-    this._bossT = (this._bossT ?? 30) - dt;
-    if (this._spawnT > 0) return;
-    this._spawnT = Math.max(1.5, 4.5 - ti * 0.3) + Math.random() * 3;
-    if (mine.filter(z => !z.spawnerKey && !z.roamBoss).length >= T.cap) return;
+    const k = a.key;
+    k._ugSpawnT = (k._ugSpawnT ?? 4) - dt;
+    if (k._ugSpawnT > 0) return;
+    k._ugSpawnT = Math.max(1.5, 4.5 - ti * 0.3) + Math.random() * 3;
+    const around = mine.filter(z => !z.spawnerKey && !z.roamBoss && Math.abs(z.position.x - pos.x) < 40 && Math.abs(z.position.z - pos.z) < 40).length;
+    if (around >= T.cap) return;
     // now and then one of the level's bosses comes hunting
     const boss = T.bosses && this._bossT <= 0 && !mine.some(z => z.roamBoss) && Math.random() < T.bossChance;
     const type = boss ? pick(T.bosses) : pick(T.folk);
     const opts = { cave: true, wanderer: true, sunproof: true, silent: true, wave: T.wave, hpMul: T.hp, dmgMul: T.dmg };
-    for (let k = 0; k < 14; k++) {
-      const a = Math.random() * Math.PI * 2, r = (boss ? 18 : 14) + Math.random() * 12;
-      const x = Math.floor(pos.x + Math.cos(a) * r), z = Math.floor(pos.z + Math.sin(a) * r);
+    for (let n = 0; n < 14; n++) {
+      const ang = Math.random() * Math.PI * 2, r = (boss ? 18 : 14) + Math.random() * 12;
+      const x = Math.floor(pos.x + Math.cos(ang) * r), z = Math.floor(pos.z + Math.sin(ang) * r);
+      if (!w.isGenerated(x, z)) continue;
       const s = this._standAt(x, Math.floor(pos.y), z, 8);
       if (s === null) continue;
       const l = w.getLight(x, s, z);
@@ -201,7 +217,7 @@ export class Underground {
       if (boss) {
         zb.roamBoss = true;
         this._bossT = BOSS_COOLDOWN;
-        g.bus.emit('toast', { text: `Из глубины поднимается ${zb.name}!`, kind: 'bad' });
+        g.bus.emit('toast', { text: `Из глубины поднимается ${zb.name}!`, kind: 'bad', share: true });
         g.audio?.play('zombie_roar', { pos: zb.position, pitch: 0.5, volume: 1 });
       }
       return;

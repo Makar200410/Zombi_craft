@@ -147,7 +147,8 @@ export class Game {
 
   setMode(mode) {
     if (mode === this.mode) return;
-    if (mode === 'command' && this.net?.isClient) { this.bus.emit('toast', { text: 'Деревней управляет хозяин сетевой игры', kind: 'info' }); return; }
+    // a joined hero runs the village together with the host; a rival commander and the lord of the dead have their own orders (G)
+    if (mode === 'command' && this.net?.isClient && this.net.siegeRole !== 'hero') { this.bus.emit('toast', { text: 'Ваша сторона командует через «Командование» (G)', kind: 'info' }); return; }
     this.mode = mode;
     this.bus.emit('mode:changed', { mode });
   }

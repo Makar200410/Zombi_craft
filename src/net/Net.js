@@ -4,8 +4,12 @@
 // Transport: the LAN server (electron/lan.cjs — started by the Windows app, or `node tools/lan-server.cjs`) relays
 // WebSocket messages between the host and the players and also serves the game to phones' browsers.
 //   host → player: welcome (world seed + edits + state), blocks (edits), snap (time, resources, nearby undead /
-//                  villagers / other players, 10 times a second), hurt, item, toast
-//   player → host: hello, pos (own hero), set (block edit), hit (damage dealt to an undead), craft, cmd (siege orders)
+//                  villagers / other players, 10 times a second), vil (the village: buildings, people, research —
+//                  once a second), hurt, item, toast
+//   player → host: hello, pos (own hero), set (block edit), hit (damage dealt to an undead), craft, cmd (siege orders),
+//                  vcmd (a village order: place / upgrade / demolish a building, jobs, research, a new age, a wave)
+// A hero runs the village together with the host: their computer keeps a mirror of it (Village.applyMirror), the
+// command mode works on that mirror and every order is carried out by the host.
 // A joining player picks a side (see siege.js): a hero of the village, the commander of a rival town, or the lord
 // of the dead.
 import * as THREE from 'three';
@@ -20,6 +24,7 @@ import { RECIPES } from '../systems/crafting.js';
 import { ITEMS, HORDE_HOTBAR } from '../core/items.js';
 import { Siege, ROLES } from './siege.js';
 import { decodeBlueprint } from '../systems/blueprints.js';
+import { advanceAge } from '../systems/ages.js';
 
 export const LAN_PORT = 27015;
 const TICK = 0.1;            // snapshot / position rate (s)
@@ -100,7 +105,15 @@ export class Net {
   init() {
     const g = this.game;
     g.bus.on('block:changed', ({ x, y, z, id }) => { if (this.isHost) this._edits.push(x, y, z, id); });
-    g.bus.on('toast', (t) => { if (this.isHost && t.share) this._sendAll({ t: 'toast', text: t.text, kind: t.kind }); });
+    g.bus.on('toast', (t) => {
+      if (!this.isHost) return;
+      if (t.share) this._sendAll({ t: 'toast', text: t.text, kind: t.kind });
+      else if (this._toastTo != null) this._sendTo(this._toastTo, { t: 'toast', text: t.text, kind: t.kind });     // the answer to a joined player's order
+    });
+    // the village changed: the heroes' mirrors are brought up to date soon
+    for (const ev of ['building:placed', 'building:completed', 'building:destroyed', 'building:removed', 'building:upgrading', 'villager:spawned', 'villager:job', 'research:done', 'research:started', 'age:changed']) {
+      g.bus.on(ev, () => { if (this.isHost) this._vilDirty = true; });
+    }
     g.bus.on('rivals:changed', () => {
       if (!this.isHost || this._rivT) return;
       this._rivT = setTimeout(() => { this._rivT = null; if (this.isHost) this._sendAll({ t: 'rivals', s: g.rivals?.serialize?.() }); }, 1500);
@@ -168,6 +181,7 @@ export class Net {
           t: 'welcome', you: id, seed: g.world.seed, size: g.world.size, format: g.world.format, role: side.role, town: side.town ?? null,
           changes: encodeChanges(g.world.changes || new Map()), state: g.state.serialize(), spawn: [sp.x, sp.y, sp.z],
           owned: [...(g.crafting?.owned || [])], wave: g.waves?.currentWave | 0, rivals: g.rivals?.serialize?.(),
+          vil: side.role === 'hero' ? this._villageSnap() : null,
         });
         g.bus.emit('toast', { text: `${name} присоединился(ась) к игре!`, kind: 'good' });
         g.audio?.play('quest_done', { volume: 0.6 });
@@ -194,6 +208,7 @@ export class Net {
       }
       case 'craft': this._remoteCraft(id, d.id); break;
       case 'cmd': if (p) this.siege.command(p, d); break;
+      case 'vcmd': if (p && p.role === 'hero') this._villageCmd(id, p, d); break;
       case 'bp': if (p) { this._takeBlueprint(d.code, p.playerName); this._sendAll({ t: 'bp', code: d.code, from: p.playerName }); } break;
     }
   }
@@ -244,6 +259,43 @@ export class Net {
     else { g.crafting.queue.push({ id: r.id, left: r.time, total: r.time }); this._sendTo(id, { t: 'toast', text: 'Печь деревни взялась за работу', kind: 'info' }); }
   }
 
+  /** The village as a hero's mirror needs it. */
+  _villageSnap() {
+    const g = this.game, R = g.research;
+    return { t: 'vil', vil: g.village?.mirrorState?.() || null, r: R?.serialize?.() || null, rate: R?.rate || 0, done: [...g.state.researchDone], items: [...(g.state.unlockedItems || [])], age: g.state.age | 0 };
+  }
+  _sendVillage() {
+    this._vilDirty = false; this._vilT = 0;
+    const heroes = [...this.players.values()].filter(p => p.role === 'hero');
+    if (!heroes.length) return;
+    const msg = this._villageSnap();
+    for (const p of heroes) this._sendTo(p.cid, msg);
+  }
+  /** A hero's village order, carried out here as if the host gave it (the answers go back to that player). */
+  _villageCmd(id, p, d) {
+    const g = this.game, V = g.village;
+    if (!V) return;
+    const vil = (vid) => V.villagers.find(v => v.id === vid && !v.dead) || null;
+    this._toastTo = id;
+    try {
+      switch (d.op) {
+        case 'place': if (V.placeBuilding(String(d.type), +d.x, +d.z, (d.rot | 0) & 3)) g.bus.emit('toast', { text: `${p.playerName} заложил(а): ${V.buildings[V.buildings.length - 1]?.def?.name || 'здание'}`, kind: 'info' }); break;
+        case 'demolish': { const b = V.byId.get(d.id); if (b) V.demolish(b); break; }
+        case 'upgrade': { const b = V.byId.get(d.id); if (b) V.startUpgrade(b); break; }
+        case 'assign': { const v = vil(d.v); if (v) V.assign(v, d.b != null ? V.byId.get(d.b) || null : null, d.job || null); break; }
+        case 'setjob': { const v = vil(d.v); if (v) V.setJob(v, d.job); break; }
+        case 'builders': V.setBuilderCount(d.n | 0); break;
+        case 'auto': V.autoAssign(d.only != null ? V.byId.get(d.only) || null : null); break;
+        case 'research': if (!g.research?.start(d.id)) g.bus.emit('toast', { text: g.research?.blockReason?.(d.id) || 'Исследование недоступно', kind: 'bad' }); else g.bus.emit('toast', { text: `${p.playerName} начал(а) исследование`, kind: 'info' }); break;
+        case 'rcancel': g.research?.cancel(); break;
+        case 'age': advanceAge(g); break;
+        case 'wave': if (!g.waves?.startWaveNow()) g.bus.emit('toast', { text: 'Сейчас волну не вызвать', kind: 'bad' }); break;
+      }
+    } catch (e) { console.error('village order failed', d.op, e); }
+    finally { this._toastTo = null; }
+    this._sendVillage();
+  }
+
   _hostTick() {
     const g = this.game;
     if (this._edits.length) {
@@ -252,6 +304,8 @@ export class Net {
       this._edits = [];
     }
     if (!this.players.size) return;
+    this._vilT = (this._vilT || 0) + 1;
+    if (this._vilT >= 10 || (this._vilDirty && this._vilT >= 3)) this._sendVillage();
     const st = g.state;
     this._resT = (this._resT || 0) + 1;
     const base = { t: 'snap', tod: +st.timeOfDay.toFixed(4), day: st.day, age: st.age | 0, wave: g.waves?.currentWave | 0, weather: g.weather?.type };
@@ -309,6 +363,7 @@ export class Net {
     if (g.waves) g.waves.currentWave = welcome.wave | 0;
     if (welcome.rivals) g.rivals?.deserialize(welcome.rivals);        // the towns are drawn into the chunks as they appear
     g.village?.reset?.();
+    if (g.village) g.village.mirror = (welcome.role || 'hero') === 'hero';
     if (g.village) g.village.netSpawn = new THREE.Vector3(...welcome.spawn);
     this.role = 'client';
     this.me = welcome.you;
@@ -318,13 +373,16 @@ export class Net {
     // the friend's computer runs the village, the undead, research and saving
     this._systems = g.systems;
     g.systems = g.systems.filter(s => s !== g.village && s !== g.waves && s !== g.research && s !== g.quests && s !== g.save);
+    // a hero's copy of the village: placement, ghosts and labels (its life runs on the host)
+    if (g.village?.mirror) g.systems.push({ update: (dt) => g.village.mirrorUpdate(dt) });
     this.ws.onmessage = (ev) => this._clientMsg(ev.data);
     this.ws.onclose = () => { if (this.isClient) this._leave('Связь с хозяином потеряна'); };
     g.begin({ loaded: true });
+    if (welcome.vil) this._applyVillage(welcome.vil);
     const p = g.player;
     if (p) { p.revive?.(); p.position.set(...welcome.spawn); p.velocity.set(0, 0, 0); }
     const hello = {
-      hero: 'Вы в мире друга! Деревней управляет хозяин, а вы — герой: исследуйте, стройте, сражайтесь.',
+      hero: 'Вы в мире друга! Деревня у вас общая: стройте, улучшайте, назначайте жителей и ведите исследования в «Командовании» (Tab), исследуйте мир и сражайтесь.',
       rival: 'Вы — командир соседней деревни и в войне с хозяином! Откройте «Командование» (G): нанимайте воинов, шлите отряды, а ночью держите оборону от мёртвых.',
       horde: 'Вы — Повелитель нежити! Ваша панель внизу — это мертвецы: выберите цифрой 1–9 и кликните ЛКМ по земле, чтобы поднять его там. Тёмная сила копится сама (ночью втрое быстрее). G — командование: призыв ночи и группы по 5.',
     };
@@ -347,7 +405,7 @@ export class Net {
     this.role = null;
     try { this.ws?.close(); } catch (e) { /* ignore */ }
     this.ws = null;
-    if (g.village) g.village.netSpawn = null;
+    if (g.village) { g.village.netSpawn = null; if (g.village.mirror) { g.village.mirror = false; g.village._netV = null; g.village.reset(); } }
     g.bus.emit('net:changed', {});
     if (g.running) { g.ui?.quitToMenu?.(true); g.bus.emit('toast', { text: why, kind: 'warn' }); }
   }
@@ -382,6 +440,7 @@ export class Net {
         break;
       }
       case 'snap': this._applySnap(m); break;
+      case 'vil': this._applyVillage(m); break;
       case 'hurt': g.player?.damage?.(m.amount, null, { kind: m.kind, fromNet: true }); break;
       case 'item':
         g.crafting?.owned.add(m.item); g.crafting?._equip?.(m.item);
@@ -397,6 +456,20 @@ export class Net {
         break;
       case 'bp': if (m.from !== this.myName) this._takeBlueprint(m.code, m.from); break;
     }
+  }
+  /** The host's village, research and age, into this hero's mirror. */
+  _applyVillage(m) {
+    const g = this.game, st = g.state;
+    if (m.vil && g.village?.mirror) g.village.applyMirror(m.vil);
+    if (m.r && g.research) { g.research.deserialize(m.r); g.research.rate = m.rate || 0; }
+    if (m.items) st.unlockedItems = new Set(m.items);
+    if (m.done) {
+      const fresh = m.done.filter(id => !st.researchDone.has(id));
+      st.researchDone = new Set(m.done);
+      for (const id of fresh) { g.bus.emit('research:done', { id }); g.bus.emit('toast', { text: 'Исследование завершено: ' + (g.research?.techs?.[id]?.name || id), kind: 'good' }); }
+      if (fresh.length) g.audio?.play?.('research_done');
+    }
+    if (typeof m.age === 'number' && m.age !== (st.age | 0)) { st.age = m.age; g.bus.emit('age:changed', { age: m.age }); }
   }
   _applySnap(m) {
     const g = this.game, st = g.state;
@@ -424,6 +497,7 @@ export class Net {
         px.diving = !!(e[9] & 1);
         if (e[9] & 2 && !px.model.action) px.model.play('attack');
       } else {
+        if (g.village?.mirror && g.village.mirrorMove(id, e[5], e[6], e[7], e[8])) { seen.delete(id); continue; }
         if (!px) {
           const J = JOBS[e[2]] || JOBS.idle;
           let skin = null; try { skin = villagerSkin(e[2], e[3]); } catch (er) { skin = null; }
