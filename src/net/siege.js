@@ -61,6 +61,7 @@ export class Siege {
       if (r) {
         r.commander = p.cid; r.commanderName = p.playerName;
         r.hall = Math.max(1, r.hall || 1); r.techs = r.techs || [];
+        if (r.drawTier == null) { r.drawTier = r.tier; R.jobs = R.jobs.filter(j => j.r !== r); }     // from now on its world is the ruler's
         p.role = 'rival'; p.town = r.i; p.faction = 'undead'; p.rivalId = r.i;
         // a new ruler starts at peace with everyone: wars are their own to declare
         if (R.atWarWithPlayer(r.i)) R.makeSidesPeace(r.i, 'P', true);
@@ -151,7 +152,8 @@ export class Siege {
         case 'recruit': {
           const cost = this.recruitCost(r), n = Math.max(1, Math.min(10, d.n | 0 || 1));
           let made = 0;
-          for (let k = 0; k < n; k++) { if (r.army >= r.armyCap + 6 || r.wealth < cost) break; r.wealth -= cost; r.army += 1; made++; }
+          // a ruler's own village pays in gold on their computer (d.paid)
+          for (let k = 0; k < n; k++) { if (r.army >= r.armyCap + 6 || (!d.paid && r.wealth < cost)) break; if (!d.paid) r.wealth -= cost; r.army += 1; made++; }
           if (!made) return say(r.army >= r.armyCap + 6 ? 'Казармы полны: стройте казармы и башни, улучшайте ратушу' : `Нужно ${cost} богатства`, 'bad');
           return say(`Нанято воинов: ${made}. Войско: ${Math.floor(r.army)}`, 'good');
         }
@@ -323,6 +325,7 @@ export class Siege {
     if (!R?.active || !W) return;
     for (const r of R.list) {
       if (r.commander == null) continue;
+      if (r.pvData) continue;        // a ruler's own village gets its nights of the dead on their computer
       const n = Math.min(30, 5 + Math.round((W.currentWave | 0) * 0.9 + r.tier * 1.5));
       let made = 0;
       for (let k = 0; k < n * 3 && made < n; k++) {

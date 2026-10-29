@@ -27,7 +27,8 @@ export { BUILDING_TYPES, BUILDING_ORDER, JOBS, JOB_ORDER };
 class FootMap {
   constructor(world, size = 1024) {
     this.n = Math.min(size, world.size);
-    this.ox = Math.max(0, Math.floor(world.size / 2 - this.n / 2)); this.oz = this.ox;
+    const fit = (c) => Math.max(0, Math.min(world.size - this.n, Math.floor(c - this.n / 2)));
+    this.ox = fit(world.homeX ?? world.size / 2); this.oz = fit(world.homeZ ?? world.size / 2);
     this.a = new Int32Array(this.n * this.n);
   }
   get(x, z) { x -= this.ox; z -= this.oz; return x >= 0 && z >= 0 && x < this.n && z < this.n ? this.a[z * this.n + x] : 0; }
@@ -215,6 +216,8 @@ export class Village {
       }
     }
     this.bus.emit('world:bulkChanged', { count: list.length });
+    // a ruler's own village on a network game: the host keeps the world, send it the whole batch
+    if (this.game.net?.ownVillage) this.game.net.send({ t: 'vedits', b: list.flat() });
   }
   onBlockChanged({ x, y, z, id }) {
     if (this._self) return;
@@ -1047,7 +1050,7 @@ export class Village {
   }
   plazaPoint() {
     const th = this.townHall;
-    if (!th) { const c = this.game.world.size / 2; return { x: c, y: this.groundY(c, c) + 1, z: c }; }
+    if (!th) { const w = this.game.world, x = w.homeX, z = w.homeZ; return { x, y: this.groundY(x, z) + 1, z }; }
     const d = th.door;
     return { x: d.x, y: d.y, z: d.z + 5 };
   }

@@ -64,7 +64,11 @@ export class World {
     this.spawners = new Map();                             // idx -> {x, y, z, type, boss, key, cap} dungeon spawner cages
     this.chestTier = new Map();                            // idx -> 'dungeon' | 'vault' | 'boss' (richer chests)
     this._tmpV = new THREE.Vector3();
+    // where the player's own village stands: the map centre, or (a joined player ruling a town of a network game)
+    // that town — the undead's flow field, the village's footprint map and the waves are laid out around it
+    this.homeX = size / 2; this.homeZ = size / 2; this.homeV = 0;
   }
+  setHome(x, z) { this.homeX = x; this.homeZ = z; this.homeV++; }
 
   index(x, y, z) { return x + this.size * (z + this.size * y); }
   inBounds(x, y, z) { return x >= 0 && z >= 0 && y >= 0 && x < this.size && z < this.size && y < this.height; }

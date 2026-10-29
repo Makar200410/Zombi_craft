@@ -63,7 +63,7 @@ export function advanceAge(game) {
     return false;
   }
   // a joined player: the host's village enters the new age
-  if (game.net?.isClient) { game.net.send({ t: 'vcmd', op: 'age' }); return true; }
+  if (game.net?.isClient && !game.net.ownVillage) { game.net.send({ t: 'vcmd', op: 'age' }); return true; }
   if (!game.state.spend(c.age.cost)) return false;
   game.state.age = (game.state.age | 0) + 1;
   game.state.siegePending = game.state.age;

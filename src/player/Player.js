@@ -192,9 +192,9 @@ export class Player extends Entity {
     this.position.copy(sp);
     this.velocity.set(0, 0, 0);
     // face the village center
-    const c = this.game.world.size / 2;
+    const w = this.game.world;
     const th = this.game.village?.townHall;
-    const tx = th ? (th.center?.x ?? th.x) : c, tz = th ? (th.center?.z ?? th.z) : c;
+    const tx = th ? (th.center?.x ?? th.x) : w.homeX, tz = th ? (th.center?.z ?? th.z) : w.homeZ;
     const yaw = Math.atan2(tx - sp.x, tz - sp.z);
     if (Number.isFinite(yaw)) { this.yaw = yaw; if (this.game.cameraRig) this.game.cameraRig.yaw = yaw; }
     if (!this.game.entities.list.includes(this)) this.game.entities.add(this);
@@ -215,7 +215,7 @@ export class Player extends Entity {
     const g = this.game, w = g.world, v = g.village;
     if (v?.netSpawn) return v.netSpawn.clone();          // a joined network game: where the host put us
     const th = v?.townHall;
-    let cx = w.size / 2, cz = w.size / 2;
+    let cx = w.homeX ?? w.size / 2, cz = w.homeZ ?? w.size / 2;
     if (th) {
       cx = th.center?.x ?? th.x ?? cx; cz = th.center?.z ?? th.z ?? cz;
       const sz = th.def?.size || th.typeDef?.size || th.size;

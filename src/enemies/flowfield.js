@@ -65,10 +65,13 @@ export class FlowField {
   _ensureWorld() {
     const w = this.game.world;
     if (!w) return false;
-    if (w === this.world) return true;
-    this.world = w;
+    if (w === this.world && w.homeV === this._homeV) return true;
+    this.world = w; this._homeV = w.homeV;
     this.size = Math.min(WINDOW, w.size);
-    this.ox = Math.max(0, Math.floor(w.size / 2 - this.size / 2)); this.oz = this.ox;
+    // a window around the village's home (the map centre, or a joined player's town)
+    const fit = (c) => Math.max(0, Math.min(w.size - this.size, Math.floor(c - this.size / 2)));
+    this.ox = fit(w.homeX ?? w.size / 2); this.oz = fit(w.homeZ ?? w.size / 2);
+    this.dirty = true;
     const n = this.size * this.size;
     this.stand = new Int16Array(n);
     this.obst = new Float32Array(n).fill(INF);   // columns of chunks that don't exist yet are impassable

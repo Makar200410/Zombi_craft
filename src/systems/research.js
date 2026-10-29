@@ -225,7 +225,7 @@ export class Research {
   start(id) {
     if (!this.canStart(id)) return false;
     // a joined player: the host's laboratories do the research
-    if (this.game.net?.isClient) { this.game.net.send({ t: 'vcmd', op: 'research', id }); this.current = id; this.invested = 0; return true; }
+    if (this.game.net?.isClient && !this.game.net.ownVillage) { this.game.net.send({ t: 'vcmd', op: 'research', id }); this.current = id; this.invested = 0; return true; }
     if (!this.state.spend(TECHS[id].cost)) return false;
     this.current = id;
     this.invested = 0;
@@ -236,7 +236,7 @@ export class Research {
   /** Abort current research; refunds half of the resources. */
   cancel() {
     if (!this.current) return;
-    if (this.game.net?.isClient) { this.game.net.send({ t: 'vcmd', op: 'rcancel' }); this.current = null; this.invested = 0; return; }
+    if (this.game.net?.isClient && !this.game.net.ownVillage) { this.game.net.send({ t: 'vcmd', op: 'rcancel' }); this.current = null; this.invested = 0; return; }
     const t = TECHS[this.current];
     const half = {}; for (const k in t.cost) half[k] = Math.floor(t.cost[k] / 2);
     this.state.refund(half);
