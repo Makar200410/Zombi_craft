@@ -84,6 +84,17 @@ CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/ · CC0 — https://cr
 крики (vhurt_*, player_death), рубка (lumber_*), стройка (construct_*), жатва (harvest_*), чавканье (spit_*),
 сигналы (research_done, level_up, wave_horn, wave_cleared, build_complete), дождь (rain_light, rain_heavy — бесшовные петли), ветер и буря (wind_loop, wind_storm, wind_gust, wind_leaves_*), метель (wind_snow), гром (thunder_roll_*, thunder_far_*) — из ambient/weather.
 
+### Звуки природы и животных
+
+| Файлы | Источник | Лицензия |
+|---|---|---|
+| amb_day_1–3 (лес днём), amb_river, amb_farm, amb_market | 0 A.D. — ambient/dayscape, water, building | CC BY-SA 3.0, © Wildfire Games |
+| chicken_*, sheep_*, cow_*, pig_*, pig_death, horse_1, animal_death_* | 0 A.D. — actor/fauna | CC BY-SA 3.0, © Wildfire Games |
+| bird_1–3 | Battle for Wesnoth (data/core/sounds/ambient/birds*) — Karol Nowak | GNU GPL v2+ |
+| amb_night, amb_morning | Battle for Wesnoth (data/core/sounds/ambient) — Lari Nieminen | GNU GPL v2+ |
+
+Перекодированы в OGG Vorbis, голоса животных сведены в моно.
+
 ### Голоса зомби (живые записи, freesound.org / opengameart.org)
 
 | Файл | Источник, автор | Лицензия |

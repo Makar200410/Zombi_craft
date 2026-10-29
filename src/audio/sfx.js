@@ -680,6 +680,7 @@ export class Audio {
     // weather loops fade out in the menus and while paused
     const g = this.game;
     if (this._wx && (!g?.running || g.paused)) this.setWeather({});
+    if (this._nat && (!g?.running || g.paused)) this.setNature({});
   }
 
   _updateListener() {
@@ -800,6 +801,41 @@ export class Audio {
   }
   /** Old API (rain only). */
   setRain(v) { this.setWeather({ rain: v }); }
+
+  // ---- Nature: birdsong by day, crickets at night, water, the village's farms and market (recorded loops) ------
+  /** n: {day, night, river, farm, market, indoor} (0..1 each). Called a few times a second by systems/ambience.js. */
+  setNature(n = {}) {
+    if (!this.ctx || !this.sfxBus) return;
+    try {
+      const ctx = this.ctx, now = ctx.currentTime, indoor = n.indoor || 0;
+      if (!this._nat) {
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000; lp.Q.value = 0.4;
+        lp.connect(this.sfxBus);
+        this._nat = { lp, ch: {}, indoor: -1 };
+      }
+      const N = this._nat;
+      const target = { amb_day: (n.day || 0) * 0.42, amb_night: (n.night || 0) * 0.32, amb_river: (n.river || 0) * 0.4, amb_farm: (n.farm || 0) * 0.35, amb_market: (n.market || 0) * 0.35 };
+      for (const name in target) {
+        const v = target[name] * (1 - indoor * 0.6);
+        let c = N.ch[name];
+        if (!c) {
+          if (v < 0.01) continue;
+          const buf = this._sampleFor(name);
+          if (!buf) continue;
+          const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+          const gain = ctx.createGain(); gain.gain.value = 0;
+          src.connect(gain); gain.connect(N.lp);
+          src.start(now, Math.random() * buf.duration);
+          c = N.ch[name] = { src, gain, quietFor: 0 };
+        }
+        c.gain.gain.setTargetAtTime(v, now, 1.2);
+        c.quietFor = v < 0.005 ? c.quietFor + 1 : 0;
+        if (c.quietFor > 60) { try { c.src.stop(now + 0.1); c.gain.disconnect(); } catch (e) { /* ignore */ } delete N.ch[name]; }
+      }
+      const ind = indoor > 0.5 ? 1 : 0;
+      if (N.indoor !== ind) { N.indoor = ind; N.lp.frequency.setTargetAtTime(ind ? 900 : 16000, now, 0.3); }
+    } catch (e) { /* never throw */ }
+  }
 
   // ---- Streamed orchestral soundtrack -----------------------------------
   _initSoundtrack() {

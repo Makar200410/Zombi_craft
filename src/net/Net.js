@@ -288,6 +288,7 @@ export class Net {
         case 'auto': V.autoAssign(d.only != null ? V.byId.get(d.only) || null : null); break;
         case 'research': if (!g.research?.start(d.id)) g.bus.emit('toast', { text: g.research?.blockReason?.(d.id) || 'Исследование недоступно', kind: 'bad' }); else g.bus.emit('toast', { text: `${p.playerName} начал(а) исследование`, kind: 'info' }); break;
         case 'rcancel': g.research?.cancel(); break;
+        case 'loot': g.state.add('food', Math.max(0, Math.min(6, d.food | 0))); break;      // game hunted by a hero
         case 'age': advanceAge(g); break;
         case 'wave': if (!g.waves?.startWaveNow()) g.bus.emit('toast', { text: 'Сейчас волну не вызвать', kind: 'bad' }); break;
       }
