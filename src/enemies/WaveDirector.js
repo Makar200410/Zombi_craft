@@ -190,6 +190,7 @@ export class WaveDirector {
   /** "Call the next wave early" — time-lapses to dusk, +50% reward. */
   startWaveNow() {
     const st = this.game.state;
+    if (this.game.net?.isClient) { this.game.net.send({ t: 'vcmd', op: 'wave' }); return true; }
     if (this.waveActive || st.isNight || this._ff) return false;
     this.bonus = true;
     this._ff = { rate: Math.max(0.01, (0.78 - st.timeOfDay)) / 2.5 };

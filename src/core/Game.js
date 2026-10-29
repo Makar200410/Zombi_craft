@@ -2,6 +2,7 @@ import { setItemAtlas } from '../entities/itemMesh.js';
 import * as THREE from 'three';
 import { Quests } from '../systems/quests.js';
 import { Ambience } from '../systems/ambience.js';
+import { Animals } from '../systems/animals.js';
 import { Weather } from '../systems/weather.js';
 import { Underground } from '../systems/underground.js';
 import { Fluids } from '../systems/fluids.js';
@@ -46,6 +47,7 @@ export class Game {
   constructor() {
     const { q, touch } = detectQuality();
     this.quality = q;
+    try { this._qLocked = localStorage.getItem('zc_quality_user') === '1'; } catch (e) { /* ignore */ }   // the player's own choice is kept
     this.isTouch = touch;
     this.bus = new EventBus();
     this.state = new GameState(this.bus);
@@ -86,6 +88,7 @@ export class Game {
     this.quests = new Quests(this);
     this.ambience = new Ambience(this);
     this.underground = new Underground(this);
+    this.animals = new Animals(this);
     this.fluids = new Fluids(this);
     this.kinetics = new Kinetics(this);
     this.rivals = new Rivals(this);
@@ -98,8 +101,8 @@ export class Game {
     this.save = new SaveSystem(this);
     this.ui = new UI(this);
     // update order
-    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.fluids, this.kinetics, this.electric, this.rivals, this.caravans, this.blueprints, this.chronicle, this.save, this.net];
-    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.underground, this.save, this.net, this.ui]) s.init?.();
+    this.systems = [this.input, this.player, this.cameraRig, this.combat, this.village, this.waves, this.entities, this.particles, this.research, this.crafting, this.quests, this.weather, this.ambience, this.animals, this.underground, this.fluids, this.kinetics, this.electric, this.rivals, this.caravans, this.blueprints, this.chronicle, this.save, this.net];
+    for (const s of [this.audio, this.input, this.cameraRig, this.player, this.combat, this.village, this.waves, this.research, this.crafting, this.quests, this.weather, this.ambience, this.animals, this.underground, this.save, this.net, this.ui]) s.init?.();
     this.bus.on('block:changed', ({ x, y, z, id }) => { this.world?.changes?.set(this.world.index(x, y, z), id); });
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
@@ -147,7 +150,8 @@ export class Game {
 
   setMode(mode) {
     if (mode === this.mode) return;
-    if (mode === 'command' && this.net?.isClient) { this.bus.emit('toast', { text: 'Деревней управляет хозяин сетевой игры', kind: 'info' }); return; }
+    // a joined hero runs the village together with the host; a rival commander and the lord of the dead have their own orders (G)
+    if (mode === 'command' && this.net?.isClient && this.net.siegeRole !== 'hero') { this.bus.emit('toast', { text: 'Ваша сторона командует через «Командование» (G)', kind: 'info' }); return; }
     this.mode = mode;
     this.bus.emit('mode:changed', { mode });
   }

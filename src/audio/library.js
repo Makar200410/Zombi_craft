@@ -72,6 +72,27 @@ export const SAMPLES = {
   wind_leaves: ['wind_leaves_1', 'wind_leaves_2'],
   thunder_roll: ['thunder_roll_1', 'thunder_roll_2'],
   thunder_far: ['thunder_far_1', 'thunder_far_2'],
+  // nature (loops: day birdsong, night crickets, water, the village's farms and market; one-shots: birds, dawn)
+  amb_day: ['amb_day_1', 'amb_day_2', 'amb_day_3'],
+  amb_night: ['amb_night'],
+  amb_river: ['amb_river'],
+  amb_farm: ['amb_farm'],
+  amb_market: ['amb_market'],
+  amb_morning: ['amb_morning'],
+  bird_song: ['bird_1', 'bird_2', 'bird_3'],
+  // animals
+  chicken: ['chicken_1', 'chicken_2'],
+  sheep: ['sheep_1', 'sheep_2'],
+  cow: ['cow_1', 'cow_2'],
+  pig: ['pig_1', 'pig_2'],
+  horse: ['horse_1'],
+  pig_death: ['pig_death'],
+  wolf_growl: ['wolf_growl_1', 'wolf_growl_2', 'wolf_growl_3'],
+  wolf_hurt: ['wolf_hurt_1', 'wolf_hurt_2'],
+  wolf_die: ['wolf_die'],
+  bear_roar: ['bear_roar_1', 'bear_roar_2'],
+  bear_attack: ['bear_attack'],
+  animal_death: ['animal_death_1', 'animal_death_2'],
 };
 /** Relative volume of each recorded sound so they sit well together (files are loudness-normalised). */
 export const SAMPLE_GAIN = {
@@ -83,38 +104,48 @@ export const SAMPLE_GAIN = {
   zombie_groan: 0.7, zombie_roar: 0.85, zombie_hurt: 0.6, zombie_die: 0.8, zombie_gib: 0.75, zombie_spit: 0.6, villager_hurt: 0.55, player_hurt: 0.9, death: 0.9,
   ui_click: 0.5, ui_open: 0.45, ui_close: 0.4, coins: 0.7, research_done: 0.75, quest_done: 0.8, upgrade_done: 0.8, build_complete: 0.7, level_up: 0.8, wave_horn: 0.9, wave_cleared: 0.85,
   wind_gust: 0.6, wind_leaves: 0.6, thunder_roll: 1, thunder_far: 0.9,
+  amb_morning: 0.55, bird_song: 0.45, chicken: 0.6, sheep: 0.65, cow: 0.7, pig: 0.6, horse: 0.6, pig_death: 0.7, animal_death: 0.7, wolf_growl: 0.8, wolf_hurt: 0.7, wolf_die: 0.8, bear_roar: 0.9, bear_attack: 0.9,
 };
 /** New sound names without a procedural version fall back to a similar synthesized one while loading. */
-export const SOUND_ALIAS = { zombie_roar: 'zombie_groan', zombie_gib: 'hit_zombie', rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
+export const SOUND_ALIAS = { wolf_growl: 'zombie_groan', wolf_hurt: 'zombie_hurt', wolf_die: 'zombie_die', bear_roar: 'zombie_groan', bear_attack: 'zombie_groan', pig_death: 'villager_hurt', animal_death: 'villager_hurt', zombie_roar: 'zombie_groan', zombie_gib: 'hit_zombie', rifle_shot: 'musket_shot', mg_shot: 'musket_shot', cannon_shot: 'blunderbuss_shot', rocket_launch: 'explosion', laser_shot: 'lightning', thunder_roll: 'lightning', thunder_far: 'lightning' };
 export const SFX_DIR = 'audio/sfx/';
 
 /** Orchestral soundtrack by Omri Lahav & Wildfire Games (0 A.D.), per mood. */
 export const MUSIC_DIR = 'audio/music/';
 // Ancient ages (stone → gunpowder) and the later ages (industrial → singularity) have their own playlists.
 export const PLAYLISTS = {
-  menu: ['cradle_of_civilization'],
-  day: ['forging_a_city_state', 'highland_mist', 'harvest_festival', 'sunrise'],
-  night: ['calm_before_the_storm', 'hill_of_sorrows'],
-  wave: ['red_dawn', 'honor_bound', 'tale_of_warriors', 'taiko_2'],
-  day2: ['the_road_ahead', 'mountain_idyll', 'forging_a_city_state'],
-  night2: ['epitaph', 'calm_before_the_storm'],
-  wave2: ['point_of_no_return', 'taiko_1', 'taiko_2', 'red_dawn'],
+  menu: ['cradle_of_civilization', 'sands_of_time', 'helen_leaves_sparta'],
+  day: ['forging_a_city_state', 'highland_mist', 'harvest_festival', 'sunrise', 'elysian_fields', 'juno_protect_you', 'celtica',
+    'mediterranean_waves', 'peaks_of_atlas', 'land_between_rivers', 'whistler', 'tavern_in_the_mist', 'as_seasons_change',
+    'harvest_moon', 'an_old_warhorse_goes_to_pasture', 'waters_edge', 'ruins_wanderer', 'ruins_journeys_end'],
+  night: ['calm_before_the_storm', 'hill_of_sorrows', 'dried_tears', 'albian_nocturne', 'midwinter', 'mirage', 'eastern_dreams', 'karmic_confluence'],
+  wave: ['red_dawn', 'honor_bound', 'tale_of_warriors', 'taiko_2', 'only_300_stood', 'alba_longa_burns', 'celtic_pride', 'bandit_country', 'harsh_lands_rugged_people'],
+  day2: ['the_road_ahead', 'mountain_idyll', 'forging_a_city_state', 'roman_ingenuity', 'the_governor', 'upstart_king', 'the_fledgling_kingdom',
+    'expedition', 'northern_frontier', 'from_every_corner', 'solstice_festival', 'ruins_silvan_sanctuary', 'ruins_legends_of_the_north', 'ruins_northern_mountains'],
+  night2: ['epitaph', 'calm_before_the_storm', 'albian_nocturne', 'midwinter', 'dried_tears', 'dungeon_transience'],
+  wave2: ['point_of_no_return', 'taiko_1', 'taiko_2', 'red_dawn', 'rise_of_macedon', 'in_the_shadow_of_olympus', 'the_hellespont', 'ruins_breaking_the_chains', 'ruins_loyalists'],
+  // the night's attack beaten off: a short victory theme at dawn
+  victory: ['you_are_victorious'],
   // underground, by depth (see DEPTH_TIERS in systems/underground.js): from quiet tunnels to the bottom of the underworld
-  cave1: ['cave_underground', 'cave_knalgan_theme'],                       // burrows and tunnels (levels 1–2)
-  cave2: ['cave_the_deep_path', 'cave_knalgan_theme', 'cave_underground'], // old mines and grottos (3–4)
-  cave3: ['cave_into_the_shadows', 'cave_suspense'],                       // caverns and ice depths (5–6)
-  cave4: ['cave_the_dangerous_symphony', 'cave_undead_siege', 'cave_revelation'],   // deep caves, gates of hell (7–8)
-  cave5: ['cave_frantic', 'cave_the_city_falls', 'cave_vengeful'],         // ash wastes, the bottom (9–10)
-  caveboss: ['cave_battle_epic', 'cave_weight_of_revenge'],                // a boss is hunting the player
+  cave1: ['cave_underground', 'cave_knalgan_theme', 'dungeon_sad'],                                    // burrows and tunnels (levels 1–2)
+  cave2: ['cave_the_deep_path', 'cave_knalgan_theme', 'cave_underground', 'dungeon_nunc_dimittis'],       // old mines and grottos (3–4)
+  cave3: ['cave_into_the_shadows', 'cave_suspense', 'dungeon_the_king_is_dead', 'dungeon_transience'],   // caverns and ice depths (5–6)
+  cave4: ['cave_the_dangerous_symphony', 'cave_undead_siege', 'cave_revelation', 'dungeon_casualties_of_war'],   // deep caves, gates of hell (7–8)
+  cave5: ['cave_frantic', 'cave_the_city_falls', 'cave_vengeful', 'dungeon_heroes_rite'],               // ash wastes, the bottom (9–10)
+  // inside the dungeons (src/world/dungeons.js): crypts and catacombs, the ruined castles on the surface
+  dungeon: ['dungeon_nunc_dimittis', 'dungeon_the_king_is_dead', 'dungeon_casualties_of_war', 'dungeon_transience', 'dungeon_sad'],
+  ruins: ['ruins_wanderer', 'ruins_legends_of_the_north', 'ruins_northern_mountains', 'dungeon_the_king_is_dead', 'dungeon_nunc_dimittis'],
+  caveboss: ['cave_battle_epic', 'cave_weight_of_revenge', 'dungeon_siege_of_laurelmor', 'dungeon_battle'],   // a boss is hunting the player
 };
 
 export const CREDITS = [
   'Музыка: Omri Lahav и другие композиторы Wildfire Games — саундтрек игры 0 A.D. (play0ad.com), CC BY-SA 3.0, wildfiregames.com, creativecommons.org/licenses/by-sa/3.0/. Треки перекодированы в Opus.',
-  'Музыка пещер: Battle for Wesnoth (wesnoth.org, github.com/wesnoth/wesnoth) — Aleksi Aubry-Carlson (Underground), Ryan Reilly (Knalgan Theme, Suspense), Gianmarco Leone (The Deep Path, The Dangerous Symphony), Tyler Johnson (Into the Shadows), Joseph G. Toscano (Revelation), Stephen Rozanc (Frantic), Doug Kaufman (The City Falls, Battle Epic, Weight of Revenge), Jeremy Nicoll (Vengeful) — GNU GPL v2+; Tomek Szczęsny (Undead Siege) — CC BY-SA 4.0. Треки перекодированы в Opus.',
+  'Музыка пещер и походов: Battle for Wesnoth (wesnoth.org, github.com/wesnoth/wesnoth) — Aleksi Aubry-Carlson (Underground, Battle, Transience), Ryan Reilly (Knalgan Theme, Suspense), Gianmarco Leone (The Deep Path, The Dangerous Symphony), Tyler Johnson (Into the Shadows, Casualties of War, Sad), Joseph G. Toscano (Revelation, Loyalists), Stephen Rozanc (Frantic), Doug Kaufman (The City Falls, Battle Epic, Weight of Revenge, Siege of Laurelmor, Heroes Rite), Jeremy Nicoll (Vengeful, Nunc Dimittis), Mattias Westlund (The King is Dead, Legends of the North, Northern Mountains, Journey\'s End, Breaking the Chains, Silvan Sanctuary), Timothy Pinkham (Wanderer) — GNU GPL v2+; Tomek Szczęsny (Undead Siege) — CC BY-SA 4.0. Треки перекодированы в Opus.',
   'Звуки блоков и шагов: Minetest Game — Mito551 (CC BY-SA 3.0); Erdie, Benboncan, sonictechtonic, Dynamicell (CC BY 3.0); Sheyvan, Iwan Gabovitch (qubodup), TumeniNodes / steveygos93 (CC0). github.com/minetest/minetest_game',
   'Оружие, магия, голоса, стройка, сигналы, дождь, ветер, метель и гром: 0 A.D. — © Wildfire Games, CC BY-SA 3.0.',
   'Голоса зомби: FuzzyTuesday, mazlyn, bananplyte, tonsil5, PaulMorek (CC0), -sihiL (CC BY 3.0), missozzy, LittleRobotSoundFactory, Audionautics (CC BY) — из звукового пакета CDDA-Soundpacks (Fris0uman); Under7dude, haratman, rubberduck (CC0) — из VoxeLibre/MineClone2. Источники: freesound.org, opengameart.org.',
   'Выстрелы, пулемёт, пушка, ракета, арбалет, монеты, щелчки: Unciv (github.com/yairm210/Unciv) — Deganoth, DylanSmithSound, EvanBoyerman (CC BY 4.0/3.0); pgi, BaDoink, GameWithBepis, TheDJoe93, EathanMarkson, stijn, Breviceps, dave.des, Marregheriti (CC0).',
   'Лазер: Kenney (kenney.nl), CC0 / MIT.',
+  'Звуки природы: птицы и лес днём, река, ферма и рынок, голоса животных — 0 A.D. (© Wildfire Games, CC BY-SA 3.0); птицы, ночь, утро и волки — Battle for Wesnoth: Karol Nowak, Lari Nieminen (GNU GPL v2+); медведь — рык льва из 0 A.D., тон понижен.',
   'Некоторые короткие звуки синтезируются самой игрой.',
 ];

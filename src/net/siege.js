@@ -1,13 +1,20 @@
-// Siege mode on a network game: a friend who joins can take a side against the host's village.
-//   «Командир» — leads one of the rival villages: hires soldiers with the town's wealth, sends war parties at the
-//                host's village or at other towns, builds the town's defences (its wealth pays for the blocks) and
-//                holds it at night, when the dead come for his town too (his soldiers fight them).
+// Network games: a friend who joins picks a side.
+//   «Правитель деревни» — takes one of the villages (picked when joining) and runs it as their own: builds its
+//                buildings, raises its town hall, researches its own technologies and leads it into new ages, pays
+//                for it all from the town's treasury, hires soldiers, storms other towns or the host's village and
+//                holds it at night, when the dead come for every player's town. Players (and the host) declare war
+//                on each other and offer peace or an alliance; an ally joins the war when its friend is attacked
+//                (treaties: systems/rivals.js). Weapons found in chests stay with the player who found them;
+//                research is the town's.
 //   «Повелитель нежити» — commands the dead: dark power builds up (faster at night) and is spent to raise zombies
 //                where he points (his hotbar holds the dead he can call; never right inside the village) or to bring
 //                the night on early. He rises not far from the host — by day in a cave below, out of the sun. The
 //                village's guards and towers hunt him.
 // The host runs it all (Siege, below); the joined player sends commands and gets his side's state once a second.
 import * as THREE from 'three';
+import { TECHS, TECH_ORDER } from '../systems/research.js';
+import { AGES } from '../systems/ages.js';
+import { BUILDING_TYPES } from '../village/buildings.js';
 
 export const ROLES = { hero: 'Герой деревни', rival: 'Командир соседней деревни', horde: 'Повелитель нежити' };
 // what the lord of the dead can raise: [type, name, cost, from wave, cooldown s]
@@ -37,18 +44,28 @@ export class Siege {
   }
   get rivals() { return this.game.rivals; }
 
+  /** The towns a joining player may lead (for the lobby). */
+  lobbyTowns() {
+    const R = this.rivals, c = this.game.world.size / 2;
+    if (!R?.active) return [];
+    return R.list.map(r => ({ i: r.i, name: r.name, color: r.color, tier: r.tier, age: AGES[r.tier - 1]?.name || '', army: Math.floor(r.army), pop: Math.round(r.pop),
+      dist: Math.round(Math.hypot(r.x - c, r.z - c)), taken: r.commanderName || null, free: r.commander == null && r.owner === null, war: R.atWarWithPlayer(r.i) }));
+  }
   /** A player joins with a role: returns {role, town, spawn} (falls back to a hero when the side isn't available). */
-  assign(p, role) {
+  assign(p, role, want = null) {
     const g = this.game, R = this.rivals;
     if (role === 'rival' && R?.active) {
       const c = g.world.size / 2;
       const free = R.list.filter(r => r.commander == null && r.owner === null).sort((a, b) => Math.hypot(a.x - c, a.z - c) - Math.hypot(b.x - c, b.z - c));
-      const r = free[0];
+      const r = free.find(t => t.i === want) || free[0];
       if (r) {
         r.commander = p.cid; r.commanderName = p.playerName;
+        r.hall = Math.max(1, r.hall || 1); r.techs = r.techs || [];
         p.role = 'rival'; p.town = r.i; p.faction = 'undead'; p.rivalId = r.i;
-        if (!R.atWarWithPlayer(r.i)) R.declareWar(r, `${p.playerName} возглавил(а) «${r.name}» и объявил(а) вам войну!`);
-        else g.bus.emit('toast', { text: `${p.playerName} возглавил(а) «${r.name}»!`, kind: 'bad' });
+        // a new ruler starts at peace with everyone: wars are their own to declare
+        if (R.atWarWithPlayer(r.i)) R.makeSidesPeace(r.i, 'P', true);
+        for (const o of R.warsOf(r.i)) R.makeSidesPeace(r.i, o, true);
+        g.bus.emit('toast', { text: `${p.playerName} теперь правит деревней «${r.name}»!`, kind: 'info', share: true });
         g.bus.emit('rivals:changed', { i: r.i });
         return { role: 'rival', town: r.i, spawn: [r.x + 0.5, r.y + 1, r.z + 6.5] };
       }
@@ -128,29 +145,86 @@ export class Siege {
     const say = (text, kind = 'info') => this.net._sendTo(p.cid, { t: 'toast', text, kind });
     if (p.role === 'rival') {
       const r = R.get(p.town); if (!r || r.commander !== p.cid) return;
-      if (r.owner === 'player') return say('Ваш город захвачен хозяином: войско ему больше не подчиняется', 'bad');
-      if (d.c === 'recruit') {
-        const cost = this.recruitCost(r);
-        if (r.army >= r.armyCap + 6) return say('Казармы полны: стройте город, чтобы растить войско', 'bad');
-        if (r.wealth < cost) return say(`Нужно ${cost} богатства`, 'bad');
-        r.wealth -= cost; r.army += 1;
-        say(`Нанят воин. Войско: ${Math.floor(r.army)}`, 'good');
-      } else if (d.c === 'raid') {
-        if (!R.atWarWithPlayer(r.i)) R.declareWar(r, `«${r.name}» объявила вам войну!`);
-        if (r.raid) return say('Отряд уже в походе', 'bad');
-        const n = Math.max(1, Math.min(Math.floor(r.army), d.n | 0 || Math.floor(r.army)));
-        if (r.army < 1) return say('Нет воинов: наймите их', 'bad');
-        R.launchRaid(r, n);
-        say(`Отряд из ${n} воинов выступил на деревню хозяина`, 'good');
-      } else if (d.c === 'war') {
-        const o = R.get(d.town); if (!o || o === r) return;
-        const k = Math.min(r.i, o.i) + ':' + Math.max(r.i, o.i);
-        if (!R.wars.has(k)) { R.wars.add(k); g.bus.emit('toast', { text: `«${r.name}» напала на «${o.name}»!`, kind: 'warn', share: true }); g.bus.emit('rivals:changed', {}); }
-      } else if (d.c === 'peace') {
-        if (!R.atWarWithPlayer(r.i)) return say('Вы и так в мире с хозяином');
-        r.offer = { gold: Math.round(20 + r.tier * 10) };
-        g.bus.emit('toast', { text: `«${r.name}» (${p.playerName}) предлагает мир и ${r.offer.gold} золота — ответ в «Соседях» (N)`, kind: 'info' });
-        say('Предложение мира отправлено хозяину');
+      if (r.owner !== null) return say(r.owner === 'player' ? 'Ваш город захвачен хозяином: войско ему больше не подчиняется' : `Ваш город захвачен «${R.get(r.owner)?.name}»`, 'bad');
+      const side = (t) => (t === 'P' ? 'P' : R.get(t) ? +t : null);
+      switch (d.c) {
+        case 'recruit': {
+          const cost = this.recruitCost(r), n = Math.max(1, Math.min(10, d.n | 0 || 1));
+          let made = 0;
+          for (let k = 0; k < n; k++) { if (r.army >= r.armyCap + 6 || r.wealth < cost) break; r.wealth -= cost; r.army += 1; made++; }
+          if (!made) return say(r.army >= r.armyCap + 6 ? 'Казармы полны: стройте казармы и башни, улучшайте ратушу' : `Нужно ${cost} богатства`, 'bad');
+          return say(`Нанято воинов: ${made}. Войско: ${Math.floor(r.army)}`, 'good');
+        }
+        case 'build': {
+          const nb = this.nextBuild(r);
+          if (!nb) return say(nb === null ? 'Все здания этой эпохи построены: двигайтесь в новую эпоху' : 'Нечего строить', 'bad');
+          if (r.wealth < nb.cost) return say(`Нужно ${nb.cost} богатства`, 'bad');
+          r.wealth -= nb.cost; r.built++;
+          R._recount(r); R._queue(r, r.built - 1, 0, 14);
+          return say(`Строится: ${nb.name}`, 'good');
+        }
+        case 'hall': {
+          const c = this.hallCost(r);
+          if ((r.hall || 1) >= Math.min(10, r.tier + 1)) return say('Ратуша на пределе этой эпохи', 'bad');
+          if (r.wealth < c) return say(`Нужно ${c} богатства`, 'bad');
+          r.wealth -= c; r.hall = (r.hall || 1) + 1; R._recount(r);
+          return say(`Ратуша улучшена до ${r.hall} уровня: казармы просторнее, казна богаче`, 'good');
+        }
+        case 'research': {
+          const t = TECHS[d.id];
+          const why = this.techBlock(r, d.id);
+          if (why) return say(why, 'bad');
+          r.wealth -= this.techCost(d.id); r.techs.push(d.id);
+          say(`Изучено: ${t.name}`, 'good');
+          this.net._sendTo(p.cid, { t: 'techs', techs: r.techs });
+          return;
+        }
+        case 'age': {
+          const why = this.ageBlock(r);
+          if (why) return say(why, 'bad');
+          r.wealth -= this.ageCost(r);
+          const old = r.tier; r.tier++;
+          R._recount(r);
+          for (let k = 0; k < Math.min(r.built, R._plan(r).length); k++) R._queue(r, k, old, 5);
+          g.bus.emit('toast', { text: `«${r.name}» (${p.playerName}) вступает в эпоху: ${AGES[r.tier - 1]?.name || ''}`, kind: 'info', share: true });
+          g.bus.emit('rivals:changed', { i: r.i });
+          return;
+        }
+        case 'raid': {
+          if (R.allied(r.i, 'P')) return say('Хозяин — ваш союзник: сначала расторгните союз', 'bad');
+          if (!R.atWarWithPlayer(r.i)) R.declareWar(r, `«${r.name}» (${p.playerName}) объявила вам войну!`);
+          if (r.raid) return say('Отряд уже в походе', 'bad');
+          if (r.army < 1) return say('Нет воинов: наймите их', 'bad');
+          const n = Math.max(1, Math.min(Math.floor(r.army), d.n | 0 || Math.floor(r.army)));
+          R.launchRaid(r, n);
+          return say(`Отряд из ${n} воинов выступил на деревню хозяина`, 'good');
+        }
+        case 'attack': {
+          const o = R.get(d.town); if (!o || o === r) return;
+          if (!R.atWar(r.i, o.i)) return say(`Сначала объявите войну «${o.name}»`, 'bad');
+          if ((r._attackCd || 0) > g.time) return say(`Войско ещё не вернулось из похода: ${Math.ceil(r._attackCd - g.time)} с`, 'bad');
+          const n = Math.max(1, Math.min(Math.floor(r.army), d.n | 0 || Math.floor(r.army)));
+          if (r.army < 1) return say('Нет воинов: наймите их', 'bad');
+          r.army -= n; r._attackCd = g.time + 45;
+          R.assault(r, o, n);
+          return say(`Отряд из ${n} воинов штурмует «${o.name}»`, 'good');
+        }
+        case 'war': {
+          const t = side(d.town); if (t === null || t === r.i) return;
+          if (R.allied(r.i, t)) return say('Это ваш союзник: сначала расторгните союз', 'bad');
+          if (R.sidesAtWar(r.i, t)) return say('Вы уже воюете', 'bad');
+          if (t === 'P') R.declareWar(r, `«${r.name}» (${p.playerName}) объявила вам войну!`);
+          else R.townWar(r, R.get(t), `«${r.name}» (${p.playerName}) объявила войну «${R.get(t).name}»!`);
+          return;
+        }
+        case 'peace': case 'ally': {
+          const t = side(d.town); if (t === null || t === r.i) return;
+          const res = R.propose(r.i, t, d.c);
+          if (res) say(res, res.includes('отказ') ? 'bad' : 'info');
+          return;
+        }
+        case 'unally': { const t = side(d.town); if (t !== null) R.breakPact(r.i, t); return; }
+        case 'answer': R.answer(d.id | 0, !!d.yes, p.cid); return;
       }
       return;
     }
@@ -205,6 +279,36 @@ export class Siege {
     const y = g.underground?._standAt?.(ix, w.heightAt(ix, iz) + 1, iz, 8);
     return y === null || y === undefined ? null : { x: ix + 0.5, y, z: iz + 0.5 };
   }
+  // ---- a player's town: what things cost and what stands in the way
+  nextBuild(r) {
+    const R = this.rivals, plan = R._plan(r), elig = R._eligible(r);
+    if (r.built >= plan.length) return undefined;
+    if (r.built >= elig) return null;
+    return { name: BUILDING_TYPES[plan[r.built].type]?.name || 'здание', type: plan[r.built].type, cost: Math.round((40 + r.built * 12 * r.tier) * 1.2) };
+  }
+  hallCost(r) { return 120 * (r.hall || 1) * (r.hall || 1); }
+  techCost(id) { const t = TECHS[id]; if (!t) return 0; let n = 0; for (const k in t.cost) n += t.cost[k]; return Math.round(n * 1.2 + t.points); }
+  /** Techs a town can study now (its age decides how far it can go: one band of the tree per age). */
+  techBlock(r, id) {
+    const t = TECHS[id];
+    if (!t) return 'Нет такого исследования';
+    if (r.techs.includes(id)) return 'Уже изучено';
+    if (!t.prereqs.every(q => r.techs.includes(q))) return 'Сначала: ' + t.prereqs.filter(q => !r.techs.includes(q)).map(q => TECHS[q].name).join(', ');
+    if ((t.tier || 0) > r.tier) return `Доступно с эпохи «${AGES[t.tier - 1]?.name || ''}»`;
+    if (r.wealth < this.techCost(id)) return `Нужно ${this.techCost(id)} богатства`;
+    return null;
+  }
+  ageCost(r) { return 200 * r.tier * r.tier; }
+  ageBlock(r) {
+    const a = AGES[r.tier];
+    if (!a || a.soon) return 'Это последняя эпоха';
+    if (this.nextBuild(r)) return 'Сначала постройте все здания этой эпохи';
+    if ((r.hall || 1) < a.req.th) return `Нужна ратуша ${a.req.th} уровня`;
+    const miss = a.req.techs.filter(t => !r.techs.includes(t));
+    if (miss.length) return 'Нужны исследования: ' + miss.map(t => TECHS[t]?.name || t).join(', ');
+    if (r.wealth < this.ageCost(r)) return `Нужно ${this.ageCost(r)} богатства`;
+    return null;
+  }
   /** How many risen dead the lord may hold at once: grows with the waves the village held and its age. */
   hordeMax() { const g = this.game; return Math.min(45, 8 + (g.waves?.currentWave | 0) * 2 + (g.state.age | 0) * 2); }
   /** Dark power a second: faster at night, and more as the host's village grows. */
@@ -219,7 +323,7 @@ export class Siege {
     if (!R?.active || !W) return;
     for (const r of R.list) {
       if (r.commander == null) continue;
-      const n = Math.min(26, 5 + Math.round((W.currentWave | 0) * 0.9 + r.tier));
+      const n = Math.min(30, 5 + Math.round((W.currentWave | 0) * 0.9 + r.tier * 1.5));
       let made = 0;
       for (let k = 0; k < n * 3 && made < n; k++) {
         const a = Math.random() * Math.PI * 2, rr = 46 + Math.random() * 18;
@@ -245,10 +349,21 @@ export class Siege {
     for (const p of this.net.players?.values() || []) {
       if (p.role === 'rival') {
         const r = R?.get(p.town); if (!r) continue;
+        const rel = (t) => (R.allied(r.i, t) ? 'ally' : R.sidesAtWar(r.i, t) ? 'war' : 'peace');
+        const nb = this.nextBuild(r), a = AGES[r.tier];
         this.net._sendTo(p.cid, { t: 'siege', role: 'rival', town: {
           i: r.i, name: r.name, color: r.color, tier: r.tier, army: Math.floor(r.army), cap: r.armyCap, wealth: Math.floor(r.wealth), pop: Math.round(r.pop),
-          recruit: this.recruitCost(r), war: R.atWarWithPlayer(r.i), raid: r.raid ? { size: r.raid.size, eta: Math.round(r.raid.eta), arrived: r.raid.arrived, left: r.raid.units?.filter(u => !u.dead).length } : null,
-          owner: r.owner, towns: R.list.filter(o => o !== r).map(o => [o.i, o.name, R.atWar(r.i, o.i) ? 1 : 0, o.tier, Math.floor(o.army)]),
+          income: Math.round((r.pop * 0.05 + r.tier * 0.4) * (r.drive || 1) * (1 + 0.1 * ((r.hall || 1) - 1)) * 60),
+          hall: r.hall || 1, hallCost: this.hallCost(r), hallMax: Math.min(10, r.tier + 1), built: r.built, plan: R._plan(r).length,
+          next: nb ? { name: nb.name, cost: nb.cost } : null,
+          age: a && !a.soon ? { name: a.name, cost: this.ageCost(r), why: this.ageBlock(r), th: a.req.th, techs: a.req.techs } : null,
+          techs: r.techs,
+          study: TECH_ORDER.filter(id => !r.techs.includes(id) && TECHS[id].prereqs.every(q => r.techs.includes(q)) && (TECHS[id].tier || 0) <= r.tier).map(id => [id, TECHS[id].name, this.techCost(id)]),
+          recruit: this.recruitCost(r), raid: r.raid ? { size: r.raid.size, eta: Math.round(r.raid.eta), arrived: r.raid.arrived, left: r.raid.units?.filter(u => !u.dead).length } : null,
+          owner: r.owner, attackCd: Math.max(0, Math.ceil((r._attackCd || 0) - g.time)),
+          host: { name: 'Деревня хозяина', rel: rel('P'), age: AGES[g.state.age | 0]?.name || '' },
+          towns: R.list.filter(o => o !== r).map(o => ({ i: o.i, name: o.name, color: o.color, rel: rel(o.i), tier: o.tier, army: Math.floor(o.army), player: o.commanderName || null, subject: o.owner !== null })),
+          offers: R.offersFor(r.i).map(o => ({ id: o.id, kind: o.kind, from: R.sideName(o.from) })),
         } });
       } else if (p.role === 'horde') {
         H.spawned = H.spawned.filter(z => !z.dead);

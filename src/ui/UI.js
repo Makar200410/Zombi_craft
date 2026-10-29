@@ -118,6 +118,16 @@ export class UI {
 
   _loud() { return this.game.running && performance.now() > this._quietUntil; }
   click() { this.game.audio?.play?.('ui_click'); }
+  saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch (e) { /* ignore */ } }
+  /** Graphics quality chosen by the player: applied now, remembered, and no longer lowered automatically. */
+  setQuality(q) {
+    const g = this.game, r = g.renderer;
+    if (!r || !['low', 'medium', 'high'].includes(q)) return;
+    r.renderScale = 1;
+    r.setQuality(q);
+    g._qLocked = true;
+    try { localStorage.setItem('zc_quality', q); localStorage.setItem('zc_quality_user', '1'); } catch (e) { /* ignore */ }
+  }
   toast(text, kind = 'info', icon = null) { if (text) this.toasts.show(text, kind, icon); }
   confirm(title, text, ok, onOk) { return confirmDialog(this, title, text, ok, onOk); }
 

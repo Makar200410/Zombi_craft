@@ -1,6 +1,13 @@
-// Atmosphere & polish: chimney smoke / reactor steam (blown by the wind), fireflies at night, and a
-// fireworks celebration (weather lives in systems/weather.js) when the village enters a new age. Everything is cheap and scaled down on low quality.
+// Atmosphere & polish: chimney smoke / reactor steam (blown by the wind), fireflies at night, a fireworks
+// celebration (weather lives in systems/weather.js) when the village enters a new age, and the sounds of nature —
+// birdsong by day, crickets at night, water near by, the village's farms and market, a dawn chorus.
+// Everything is cheap and scaled down on low quality.
 import { ageOf } from './ages.js';
+import { WATER_IDS } from '../core/blocks.js';
+
+// how much birdsong each biome has (0 plains … 9 tundra, see world/terrain.js); crickets need warm nights
+const BIRDS = [0.8, 1, 0.6, 0.5, 0, 1, 0.15, 0.6, 0.8, 0.25];
+const CRICKETS = [1, 0.8, 0.5, 0.7, 0.2, 0.8, 0.5, 1, 1, 0];
 
 export class Ambience {
   constructor(game) {
@@ -13,6 +20,8 @@ export class Ambience {
     const bus = this.game.bus;
     bus.on('age:changed', ({ age } = {}) => this.celebrate(age));
     bus.on('game:begin', () => { this._fireworks.length = 0; });
+    bus.on('time:dawn', () => { if (this._surface > 0.6) this.game.audio?.play('amb_morning', { volume: 0.7 }); });
+    this._natT = 0; this._birdT = 6; this._surface = 1;
   }
 
   get low() { return this.game.quality === 'low'; }
@@ -23,6 +32,50 @@ export class Ambience {
     this._smoke(dt);
     this._fireflies(dt);
     this._fireworksUpdate(dt);
+    this._nature(dt);
+  }
+
+  // ---- the sounds of nature around the player ----------------------------
+  _nature(dt) {
+    const g = this.game, w = g.world, A = g.audio;
+    if (!A?.setNature) return;
+    this._natT -= dt;
+    if (this._natT > 0) return;
+    this._natT = 0.5;
+    const p = g.player?.position || g.camera.position, cam = g.camera.position;
+    const x = Math.floor(p.x), z = Math.floor(p.z);
+    // under the ground nothing of this is heard
+    const depth = w.heightAt(x, z) - p.y;
+    const surface = Math.max(0, Math.min(1, 1 - (depth - 4) / 10)) * (1 - (g.renderer?._cave || 0));
+    this._surface = surface;
+    const W = g.weather, wet = Math.max(W?.rain || 0, W?.snow || 0), night = g.state.nightFactor || 0, b = w.biomeAt(x, z);
+    const day = (1 - night) * (1 - wet * 0.85) * (BIRDS[b] ?? 0.6) * surface;
+    const crickets = night * (1 - wet) * (CRICKETS[b] ?? 0.6) * surface;
+    // water: how much of the land around is water
+    let water = 0;
+    const sea = w.sea ?? 20;
+    for (let k = 0; k < 16; k++) {
+      const r = k < 8 ? 6 : 13, a = (k % 8) / 8 * Math.PI * 2;
+      if (WATER_IDS[w.getBlock(Math.floor(cam.x + Math.cos(a) * r), sea, Math.floor(cam.z + Math.sin(a) * r))]) water++;
+    }
+    const river = Math.min(1, water / 6) * surface;
+    // the village's farms and market by day
+    let farm = 0, market = 0;
+    for (const bl of g.village?.buildings || []) {
+      if (bl.state !== 'complete' || (bl.type !== 'farm' && bl.type !== 'market')) continue;
+      const d = Math.hypot(bl.center.x - cam.x, bl.center.z - cam.z), k = Math.max(0, 1 - d / 32) * (1 - night);
+      if (bl.type === 'farm') farm = Math.max(farm, k); else market = Math.max(market, k);
+    }
+    A.setNature({ day, night: crickets, river, farm, market, indoor: W?.indoor || 0 });
+    // a bird singing in the trees near by
+    this._birdT -= 0.5;
+    if (this._birdT <= 0) {
+      this._birdT = 5 + Math.random() * 12;
+      if (day > 0.35 && Math.random() < day) {
+        const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 14;
+        A.play('bird_song', { pos: { x: cam.x + Math.cos(a) * r, y: w.heightAt(Math.floor(cam.x), Math.floor(cam.z)) + 6, z: cam.z + Math.sin(a) * r }, volume: 0.7 });
+      }
+    }
   }
 
   // ---- chimneys: smoke from factories / power plants, steam from reactors, hearth smoke at night -------

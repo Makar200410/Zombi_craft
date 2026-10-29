@@ -9,6 +9,7 @@ const STATUS = {
   peace: ['Мир', '#9fe3a0'],
   war: ['Война с вами', '#ff8070'],
   vassal: ['Ваш вассал', '#ffd35a'],
+  ally: ['Ваш союзник', '#80d0ff'],
   subject: ['Вассал соседей', '#c0b0e0'],
 };
 
@@ -63,6 +64,15 @@ export class RivalsPanel {
     const ms = R.markers().sort((a, b) => a.dist - b.dist);
     const wars = ms.filter(m => m.status === 'war').length, vassals = ms.filter(m => m.status === 'vassal').length;
     this.sum.textContent = `Ваша оборона: ${Math.round(R.playerDefense())} · войн: ${wars} · вассалов: ${vassals}`;
+    // offers from the other players (and towns) to the host
+    for (const o of R.offersFor('P')) {
+      this.body.append(h('div.zc-rv-town', { style: 'border-left-color:#9fe3a0' },
+        h('div.zc-rv-head', h('b', `${R.sideName(o.from)} предлагает ${o.kind === 'ally' ? 'союз' : 'мир'}`)),
+        h('div.zc-rv-line', o.kind === 'ally' ? 'Союзники не воюют друг с другом и вступают в войну, если на одного из вас нападут.' : 'Война закончится, их отряды вернутся домой.'),
+        h('div.zc-rv-btns',
+          h('button.zc-chipbtn.sel.ui-i', { onclick: () => { R.answer(o.id, true, 'host'); this.render(); } }, 'Принять'),
+          h('button.zc-chipbtn.ui-i', { onclick: () => { R.answer(o.id, false, 'host'); this.render(); } }, 'Отказать'))));
+    }
     for (const m of ms) {
       const r = m.r, [st, col] = STATUS[m.status];
       const foes = R.warsOf(r.i).map(i => R.get(i)?.name).filter(Boolean);
@@ -74,7 +84,9 @@ export class RivalsPanel {
       if (r.next) lines.push(r.next.pct === null ? `Развитие: ${r.next.what}` : `Строит: ${r.next.what} — ${r.next.pct}%`);
       if (r.ally != null) lines.push(`🤝 В союзе с «${R.get(r.ally)?.name || '?'}» против вас`);
       if ((r.captainCD || 0) > this.game.time) lines.push(`Воевода пал — новый через ~${Math.ceil(r.captainCD - this.game.time)} с`);
-      if (r.commanderName) lines.push(`⚑ Армией командует игрок ${r.commanderName}`);
+      if (r.commanderName) lines.push(`⚑ Деревней правит игрок ${r.commanderName}`);
+      const pals = R.alliesOf(r.i).filter(a => a !== 'P').map(a => R.get(a)?.name).filter(Boolean);
+      if (pals.length) lines.push(`🤝 Союзники: ${pals.map(n => '«' + n + '»').join(', ')}`);
       if (m.status === 'subject') lines.push(`Подчиняется «${R.get(r.owner)?.name || '?'}»`);
       if (foes.length) lines.push(`Воюет с: ${foes.map(n => '«' + n + '»').join(', ')}`);
       if (r.raid && !r.raid.arrived) lines.push(`⚔ Отряд из ${r.raid.size} воинов идёт к вам: ~${Math.round(r.raid.eta)} с`);
@@ -86,8 +98,14 @@ export class RivalsPanel {
         const why = C.whyNoTrade(r);
         btns.push(h('button.zc-chipbtn.ui-i' + (why ? '.off' : '.sel'), { title: why || 'Купить и продать товары', onclick: () => { if (why) { this.ui.toast(why, 'bad'); return; } this.trade = r.i; this.ui.click(); this.render(); } }, 'Торговать'));
       }
-      if (m.status === 'peace') btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.declareWar(r, `Вы объявили войну «${r.name}»!`); this.render(); } }, 'Объявить войну'));
-      if (m.status === 'war' && r.owner === null) {
+      const say = (t) => { if (t) this.ui.toast(t, t.includes('отказ') ? 'bad' : 'info'); this.render(); };
+      if (m.status === 'peace') {
+        btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => say(R.propose('P', r.i, 'ally')) }, 'Предложить союз'));
+        btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.declareWar(r, `Вы объявили войну «${r.name}»!`, { byHost: true }); this.render(); } }, 'Объявить войну'));
+      }
+      if (m.status === 'ally') btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.breakPact(r.i, 'P'); this.render(); } }, 'Расторгнуть союз'));
+      if (m.status === 'war' && r.owner === null && r.commander != null) btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => say(R.propose('P', r.i, 'peace')) }, 'Предложить мир'));
+      else if (m.status === 'war' && r.owner === null) {
         if (r.offer) btns.push(h('button.zc-chipbtn.sel.ui-i', { onclick: () => { R.offerPeace(r); this.render(); } }, `Принять мир (+${r.offer.gold} золота)`));
         else btns.push(h('button.zc-chipbtn.ui-i', { onclick: () => { R.offerPeace(r); this.render(); } }, `Купить мир (${R.peacePrice(r)} золота)`));
       }

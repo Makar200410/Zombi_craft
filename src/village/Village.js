@@ -182,11 +182,13 @@ export class Village {
   // ================================================================ world edits
   /** Block edit performed by the village itself (does not count as damage to buildings). */
   editBlock(x, y, z, id) {
+    if (this.mirror) return;              // a mirror never edits the world: the host's village does
     this._self = true;
     try { this.game.world.setBlock(x, y, z, id); } finally { this._self = false; }
   }
   /** Many edits at once: writes directly and relights once (used for instant stamping). */
   bulkEdit(list) {
+    if (this.mirror) return;
     const w = this.game.world;
     if (list.length < 40) { for (const [x, y, z, id] of list) this.editBlock(x, y, z, id); return; }
     const chunks = new Set();
@@ -219,6 +221,12 @@ export class Village {
     const w = this.game.world;
     if (!w) return;
     const e = this.cellIndex.get(w.index(x, y, z));
+    if (this.mirror) {
+      // a joined player's copy: the host's builders and the undead change the blocks, the host keeps the score
+      if (e) { const b = e.b, ok = id === b.blocks[e.i].id ? 1 : 0; if (ok !== b.built[e.i]) { b.built[e.i] = ok; b.builtCount += ok ? 1 : -1; b.progress = b.builtCount / b.blocks.length; } }
+      this.ghostsDirty = true;
+      return;
+    }
     if (e && e.b.state !== 'destroyed') e.b.onBlockEdited(e.i, id);
   }
 
@@ -311,6 +319,7 @@ export class Village {
     const def = BUILDING_TYPES[typeId];
     if (!def) return null;
     x = Math.round(x); z = Math.round(z);
+    if (this._remote()) return this._remotePlace(def, typeId, x, z, rot);
     const site = this.checkSite(typeId, x, z, rot);
     if (!site.ok && !opts.force) { if (!opts.silent && !opts.free) this.toast(site.reason, 'bad'); return null; }
     if (!opts.free) {
@@ -375,6 +384,7 @@ export class Village {
   /** Demolish (player action): removes the building record and its blocks, refunds half the cost. */
   demolish(b) {
     if (!b || b === this.townHall) return false;
+    if (this._remote()) return this._send('demolish', { id: b.id });
     const edits = [];
     for (let i = 0; i < b.blocks.length; i++) { const bl = b.blocks[i]; if (bl.dy >= 1 && this.game.world.getBlock(bl.x, bl.y, bl.z) === bl.id) edits.push([bl.x, bl.y, bl.z, B.AIR]); }
     this.removeBuilding(b);
@@ -423,6 +433,10 @@ export class Village {
   startUpgrade(b) {
     const why = this.upgradeBlocker(b);
     if (why) { this.toast(why, 'bad'); return false; }
+    if (this._remote()) {
+      if (!this.game.state.canAfford(this.upgradeCost(b))) { this.toast('Не хватает ресурсов для улучшения', 'bad'); return false; }
+      return this._send('upgrade', { id: b.id });
+    }
     if (!this.game.state.spend(this.upgradeCost(b))) { this.toast('Не хватает ресурсов для улучшения', 'bad'); return false; }
     const t = this.upgradeTime(b);
     b.upgrade = { left: t, total: t };
@@ -778,6 +792,7 @@ export class Village {
   /** Assign a villager to a building's job (null → idle, or keeps 'builder' only via setJob). */
   assign(v, building, job = null) {
     if (!v || v.dead) return false;
+    if (this._remote()) this._send('assign', { v: v.netId, b: building ? building.id : null, job });     // and shown here at once
     if (building) {
       if (!building.jobSlots) return false;
       if (building.workers.includes(v)) return true;
@@ -793,12 +808,14 @@ export class Village {
   }
   /** Job without a building (builder / idle). */
   setJob(v, job) {
+    if (this._remote()) return this._send('setjob', { v: v?.netId, job });
     if (job === 'builder' || job === 'idle') return this.assign(v, null, job);
     const b = this.buildings.find(b => b.def.jobs[job] && b.freeSlots > 0 && b.state !== 'destroyed');
     return b ? this.assign(v, b, job) : false;
   }
   setBuilderCount(n, { free = false } = {}) {
     n = Math.max(0, Math.min(this.builderCap, n | 0));
+    if (this._remote()) { this._send('builders', { n }); return n; }
     let builders = this.villagersByJob('builder');
     while (builders.length > n) { this.assign(builders.pop(), null, 'idle'); }
     if (builders.length < n) {
@@ -822,6 +839,7 @@ export class Village {
   }
   /** Fill free job slots with idle villagers (optionally only for one building). Keeps ≥2 builders. */
   autoAssign(only = null) {
+    if (this._remote()) { this._send('auto', { only: only?.id ?? null }); return 0; }
     let changed = 0;
     const idle = () => this.villagers.filter(v => !v.dead && v.job === 'idle');
     if (!only) {
@@ -937,7 +955,7 @@ export class Village {
   refreshZombies() {
     const out = this.zombies; out.length = 0;
     const rv = this.game.rivals;
-    for (const e of this.game.entities.list) if (!e.dead && e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.atWarWithPlayer(e.rivalId))) out.push(e);
+    for (const e of this.game.entities.list) if (!e.dead && ((e.faction === 'undead' && e.kind !== 'projectile' && (e.rivalId == null || rv?.atWarWithPlayer(e.rivalId))) || e.predator)) out.push(e);     // wolves and bears too
   }
   nearestZombie(pos, maxDist, los = false) {
     let best = null, bd = maxDist * maxDist;
@@ -1493,6 +1511,119 @@ export class Village {
       }
     }
     this.ghosts.set(list);
+  }
+
+  // ================================================================ network games
+  // On a joined player's computer the village is a mirror of the host's: the host sends its buildings and people
+  // (Net._villageSnap) and every order given here (placing, upgrades, demolition, jobs) is sent to the host, who
+  // carries it out; the mirror shows the result a moment later.
+  _remote() { return this.mirror && !this._applying; }
+  _send(op, args = {}) { this.game.net?.send({ t: 'vcmd', op, ...args }); return true; }
+  _remotePlace(def, typeId, x, z, rot) {
+    const site = this.checkSite(typeId, x, z, rot);
+    if (!site.ok) { this.toast(site.reason, 'bad'); return null; }
+    const chk = this.canPlace(typeId);
+    if (!chk.ok) { this.toast(chk.reason, 'bad'); return null; }
+    if (!this.game.state.canAfford(def.cost)) { this.toast('Не хватает ресурсов', 'bad'); return null; }
+    this._send('place', { type: typeId, x, z, rot });
+    return { pending: true, typeId, x, z };
+  }
+  /** Host side: what the mirrors need — buildings, people (with their network ids) and the armoury. */
+  mirrorState() {
+    return {
+      b: this.buildings.map(b => b.serialize()),
+      v: this.villagers.filter(v => !v.dead).map(v => [v.id, v.name, v.female ? 1 : 0, v.seed | 0, v.job, v.workplace ? v.workplace.id : -1, v.home ? v.home.id : -1, Math.round(v.hp), v.maxHp, +v.position.x.toFixed(2), +v.position.y.toFixed(2), +v.position.z.toFixed(2)]),
+      armory: this.armory,
+    };
+  }
+  /** Joined player's side: bring the mirror in line with the host's village. */
+  applyMirror(m) {
+    if (!m?.b) return;
+    this._applying = true;
+    try {
+      const keep = new Set();
+      for (const s of m.b) {
+        if (!BUILDING_TYPES[s.type]) continue;
+        keep.add(s.id);
+        let b = this.byId.get(s.id);
+        if (b && (b.type !== s.type || b.x !== s.x || b.y !== s.y || b.z !== s.z || b.rot !== s.rot || (b.level || 1) !== (s.level || 1) || (b.def.tiered && ((s.tier || 0) !== b.tier || (s.grow || 0) !== b.grow)))) { this.removeBuilding(b); b = null; }
+        if (!b) {
+          b = new Building(this, s.type, s.x, s.y, s.z, s.rot, s.variant || 0, s.id);
+          b.level = s.level || 1;
+          if (b.def.tiered && s.tier && (s.tier !== b.tier || (s.grow || 0) !== b.grow)) b.relayout(s.tier, s.grow || 0, false);
+          b.applyLevelMaterials(false);
+          this.addBuilding(b);
+          b.computeOps();
+        }
+        b.state = s.state || 'complete';
+        b.maxHp = b.computeMaxHp();
+        b.hp = Math.min(b.maxHp, s.hp ?? b.maxHp);
+        b.upgrade = s.upgrade && s.upgrade.left > 0 ? { left: s.upgrade.left, total: s.upgrade.total || s.upgrade.left } : null;
+        b.wantGrow = s.wantGrow || 0;
+        b.quarryDone = !!s.quarryDone;
+        b.needsRepair = b.state === 'complete' && b.builtCount < b.blocks.length;
+        const building = b.state === 'planned' || b.state === 'constructing';
+        if (building && !this.scaffolds.has(b.id)) this.scaffolds.set(b.id, new Scaffold(this.game, b));
+        else if (!building && this.scaffolds.has(b.id)) { this.scaffolds.get(b.id).dispose(); this.scaffolds.delete(b.id); }
+      }
+      for (const b of [...this.buildings]) if (!keep.has(b.id)) this.removeBuilding(b);
+      // the people: the host's villagers, moved by its snapshots (Net._applySnap)
+      const byNet = this._netV || (this._netV = new Map()), seen = new Set();
+      for (const b of this.buildings) b.workers.length = 0;
+      for (const a of m.v || []) {
+        const [id, name, female, seed, job, wid, hid, hp, maxHp, x, y, z] = a;
+        seen.add(id);
+        let v = byNet.get(id);
+        if (!v || v.dead) {
+          v = this.spawnVillager({ name, female: !!female, seed, job, silent: true, pos: { x, y, z } });
+          if (!v) continue;
+          v.netMirror = true; v.netId = id;
+          v.netPos = new THREE.Vector3(x, y, z); v.netYaw = 0;
+          v.position.set(x, y, z);
+          byNet.set(id, v);
+        }
+        v.workplace = wid >= 0 ? this.byId.get(wid) || null : null;
+        if (v.workplace) v.workplace.workers.push(v);
+        v.home = hid >= 0 ? this.byId.get(hid) || null : null;
+        if (v.job !== job) v.setJob(job);
+        v.maxHp = maxHp; v.hp = hp;
+      }
+      for (const [id, v] of byNet) if (!seen.has(id)) {
+        byNet.delete(id);
+        v.dead = true;
+        const k = this.villagers.indexOf(v); if (k >= 0) this.villagers.splice(k, 1);
+        this.game.entities.remove(v);
+        if (this.selected === v) this.setSelection(null);
+      }
+      if (m.armory) this.armory = { ...m.armory };
+      this.recalcPop(); this.recalcRadius();
+      this.ghostsDirty = true;
+    } finally { this._applying = false; }
+    this.bus.emit('village:mirror', {});
+  }
+  /** A mirror villager's position from the host's snapshot. */
+  mirrorMove(id, x, y, z, yaw) {
+    const v = this._netV?.get(id);
+    if (!v) return false;
+    v.netPos.set(x, y, z); v.netYaw = yaw; v.netSeen = this.game.time;
+    if (v.hidden) { v.hidden = false; v.object3d.visible = true; v.position.set(x, y, z); }
+    return true;
+  }
+  /** What a mirror runs every frame instead of the village's life: placement, ghosts, labels, selection. */
+  mirrorUpdate(dt) {
+    if (!this.game.world || !this.foot) return;
+    this.placement.update(dt);
+    this.ghosts.update(this.game.time);
+    this._ghostT -= dt;
+    if (this.ghostsDirty && this._ghostT <= 0) { this.rebuildGhosts(); this._ghostT = 0.3; }
+    // people the host no longer shows (indoors, or too far) are hidden
+    const now = this.game.time;
+    for (const v of this.villagers) if (v.netMirror && !v.hidden && now - (v.netSeen ?? now) > 1.5) {
+      const p = this.game.player?.position;
+      if (p && Math.hypot(v.position.x - p.x, v.position.z - p.z) < 90) { v.hidden = true; v.object3d.visible = false; }
+    }
+    this.updateSelection();
+    this.updateLabels();
   }
 
   // ================================================================ save / load

@@ -149,6 +149,7 @@ export class Villager extends Entity {
   // ---------------------------------------------------------------- per-frame
   update(dt) {
     if (this.dead) { this.model.update(dt, 0); this.syncObject(dt); return; }
+    if (this.netMirror) { this._mirrorUpdate(dt); return; }
     this.tickStatus(dt);
     this.needs(dt);
     const mode = this.decideMode();
@@ -169,6 +170,19 @@ export class Villager extends Entity {
     const hs = Math.hypot(this.velocity.x, this.velocity.z);
     this.speedNow = hs;
     this.model.update(dt, this.hidden ? 0 : hs);
+    this.syncObject(dt);
+  }
+
+  /** A copy of one of the host's villagers on a joined player's computer: it only follows the host's snapshots. */
+  _mirrorUpdate(dt) {
+    const k = Math.min(1, dt * 10), ox = this.position.x, oz = this.position.z;
+    if (this.position.distanceTo(this.netPos) > 8) this.position.copy(this.netPos);
+    else this.position.lerp(this.netPos, k);
+    let d = (this.netYaw || 0) - this.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    this.yaw += d * k;
+    const sp = Math.hypot(this.position.x - ox, this.position.z - oz) / Math.max(dt, 1e-3);
+    this.speedNow += (sp - this.speedNow) * Math.min(1, dt * 8);
+    this.model.update(dt, this.hidden ? 0 : this.speedNow);
     this.syncObject(dt);
   }
 
@@ -347,7 +361,7 @@ export class Villager extends Entity {
 
   // ---------------------------------------------------------------- combat / damage
   damage(amount, source, opts = {}) {
-    if (this.hidden || this._climbing) return false;
+    if (this.hidden || this._climbing || this.netMirror) return false;
     if (this.job === 'guard') amount *= 1 - Math.min(0.5, (this.village.armory.level || 0) * 0.08);
     // shield block: hits from the front while the shield is raised lose most of their force
     if (this.blocking && source && source.position && this._shieldKind) {

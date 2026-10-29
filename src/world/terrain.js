@@ -111,6 +111,7 @@ export class TerrainGen extends TerrainGenV2 {
     const r = hash2(x, z, seed + 77);
     const trnd = () => mulberry32((seed + x * 374761393 + z * 668265263) >>> 0);
     if (h + 1 >= world.height - 8 || x < 3 || z < 3 || x >= world.size - 3 || z >= world.size - 3) return null;
+    if (this.dungeons.castleAt(x, z)) return null;            // nothing grows in a castle's yard
     if (b === 6) return top === B.SAND && r < 0.006 && dist > 40 ? () => { const t = trnd(); cactus(world, x, h + 1, z, 1 + Math.floor(t() * 3)); } : null;
     if (b === 7) return top === B.DRY_GRASS && r < 0.007 && dist > 30 ? () => acacia(world, x, h + 1, z, trnd()) : null;
     if (b === 8) return (top === B.GRASS || top === B.MUD) && r < 0.03 && dist > 30 ? () => swampOak(world, x, h + 1, z, trnd()) : null;

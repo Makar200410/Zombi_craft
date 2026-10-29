@@ -8,7 +8,11 @@
 //   • it raids: a town at war with the player sends war parties that march on the village like the undead do,
 //     smash buildings and carry off resources; repelled raids make it cautious and in the end it asks for peace;
 //   • it can be captured: kill its defenders and hold its town hall — it becomes the player's vassal and pays
-//     tribute every dawn.
+//     tribute every dawn;
+//   • it keeps treaties: peace and alliances (pacts) with other towns and with the host's village — an ally joins
+//     the war when its friend is attacked. On a network game a joined player can lead a town (net/siege.js): its
+//     buildings, town hall, research and age are then theirs to decide, and offers of peace and alliance between
+//     the players go through here.
 // Optimised: the town's buildings are drawn into chunks as they are generated (no saved block edits), its people
 // only exist as entities while the player is near, and the rest is a few numbers ticked once a second.
 import { B, BLOCKS } from '../core/blocks.js';
@@ -33,6 +37,10 @@ const DRIVES = [1.8, 1.45, 1.2, 1.0, 0.85, 0.7, 0.55, 0.45];
 const NEAR = 130;           // the town's people exist as entities when the player is this close
 const FAR = 190;            // and are sent home beyond this
 const MAX_DEFENDERS = 9;
+/** At most one new war (on the player or between towns) per this many seconds — and none in the first half hour. */
+const WAR_GAP = 1800;
+/** Share of a town's army that marches out to war; the rest stay home to guard it. */
+const MARCH_SHARE = 0.35;
 
 /** Soldier types a town fields at its tier (weighted pick). */
 export function soldierTypes(tier) {
@@ -59,6 +67,10 @@ export class Rivals {
     this.jobs = [];             // buildings rising / being rebuilt in the world (see _work)
     this.life = new TownLife(this);   // townsfolk, patrols, captains and the towns' strategy
     this.t = 0;
+    this.warCD = WAR_GAP;       // seconds until the next declaration of war may happen
+    this.pacts = new Set();     // alliances: 'a:b' of town indices or 'P' (the host's village), sorted as strings
+    this.offers = [];           // open offers of peace / alliance: {id, from, to, kind, t} (from / to: town index or 'P')
+    this._offerId = 1;
     this._world = null;
     const bus = game.bus;
     bus.on('world:ready', ({ world }) => this._attach(world));
@@ -77,7 +89,7 @@ export class Rivals {
   get active() { return this.list.length > 0; }
   _init() {
     const w = this.game.world;
-    this.list = []; this.wars.clear(); this._clearUnits();
+    this.list = []; this.wars.clear(); this._clearUnits(); this.warCD = WAR_GAP; this.pacts.clear(); this.offers = [];
     const sites = w?.gen?.sites;
     if (!sites || w.format < 4) return;
     const rnd = mulberry32((w.seed ^ 0xa11e5) >>> 0);
@@ -91,7 +103,7 @@ export class Rivals {
         aggro: Math.round((0.15 + rnd() * 0.8) * 100) / 100,
         tier: 1, built: 4 + Math.floor(rnd() * 3), wealth: 0, army: 3 + Math.floor(rnd() * 3), pop: 12,
         rel: 'peace', owner: null, lostRaids: 0, raidT: 240 + rnd() * 240, raid: null, offer: null,
-        tierT: 0, warT: 120 + rnd() * 300, battleT: 0,
+        tierT: 0, warT: 120 + rnd() * 300, battleT: 0, hall: 1, techs: [],
       });
     });
     // the thriving towns start ahead
@@ -178,7 +190,8 @@ export class Rivals {
       if (t === 'house') houses++; else if (t === 'barracks') barracks++; else if (TOWERS.has(t)) towers++;
     }
     r.pop = 6 + houses * 5 + r.tier * 2;
-    r.armyCap = 3 + r.tier * 2 + barracks * 5 + towers * 2;
+    r.hall = Math.max(r.hall || 1, r.commander != null ? 1 : r.tier);          // a council town keeps its hall up with its age
+    r.armyCap = 3 + r.tier * 2 + barracks * 5 + towers * 2 + (r.hall - 1) * 2;
   }
 
   // ------------------------------------------------------------------ drawing the towns into the world
@@ -321,7 +334,13 @@ export class Rivals {
   _grow(r, dt) {
     const g = this.game, playerTier = Math.min(10, (g.state.age | 0) + 1);
     const drive = r.drive || 1;
-    r.wealth += (r.pop * 0.05 + r.tier * 0.4) * dt * drive;
+    r.wealth += (r.pop * 0.05 + r.tier * 0.4) * dt * drive * (1 + 0.1 * ((r.hall || 1) - 1));
+    // a town led by a player grows only by its leader's orders (see net/siege.js)
+    if (r.commander != null) {
+      r.next = { what: 'решает командир ' + (r.commanderName || ''), pct: null };
+      if (r.army < r.armyCap) r.army = Math.min(r.armyCap, r.army + dt / Math.max(20, 60 - r.tier * 3));
+      return;
+    }
     // vassals keep a part for their master
     if (r.owner !== null && r.owner !== 'player') { const o = this.list[r.owner]; if (o) { o.wealth += r.wealth * 0.002 * dt; r.wealth *= 1 - 0.002 * dt; } }
     // build the next planned building
@@ -357,30 +376,35 @@ export class Rivals {
   /** Declarations of war and peace between the towns and with the player. */
   _diplomacy(dt) {
     const g = this.game;
+    this.warCD = Math.max(0, this.warCD - dt);
     for (const r of this.list) {
       r.warT -= dt;
       if (r.warT > 0) continue;
       r.warT = 60 + Math.random() * 90;
       if (r.owner !== null || r.commander != null) continue;              // vassals follow their master, commanded towns their commander
       // on the player: aggressive towns that feel strong enough (not before the third day)
-      if (r.rel === 'peace' && g.state.day >= 3 && Math.random() < r.aggro * 0.25 && this.power(r) > this.playerDefense() * 0.6) {
+      const mayDeclare = this.warCD <= 0;
+      // early on (the first three ages) a town that is ahead of the player's village leaves it alone
+      const age = g.state.age | 0, bully = age < 3 && r.tier > age + 1;
+      if (mayDeclare && !bully && r.rel === 'peace' && !this.allied(r.i, 'P') && g.state.day >= 3 && Math.random() < r.aggro * 0.25 && this.power(r) > this.playerDefense() * 0.6) {
         this.declareWar(r, `«${r.name}» объявляет вам войну! Их отряды придут с ${dirFrom(r.x - g.world.size / 2, r.z - g.world.size / 2)}.`);
+        this.warCD = WAR_GAP;
         continue;
       }
       // on a neighbouring town
-      for (const o of this.list) {
-        if (o === r || o.owner === r.i || this.atWar(r.i, o.i) || o.owner === 'player') continue;
+      if (mayDeclare) for (const o of this.list) {
+        if (o === r || o.owner === r.i || this.atWar(r.i, o.i) || o.owner === 'player' || this.allied(r.i, o.i)) continue;
         if (Math.hypot(o.x - r.x, o.z - r.z) > 900) continue;
         if (Math.random() < r.aggro * 0.12 && this.power(r) > this.power(o) * 0.8) {
-          this.wars.add(r.i < o.i ? r.i + ':' + o.i : o.i + ':' + r.i);
-          r.battleT = 90 + Math.random() * 120;
-          this._news(`«${r.name}» пошла войной на «${o.name}»`, r, o);
+          this.townWar(r, o, `«${r.name}» пошла войной на «${o.name}»`);
+          this.warCD = WAR_GAP;
           break;
         }
       }
       // tired of fighting: peace between towns
       for (const k of [...this.wars]) {
         const [a, b] = k.split(':').map(Number);
+        if (this.list[a]?.commander != null || this.list[b]?.commander != null) continue;       // players make their own peace
         if ((a === r.i || b === r.i) && Math.random() < 0.08) { this.wars.delete(k); this._news(`«${this.list[a].name}» и «${this.list[b].name}» заключили мир`, this.list[a], this.list[b]); }
       }
       // beaten in raids and weak: they ask the player for peace
@@ -390,12 +414,114 @@ export class Rivals {
       }
     }
   }
-  declareWar(r, text) {
+  /** War between town r and the host's village. byHost: the host started it (else the town did); join: an ally
+   *  stepping in (its own allies don't follow, so wars don't spread without end). */
+  declareWar(r, text, { byHost = false, join = false } = {}) {
     if (r.rel === 'war' || r.owner === 'player') return;
+    this.breakPact(r.i, 'P', true);
     r.rel = 'war'; r.offer = null; r.raidT = Math.max(r.raidT, 120);
-    this.game.bus.emit('toast', { text: text || `Война с «${r.name}»!`, kind: 'bad' });
+    this.game.bus.emit('toast', { text: text || `Война с «${r.name}»!`, kind: 'bad', share: true });
     this.game.audio?.play('wave_horn', { volume: 0.7 });
+    if (!join) { if (byHost) this._callAllies(r.i, 'P'); else this._callAllies('P', r.i); }
   }
+
+  // ------------------------------------------------------------------ treaties
+  _pk(a, b) { return [String(a), String(b)].sort().join(':'); }
+  allied(a, b) { return a !== b && this.pacts.has(this._pk(a, b)); }
+  /** Everyone allied with side a (town indices and/or 'P'). */
+  alliesOf(a) { const out = []; for (const k of this.pacts) { const [x, y] = k.split(':'); const o = x === String(a) ? y : y === String(a) ? x : null; if (o !== null) out.push(o === 'P' ? 'P' : +o); } return out; }
+  sideName(a) { return a === 'P' ? 'деревня хозяина' : `«${this.list[a]?.name || '?'}»`; }
+  /** Are sides a and b at war? (a, b: town index or 'P') */
+  sidesAtWar(a, b) {
+    if (a === 'P') return b !== 'P' && this.atWarWithPlayer(b);
+    if (b === 'P') return this.atWarWithPlayer(a);
+    return this.atWar(a, b);
+  }
+  /** Town att starts a war on town def (unless they are allies); def's allies join in. */
+  townWar(att, def, text, join = false) {
+    if (!att || !def || att === def || this.atWar(att.i, def.i) || this.allied(att.i, def.i)) return false;
+    this.wars.add(att.i < def.i ? att.i + ':' + def.i : def.i + ':' + att.i);
+    att.battleT = att.commander != null ? 1e9 : 90 + Math.random() * 120;
+    this._news(text || `«${att.name}» пошла войной на «${def.name}»`, att, def);
+    if (!join) this._callAllies(def.i, att.i);
+    return true;
+  }
+  /** Side victim was attacked by side aggressor: victim's allies declare war on the aggressor. */
+  _callAllies(victim, aggressor) {
+    for (const a of this.alliesOf(victim)) {
+      if (a === aggressor || this.allied(a, aggressor) || this.sidesAtWar(a, aggressor)) continue;
+      if (a === 'P') {
+        // the host's ally was attacked: the host is at war with the attacker now
+        const r = this.list[aggressor];
+        if (r && r.owner !== 'player') this.declareWar(r, `«${r.name}» напала на вашего союзника ${this.sideName(victim)} — вы вступаете в войну!`, { byHost: true, join: true });
+      } else if (aggressor === 'P') {
+        const r = this.list[a];
+        if (r && r.owner === null) this.declareWar(r, `${this.sideName(a)} вступает в войну на стороне ${this.sideName(victim)}!`, { join: true });
+      } else this.townWar(this.list[a], this.list[aggressor], `${this.sideName(a)} вступает в войну за союзника ${this.sideName(victim)}`, true);
+    }
+  }
+  makeAlliance(a, b) {
+    if (a === b) return;
+    if (this.sidesAtWar(a, b)) this.makeSidesPeace(a, b, true);
+    this.pacts.add(this._pk(a, b));
+    this.game.bus.emit('toast', { text: `Союз: ${this.sideName(a)} и ${this.sideName(b)}`, kind: 'good', share: true });
+    this.game.bus.emit('rivals:changed', {});
+  }
+  breakPact(a, b, silent = false) {
+    if (!this.pacts.delete(this._pk(a, b))) return;
+    if (!silent) this.game.bus.emit('toast', { text: `Союз ${this.sideName(a)} и ${this.sideName(b)} расторгнут`, kind: 'warn', share: true });
+    this.game.bus.emit('rivals:changed', {});
+  }
+  makeSidesPeace(a, b, silent = false) {
+    if (a === 'P' || b === 'P') { const r = this.list[a === 'P' ? b : a]; if (r && r.rel === 'war') { r.rel = 'peace'; r.offer = null; r.lostRaids = 0; r.warT = 600; if (r.raid && !r.raid.arrived) { r.army += Math.max(0, r.raid.size - (r.raid.levy || 0)); r.raid = null; } for (const u of this.units.get(r.i) || []) { if (u.type === 'folk') u.peaceful = true; u.target = null; } } }
+    else this.wars.delete(Math.min(a, b) + ':' + Math.max(a, b));
+    if (!silent) this.game.bus.emit('toast', { text: `Мир: ${this.sideName(a)} и ${this.sideName(b)}`, kind: 'good', share: true });
+    this.game.bus.emit('rivals:changed', {});
+  }
+  /** Who answers for side a: 'host', a joined player's id, or null (the town's own council decides). */
+  _leader(a) { return a === 'P' ? 'host' : this.list[a]?.commander ?? null; }
+  /**
+   * Side from offers side to peace or an alliance (kind: 'peace' | 'ally'). A town without a player answers at
+   * once; the host or a joined player gets the offer to accept or refuse. Returns the text of what happened.
+   */
+  propose(from, to, kind) {
+    if (from === to) return null;
+    if (kind === 'peace' && !this.sidesAtWar(from, to)) return 'Вы и так не воюете';
+    if (kind === 'ally' && this.allied(from, to)) return 'Вы уже союзники';
+    const who = this._leader(to);
+    if (who === null) {
+      const T = this.list[to], F = from === 'P' ? null : this.list[from];
+      const myPow = this.power(T), theirPow = F ? this.power(F) : this.playerDefense();
+      let yes;
+      if (kind === 'peace') yes = theirPow > myPow * 0.9 || T.lostRaids >= 1 || Math.random() < 0.3;
+      else yes = !this.sidesAtWar(from, to) && (Math.random() < 0.55 - T.aggro * 0.3 || (F && this.warsOf(T.i).some(e => this.atWar(F.i, e))));
+      if (!yes) return `${this.sideName(to)} отказывается${kind === 'ally' ? ' от союза' : ' мириться'}`;
+      if (kind === 'peace') this.makeSidesPeace(from, to); else this.makeAlliance(from, to);
+      return `${this.sideName(to)} соглашается!`;
+    }
+    this.offers = this.offers.filter(o => !(o.from === from && o.to === to && o.kind === kind));
+    const o = { id: this._offerId++, from, to, kind, t: this.game.time };
+    this.offers.push(o);
+    const text = `${this.sideName(from)} предлагает ${kind === 'ally' ? 'союз' : 'мир'} — ответ в ${who === 'host' ? '«Соседях» (N)' : '«Командовании» (G)'}`;
+    if (who === 'host') this.game.bus.emit('toast', { text, kind: 'info' });
+    else this.game.net?._sendTo?.(who, { t: 'toast', text, kind: 'info' });
+    this.game.bus.emit('rivals:changed', {});
+    return 'Предложение отправлено';
+  }
+  /** The host or a joined player answers offer id (byLeader: 'host' or the player's id). */
+  answer(id, yes, byLeader) {
+    const o = this.offers.find(x => x.id === id);
+    if (!o || this._leader(o.to) !== byLeader) return;
+    this.offers = this.offers.filter(x => x !== o);
+    const back = this._leader(o.from);
+    if (yes) { if (o.kind === 'peace') this.makeSidesPeace(o.from, o.to); else this.makeAlliance(o.from, o.to); }
+    else {
+      const text = `${this.sideName(o.to)} отказывается от ${o.kind === 'ally' ? 'союза' : 'мира'}`;
+      if (back === 'host') this.game.bus.emit('toast', { text, kind: 'bad' }); else if (back != null) this.game.net?._sendTo?.(back, { t: 'toast', text, kind: 'bad' });
+    }
+    this.game.bus.emit('rivals:changed', {});
+  }
+  offersFor(a) { const now = this.game.time; this.offers = this.offers.filter(o => now - o.t < 300); return this.offers.filter(o => o.to === a); }
   /** The player asks for peace: costs gold, and an aggressive town that is winning won't take it. */
   offerPeace(r) {
     const st = this.game.state;
@@ -413,7 +539,7 @@ export class Rivals {
   peacePrice(r) { return Math.round(15 + this.power(r) * 3 + r.tier * 10); }
   _makePeace(r, text) {
     r.rel = 'peace'; r.offer = null; r.lostRaids = 0; r.warT = 600;
-    if (r.raid && !r.raid.arrived) { r.army += r.raid.size; r.raid = null; }
+    if (r.raid && !r.raid.arrived) { r.army += Math.max(0, r.raid.size - (r.raid.levy || 0)); r.raid = null; }
     this.game.bus.emit('toast', { text, kind: 'good' });
     for (const u of this.units.get(r.i) || []) { if (u.type === 'folk') u.peaceful = true; u.target = null; }
   }
@@ -436,7 +562,7 @@ export class Rivals {
       if (!alive.length || raid.t > 240) {
         // all fallen, or they leave with their loot
         for (const u of alive) { u.dead = true; u.removeAt = 0; u.object3d.visible = false; }
-        r.army += alive.length;
+        r.army += Math.max(0, alive.length - (raid.levy || 0));      // the hired swords go their own way
         r.wealth += raid.loot * 2;
         if (!alive.length) { r.lostRaids++; g.bus.emit('toast', { text: `Набег «${r.name}» отбит!`, kind: 'good' }); }
         else g.bus.emit('toast', { text: `Отряд «${r.name}» ушёл${raid.loot ? ` с добычей (${Math.round(raid.loot)})` : ''}`, kind: 'warn' });
@@ -450,16 +576,18 @@ export class Rivals {
     if (r.raidT > 0 || r.army < 3) return;
     // a war party when they think they can win — or out of spite
     if (this.power(r) < this.playerDefense() * 0.5 && Math.random() > r.aggro * 0.4) { r.raidT = 120; return; }
-    this.launchRaid(r, Math.max(3, Math.min(14, Math.round(r.army * 0.6))));
+    this.launchRaid(r, Math.max(2, Math.min(8, Math.round(r.army * MARCH_SHARE))));
     this.life.allyJoins(r);
   }
-  /** A war party of `size` sets off for the player's village. */
+  /** A war party of `size` sets off for the player's village (plus hired swords: more of them every age). */
   launchRaid(r, size, quiet = false) {
     const g = this.game;
     size = Math.max(1, Math.min(Math.floor(r.army), size));
     r.army -= size;
+    const levy = Math.floor((g.state.age | 0) * 0.75);
+    size += levy;
     const c = g.world.size / 2, dist = Math.hypot(r.x - c, r.z - c);
-    r.raid = { size, eta: Math.max(45, Math.min(180, dist / 5)), arrived: false, units: [], t: 0, loot: 0 };
+    r.raid = { size, levy, eta: Math.max(45, Math.min(180, dist / 5)), arrived: false, units: [], t: 0, loot: 0 };
     if (!quiet) g.bus.emit('toast', { text: `«${r.name}» выслала отряд: ${size} воинов. Они придут с ${dirFrom(r.x - c, r.z - c)} через ~${Math.round(r.raid.eta)} с!`, kind: 'bad' });
   }
   /** A town led by a joined player (siege mode): its soldiers fight the dead too, and the dead come for it. */
@@ -468,13 +596,15 @@ export class Rivals {
     const g = this.game, W = g.waves, c = g.world.size / 2;
     const raid = r.raid; raid.arrived = true;
     const ang = Math.atan2(r.z - c, r.x - c);
+    // every age of the player's village the war parties come tougher
+    const age = g.state.age | 0, power = { hp: 1 + age * 0.12, dmg: 1 + age * 0.08 };
     for (let k = 0; k < raid.size; k++) {
       const p = W?._edgePoint?.(ang + (Math.random() - 0.5) * 0.4, 6);
       if (!p) continue;
       // a big party is led by the town's captain
       const lead = k === 0 && raid.size >= 4 && (r.captainCD || 0) <= g.time;
-      const u = this._spawnUnit(r, lead ? 'rival_captain' : pick(soldierTypes(r.tier)), p.x, p.z, p.y, { wanderer: false });
-      if (u) { u.raider = true; raid.units.push(u); if (lead) { u.captain = true; raid.captain = u; } }
+      const u = this._spawnUnit(r, lead ? 'rival_captain' : pick(soldierTypes(r.tier)), p.x, p.z, p.y, { wanderer: false, power });
+      if (u) { u.raider = true; u.bldMul = 2; raid.units.push(u); if (lead) { u.captain = true; raid.captain = u; } }
     }
     if (raid.captain) g.bus.emit('toast', { text: `Отряд «${r.name}» ведёт воевода — сразите его, и остальные побегут`, kind: 'warn' });
     g.bus.emit('toast', { text: `Отряд «${r.name}» у стен деревни!`, kind: 'bad' });
@@ -496,21 +626,29 @@ export class Rivals {
       const [a, b] = key.split(':').map(Number), A = this.list[a], D = this.list[b];
       if (!A || !D) { this.wars.delete(key); continue; }
       const att = A.battleT <= D.battleT ? A : D, def = att === A ? D : A;
+      if (att.commander != null) continue;          // a player's town attacks when its leader says so
       att.battleT -= dt;
       if (att.battleT > 0) continue;
       att.battleT = 180 + Math.random() * 200;
       if (att.army < 3) continue;
-      const party = Math.max(2, Math.round(att.army * 0.6));
+      const party = Math.max(2, Math.round(att.army * MARCH_SHARE));
       att.army -= party;
-      if (this._near(def, NEAR + 40)) { this._fieldBattle(att, def, party); continue; }
-      // reckoned from the armies (the defenders fight on their own ground)
-      const pa = party * (1 + att.tier * 0.35), pd = Math.max(0.1, def.army * (1 + def.tier * 0.35) * 1.25);
-      const share = pa / (pa + pd);
-      const defLoss = Math.min(def.army, Math.round(def.army * share * (0.6 + Math.random() * 0.6) + party * 0.2));
-      const attLoss = Math.min(party, Math.round(party * (1 - share) * (0.6 + Math.random() * 0.6)));
-      def.army -= defLoss; att.army += party - attLoss;
-      if (def.army <= 0.5 && party - attLoss > 0) this._conquer(att, def);
+      this.assault(att, def, party);
     }
+  }
+  /** A war party of `party` soldiers (already taken from att's army) storms town def. */
+  assault(att, def, party) {
+    if (this._near(def, NEAR + 40)) { this._fieldBattle(att, def, party); return; }
+    // reckoned from the armies (the defenders fight on their own ground)
+    const pa = party * (1 + att.tier * 0.35), pd = Math.max(0.1, def.army * (1 + def.tier * 0.35) * 1.25);
+    const share = pa / (pa + pd);
+    const defLoss = Math.min(def.army, Math.round(def.army * share * (0.6 + Math.random() * 0.6) + party * 0.2));
+    const attLoss = Math.min(party, Math.round(party * (1 - share) * (0.6 + Math.random() * 0.6)));
+    def.army -= defLoss; att.army += party - attLoss;
+    const say = (r, text, kind) => { if (r.commander != null) this.game.net?._sendTo?.(r.commander, { t: 'toast', text, kind }); };
+    say(att, `Штурм «${def.name}»: потеряно ${attLoss} из ${party}, враг потерял ${defLoss}`, defLoss >= attLoss ? 'good' : 'bad');
+    say(def, `«${att.name}» штурмовала ваш город: вы потеряли ${defLoss}, враг — ${attLoss}`, defLoss > attLoss ? 'bad' : 'good');
+    if (def.army <= 0.5 && party - attLoss > 0) this._conquer(att, def);
   }
   /** The player is near: the attackers march into the town for real. */
   _fieldBattle(att, def, party) {
@@ -525,6 +663,7 @@ export class Rivals {
   }
   _conquer(att, def) {
     def.owner = att.i; def.rel = 'peace'; def.army = 1; def.raid = null; def.offer = null;
+    for (const a of this.alliesOf(def.i)) this.breakPact(def.i, a, true);
     for (const k of [...this.wars]) { const [a, b] = k.split(':').map(Number); if (a === def.i || b === def.i) this.wars.delete(k); }
     // a fallen master frees its vassals
     for (const o of this.list) if (o.owner === def.i) o.owner = null;
@@ -577,7 +716,10 @@ export class Rivals {
   }
 
   // ------------------------------------------------------------------ people near the player
-  _near(r, d) { const p = this.game.player?.position; return !!p && Math.abs(p.x - r.x) < d && Math.abs(p.z - r.z) < d; }
+  _near(r, d) {
+    const g = this.game, ps = [g.player?.position, ...(g.net?.isHost ? [...(g.net.players?.values() || [])].map(rp => rp.netPos) : [])];
+    return ps.some(p => p && Math.abs(p.x - r.x) < d && Math.abs(p.z - r.z) < d);
+  }
   _units(dt) {
     this._unitT = (this._unitT || 0) - dt;
     if (this._unitT > 0) return;
@@ -623,12 +765,12 @@ export class Rivals {
     }
     return null;
   }
-  _spawnUnit(r, type, x, z, y, { peaceful = false, wanderer = true, home = null, job, hat, held, name } = {}) {
+  _spawnUnit(r, type, x, z, y, { peaceful = false, wanderer = true, home = null, job, hat, held, name, power = null } = {}) {
     const W = this.game.waves; if (!W) return null;
     const T = ['rival_trooper', 'rival_rifleman'].includes(type) ? 1.2 : 1;
     const u = W.spawn(type, x, z, {
       y: y ?? undefined, emerge: false, cave: true, wanderer, sunproof: true, silent: true, rivalId: r.i, peaceful,
-      wave: 3 + r.tier * 2, hpMul: (0.8 + r.tier * 0.12) * T, dmgMul: 0.8 + r.tier * 0.08,
+      wave: 3 + r.tier * 2, hpMul: (0.8 + r.tier * 0.12) * T * (power?.hp || 1), dmgMul: (0.8 + r.tier * 0.08) * (power?.dmg || 1),
       name: name || `${type === 'folk' ? 'Житель' : this._soldierName(type)} «${r.name}»`, hatColor: type === 'rival_captain' ? 0xe8c040 : parseInt(r.color.slice(1), 16),
       ...(job ? { job, hat, held } : {}),
     });
@@ -647,7 +789,7 @@ export class Rivals {
     const r = this.list[u.rivalId]; if (!r) return;
     const g = this.game;
     const byPlayer = source === g.player || source?.kind === 'player' || source?.owner === g.player || source?.user === g.player;
-    if (byPlayer && !this.atWarWithPlayer(r.i) && r.owner !== 'player') this.declareWar(r, `Вы напали на людей «${r.name}» — это война!`);
+    if (byPlayer && !this.atWarWithPlayer(r.i) && r.owner !== 'player') this.declareWar(r, `Вы напали на людей «${r.name}» — это война!`, { byHost: true });
   }
   onDeath(u, source) {
     if (u.caravan) { this.game.caravans?.onDeath(u, source); return; }
@@ -663,7 +805,7 @@ export class Rivals {
     const c = this.game.world.size / 2;
     return this.list.map(r => ({
       r, x: r.x, z: r.z, name: r.name, color: r.color,
-      status: r.owner === 'player' ? 'vassal' : this.atWarWithPlayer(r.i) ? 'war' : r.owner !== null ? 'subject' : 'peace',
+      status: r.owner === 'player' ? 'vassal' : this.atWarWithPlayer(r.i) ? 'war' : r.owner !== null ? 'subject' : this.allied(r.i, 'P') ? 'ally' : 'peace',
       dist: Math.round(Math.hypot(r.x - c, r.z - c)), dir: dirName(r.x - c, r.z - c),
     }));
   }
@@ -672,11 +814,13 @@ export class Rivals {
     return {
       list: this.list.map(r => {
         const o = { ...r };
-        if (r.raid) { o.army = r.army + (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size); }
+        if (r.raid) { o.army = r.army + Math.max(0, (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size) - (r.raid.levy || 0)); }
         delete o.raid; delete o.capT; delete o._capMsgT; delete o.next; delete o.commander; delete o.commanderName; delete o.alarm; delete o.captainCD; delete o.waverUntil; delete o.stratT;
         return o;
       }),
       wars: [...this.wars],
+      warCD: this.warCD,
+      pacts: [...this.pacts],
     };
   }
   deserialize(o) {
@@ -684,6 +828,9 @@ export class Rivals {
     this._clearUnits();
     this.list = o.list.map((r, k) => ({ ...r, raid: null, drive: r.drive ?? DRIVES[(k * 5 + 3) % DRIVES.length] }));
     this.wars = new Set(o.wars || []);
+    this.warCD = Math.max(o.warCD ?? WAR_GAP, 0);
+    this.pacts = new Set(o.pacts || []);
+    for (const r of this.list) { r.hall = r.hall || 1; r.techs = r.techs || []; }
     this.plans.clear();
     for (const r of this.list) this._recount(r);
   }
