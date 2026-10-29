@@ -400,6 +400,7 @@ export class Net {
         case 'assign': { const v = vil(d.v); if (v) V.assign(v, d.b != null ? V.byId.get(d.b) || null : null, d.job || null); break; }
         case 'setjob': { const v = vil(d.v); if (v) V.setJob(v, d.job); break; }
         case 'builders': V.setBuilderCount(d.n | 0); break;
+        case 'trade': V.exchange(String(d.give), String(d.get), d.n | 0); break;
         case 'auto': V.autoAssign(d.only != null ? V.byId.get(d.only) || null : null); break;
         case 'research': if (!g.research?.start(d.id)) g.bus.emit('toast', { text: g.research?.blockReason?.(d.id) || 'Исследование недоступно', kind: 'bad' }); else g.bus.emit('toast', { text: `${p.playerName} начал(а) исследование`, kind: 'info' }); break;
         case 'rcancel': g.research?.cancel(); break;

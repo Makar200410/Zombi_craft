@@ -13,6 +13,8 @@ import { GhostLayer, Scaffold, makeRing, makeRect, disposeObj, jobLabelTexture }
 import { pickName, JOBS, JOB_ORDER } from './names.js';
 
 const MAX_VILLAGERS = 40;
+/** What goods are worth at the market (see Village.exchange): gold is dear, so swapping always loses a lot. */
+export const MARKET_VALUE = { food: 1, wood: 1, stone: 1.2, coal: 2, iron_ore: 3, iron: 5, gold_ore: 6, gold: 12, crystal: 20, steel: 15, uranium: 60 };
 const SPAWN_INTERVAL = 40;
 const LEAF_OF = { [B.LOG]: B.LEAVES, [B.BIRCH_LOG]: B.BIRCH_LEAVES, [B.SPRUCE_LOG]: B.SPRUCE_LEAVES };
 const NON_TERRAIN = new Set([B.LOG, B.BIRCH_LOG, B.SPRUCE_LOG, B.LEAVES, B.BIRCH_LEAVES, B.SPRUCE_LEAVES, B.ACACIA_LEAVES, B.CACTUS]);
@@ -1514,6 +1516,27 @@ export class Village {
       }
     }
     this.ghosts.set(list);
+  }
+
+  // ================================================================ the market's exchange
+  /** How many of `give` one `get` costs at the best market (a big markup; a higher level trims it). */
+  exchangeRate(give, get) {
+    const m = this.buildings.filter(b => b.type === 'market' && b.state === 'complete').sort((a, b) => (b.level || 1) - (a.level || 1))[0];
+    if (!m || !MARKET_VALUE[give] || !MARKET_VALUE[get] || give === get) return null;
+    const markup = Math.max(1.6, 2.6 - 0.12 * ((m.level || 1) - 1));
+    return Math.max(1, Math.ceil(MARKET_VALUE[get] / MARKET_VALUE[give] * markup));
+  }
+  /** Swap goods at the market: n of `get` for exchangeRate × n of `give`. */
+  exchange(give, get, n = 1) {
+    if (this._remote()) return this._send('trade', { give, get, n });
+    const rate = this.exchangeRate(give, get);
+    if (!rate) { this.toast('Нужен достроенный рынок', 'bad'); return false; }
+    n = Math.max(1, Math.min(100, n | 0));
+    const cost = { [give]: rate * n };
+    if (!this.game.state.spend(cost)) { this.toast('Не хватает товара на обмен', 'bad'); return false; }
+    this.game.state.add(get, n);
+    this.game.audio?.play('coins', { volume: 0.6 });
+    return true;
   }
 
   // ================================================================ network games
