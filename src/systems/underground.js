@@ -264,6 +264,22 @@ export class Underground {
       this._deepest = ti;
       if (ti > 0) g.bus.emit('toast', { text: `Глубина ${ti + 1}/${DEPTH_TIERS.length}: ${DEPTH_TIERS[ti].name} — нежить здесь сильнее`, kind: ti >= 6 ? 'bad' : 'warn' });
     }
+    // the dungeon the player has walked into: its name (once a second; told again only after a while away)
+    if ((this._dgT = (this._dgT || 0) - dt) <= 0) {
+      this._dgT = 1;
+      let d = null;
+      try { d = w.gen?.dungeons?.at?.(Math.floor(p.position.x), Math.floor(p.position.y), Math.floor(p.position.z)) || null; } catch (e) { d = null; }
+      const key = d?.key || null;
+      if (key !== this._dgKey) {
+        this._dgKey = key;
+        this._dgTold ||= {};
+        if (d?.name && !(this._dgTold[key] && g.time - this._dgTold[key] < 120)) {
+          this._dgTold[key] = g.time;
+          const what = d.kind === 'village' ? 'Здесь давно никто не живёт' : d.super ? 'Огромное подземелье — берегитесь' : d.size === 'small' ? 'Небольшое подземелье' : d.size === 'medium' ? 'Подземелье' : 'Большое подземелье';
+          g.bus.emit('toast', { text: `Вы вошли: ${d.name}. ${what}`, kind: d.super || d.kind === 'fortress' ? 'warn' : 'info' });
+        }
+      }
+    }
     // tell the player which layer they've reached (after staying there a moment)
     const l = layerAt(w, Math.floor(p.position.y));
     if (l.id === this._layer) { this._pendingLayer = null; return; }

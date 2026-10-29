@@ -904,7 +904,7 @@ export class Audio {
     if (dg && !(g.waves?.activeCount > 0)) {
       const lord = g.waves?.zombies?.some(z => z.bossKey === dg.key && !z.dead);
       if (lord) return 'caveboss';
-      if (dg.kind !== 'fortress') return dg.kind === 'castle' ? 'ruins' : 'dungeon';
+      if (dg.kind !== 'fortress') return dg.kind === 'castle' || dg.kind === 'village' ? 'ruins' : 'dungeon';
     }
     const y = Math.floor(p.position.y);
     const tier = g.underground.tierAt?.(y);

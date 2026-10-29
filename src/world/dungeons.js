@@ -1,4 +1,6 @@
-// Big dungeons of deep worlds, in the spirit of the best Minecraft dungeon mods:
+// Dungeons of deep worlds, in the spirit of the best Minecraft dungeon mods — small, medium, big and (very rarely) huge:
+//   • small crypts and hideouts (2×2 or 3×3 rooms) just under the surface or in the caves, a shrine over the way in;
+//   • medium dungeons (4×4 rooms, one or two storeys);
 //   • crypts — catacombs of two or three storeys in the cavern layer (a maze of 6×6 rooms per floor joined by corridors);
 //   • great catacombs — three or four storeys of 7×7 rooms, the biggest of them all;
 //   • fortresses over the lava sea of the underworld;
@@ -6,11 +8,18 @@
 //     storeys of halls, bridges between them and a lord of the dead in the throne room at the top.
 // Rooms have a purpose — spawner halls, libraries, tombs, prisons, armouries, barracks, spider nests, lava-trap
 // rooms, a treasure vault and the boss hall — and a ruined shrine on the surface marks a crypt's ladder shaft down.
-// Each dungeon is planned once per 144×144 region from the world seed; every chunk draws its own part of it, so it
-// is seamless and independent of chunk order. Where a cave runs into an underground dungeon, its walls are left
-// broken open; a castle levels its ground, stands on a foundation and its walls are crumbling.
+//   • the Abyss — very rare: five storeys of 8×8 rooms with two lords of the dead;
+//   • abandoned villages on the surface: crumbling houses, a farm gone wild, a well, chests and the dead who stayed.
+// Every underground dungeon has a theme from where it lies — flooded, icy, sandy, overgrown, mushroom, crystal,
+// spider, bone, ember or plain stone — with its own walls, floors, dwellers, lord, a few rooms of its own and a name,
+// told to the player who walks in.
+// The dungeons are planned once per 144×144 region from the world seed (a big one, a village and a few small ones,
+// never overlapping); every chunk draws its own part of them, so they are seamless and independent of chunk order.
+// Where a cave runs into an underground dungeon, its walls are left broken open; a castle levels its ground, stands on
+// a foundation and its walls are crumbling.
 import { B } from '../core/blocks.js';
 import { mulberry32, hash2 } from '../core/rng.js';
+import { BUILDING_TYPES } from '../village/buildings.js';
 
 const R = 144;           // region size
 const C = 15;            // cell size (room + corridor)
@@ -23,37 +32,110 @@ const CRYPT_SPAWNS = ['skeleton', 'cave_dweller', 'walker', 'cave_spider'];
 const HELL_SPAWNS = ['imp', 'magma_golem', 'burning'];
 const CASTLE_SPAWNS = ['skeleton', 'armored', 'walker', 'runner', 'skeleton'];
 
+// themes of the underground dungeons: walls ([share, block]…), floors, light, dwellers, lord, name (m / f / n / plural)
+const THEMES = {
+  stone: { walls: [[0.55, B.STONE_BRICKS], [0.75, B.CRACKED_BRICKS], [0.9, B.MOSSY_COBBLE], [1, B.DARK_STONE]], floor: [B.STONE_BRICKS, B.COBBLESTONE], light: B.LANTERN,
+    spawns: CRYPT_SPAWNS, boss: 'lich', adj: ['Каменный', 'Каменная', 'Каменное', 'Каменные'] },
+  bone: { walls: [[0.45, B.DARK_STONE], [0.7, B.CRACKED_BRICKS], [0.93, B.STONE_BRICKS], [1, B.SKULL_BLOCK]], floor: [B.GRAVEL, B.DARK_STONE], light: B.LANTERN,
+    spawns: ['skeleton', 'skeleton', 'walker', 'crawler'], boss: 'lich', adj: ['Костяной', 'Костяная', 'Костяное', 'Костяные'] },
+  flooded: { walls: [[0.5, B.MOSSY_COBBLE], [0.8, B.STONE_BRICKS], [1, B.CRACKED_BRICKS]], floor: [B.MOSSY_COBBLE, B.GRAVEL], light: B.LANTERN,
+    spawns: ['walker', 'slime', 'cave_dweller'], boss: 'giant', adj: ['Затопленный', 'Затопленная', 'Затопленное', 'Затопленные'] },
+  overgrown: { walls: [[0.6, B.MOSSY_COBBLE], [0.85, B.STONE_BRICKS], [1, B.MUD]], floor: [B.JUNGLE_GRASS, B.MUD], light: B.LANTERN,
+    spawns: ['cave_spider', 'slime', 'leaper'], boss: 'brute', adj: ['Заросший', 'Заросшая', 'Заросшее', 'Заросшие'] },
+  mushroom: { walls: [[0.5, B.DARK_STONE], [0.85, B.MOSSY_COBBLE], [1, B.STONE_BRICKS]], floor: [B.GLOW_MOSS, B.DARK_STONE], light: B.GLOW_MUSHROOM,
+    spawns: ['slime', 'cave_dweller', 'crawler'], boss: 'giant', adj: ['Грибной', 'Грибная', 'Грибное', 'Грибные'] },
+  crystal: { walls: [[0.6, B.STONE_BRICKS], [0.85, B.DARK_STONE], [0.95, B.AMETHYST], [1, B.CRYSTAL_ORE]], floor: [B.STONE_BRICKS, B.AMETHYST], light: B.LANTERN,
+    spawns: ['skeleton', 'armored', 'frost'], boss: 'necromancer', adj: ['Кристальный', 'Кристальная', 'Кристальное', 'Кристальные'] },
+  ice: { walls: [[0.5, B.PACKED_ICE], [0.8, B.STONE_BRICKS], [1, B.ICE]], floor: [B.SNOW, B.PACKED_ICE], light: B.LANTERN,
+    spawns: ['frost', 'frost', 'skeleton', 'armored'], boss: 'giant', adj: ['Ледяной', 'Ледяная', 'Ледяное', 'Ледяные'] },
+  sand: { walls: [[0.7, B.SANDSTONE], [0.9, B.STONE_BRICKS], [1, B.GOLD_ORE]], floor: [B.SAND, B.SANDSTONE], light: B.LANTERN,
+    spawns: ['walker', 'burning', 'skeleton'], boss: 'necromancer', adj: ['Песчаный', 'Песчаная', 'Песчаное', 'Песчаные'] },
+  web: { walls: [[0.6, B.DARK_STONE], [0.9, B.CRACKED_BRICKS], [1, B.STONE]], floor: [B.GRAVEL, B.DARK_STONE], light: B.LANTERN,
+    spawns: ['cave_spider', 'cave_spider', 'skeleton'], boss: 'brute', adj: ['Паучий', 'Паучья', 'Паучье', 'Паучьи'] },
+  ember: { walls: [[0.45, B.DARK_STONE], [0.75, B.OBSIDIAN], [0.9, B.STONE_BRICKS], [1, B.MAGMA]], floor: [B.DARK_STONE, B.MAGMA], light: B.MAGMA,
+    spawns: ['burning', 'imp', 'skeleton'], boss: 'lich', adj: ['Огненный', 'Огненная', 'Огненное', 'Огненные'] },
+};
+const GENDER = { m: 0, f: 1, n: 2, pl: 3 };
+const NOUNS = {
+  small: [['склеп', 'm'], ['тайник', 'm'], ['погреб', 'm'], ['грот', 'm']],
+  medium: [['подземелье', 'n'], ['святилище', 'n'], ['темница', 'f'], ['усыпальница', 'f']],
+  large: [['катакомбы', 'pl'], ['некрополь', 'm'], ['лабиринт', 'm'], ['чертоги', 'pl']],
+};
+const OF = ['забытого короля', 'тысячи костей', 'павшего ордена', 'безымянных', 'чёрного епископа', 'проклятых шахтёров', 'последнего мага',
+  'семи печатей', 'вечной ночи', 'утонувших', 'серых сестёр', 'мёртвого купца', 'старого культа', 'пропавшей экспедиции', 'шепчущих теней', 'алого дракона'];
+const VILLAGE_NAMES = ['Глухово', 'Пустошки', 'Мёртвый Яр', 'Тихая Заводь', 'Чёрный Брод', 'Погорелово', 'Ветряки', 'Совиный Лог', 'Каменный Ручей', 'Забытая Пристань', 'Горелый Бор', 'Ивняки'];
+
 export class Dungeons {
   constructor(gen) { this.gen = gen; this.cache = new Map(); }
 
-  /** The dungeon of a region (or null). */
-  plan(rx, rz) {
+  /** The dungeon of a region (the biggest one there), or null. */
+  plan(rx, rz) { return this.plans(rx, rz)[0] || null; }
+  /** Every dungeon of a region: maybe a big one, maybe an abandoned village, and a few small and medium ones. */
+  plans(rx, rz) {
     const key = rx + ',' + rz;
     if (this.cache.has(key)) return this.cache.get(key);
-    const gen = this.gen, seed = gen.seed, world = gen.world, L = gen.L;
-    let d = null;
-    const roll = hash2(rx, rz, seed + 900);
-    // the great catacombs are 7×7 rooms a floor, crypts and fortresses 6×6, castles 5×5
-    const great = roll >= 0.28 && roll < 0.48;
-    const n = great ? 7 : roll < 0.28 || (roll >= 0.48 && roll < 0.6) || roll >= 0.86 ? 6 : 5, S = n * C;
-    const ox = rx * R + 12 + Math.floor(hash2(rx, rz, seed + 901) * (R - S - 24));
-    const oz = rz * R + 12 + Math.floor(hash2(rx, rz, seed + 902) * (R - S - 24));
-    const inWorld = ox > 12 && oz > 12 && ox + S < world.size - 12 && oz + S < world.size - 12;
-    const c = gen.column(ox + S / 2, oz + S / 2);
-    const cavY = (floors) => L.cavBot + 12 + (floors - 1) * FLOOR_GAP + Math.floor(hash2(rx, rz, seed + 903) * (L.cavTop - L.cavBot - 52 - (floors - 1) * FLOOR_GAP));
-    if (inWorld && c.dist > 130) {
-      const f2 = hash2(rx, rz, seed + 904);
-      if (roll < 0.28) d = this._make('crypt', rx, rz, ox, oz, cavY(f2 < 0.4 ? 3 : 2), f2 < 0.4 ? 3 : 2, n);
-      else if (great) d = this._make('crypt', rx, rz, ox, oz, cavY(f2 < 0.45 ? 4 : 3), f2 < 0.45 ? 4 : 3, n);
-      else if (roll < 0.6) d = this._make('fortress', rx, rz, ox, oz, 28, 1, n);
-      else if (roll < 0.86) {
-        const y0 = c.dist > 170 ? this._castleSite(ox, oz, S) : null;
-        if (y0 !== null) d = this._make('castle', rx, rz, ox, oz, y0, f2 < 0.35 ? 3 : 2, n);
-        else d = this._make('crypt', rx, rz, ox, oz, cavY(2), 2, n);
-      } else d = this._make('crypt', rx, rz, ox, oz, cavY(3), 3, n);       // every other region has a dungeon too
+    const gen = this.gen, seed = gen.seed, world = gen.world, L = gen.L, sea = gen.sea;
+    const out = [];
+    this.cache.set(key, out);
+    const x0 = rx * R, z0 = rz * R;
+    if (x0 < 12 || z0 < 12 || x0 + R > world.size - 12 || z0 + R > world.size - 12) return out;
+    const mid = gen.column(x0 + R / 2, z0 + R / 2);
+    if (mid.dist < 110) return out;                         // the player's home stays free
+    const taken = [];                                       // [x0, z0, x1, z1] of what is placed
+    const free = (a, b, w, d, m = 8) => !taken.some(([p, q, r, t]) => a - m < r && a + w + m > p && b - m < t && b + d + m > q);
+    const place = (S, salt, pad = 0) => {
+      for (let k = 0; k < 12; k++) {
+        const ox = x0 + 12 + pad + Math.floor(hash2(rx * 13 + k, rz * 7 + salt, seed + 901) * Math.max(1, R - S - 24 - 2 * pad));
+        const oz = z0 + 12 + pad + Math.floor(hash2(rx * 5 - k, rz * 11 + salt, seed + 902) * Math.max(1, R - S - 24 - 2 * pad));
+        if (free(ox - pad, oz - pad, S + 2 * pad, S + 2 * pad)) { taken.push([ox - pad, oz - pad, ox + S + pad, oz + S + pad]); return [ox, oz]; }
+      }
+      return null;
+    };
+    const themeAt = (x, z, deep) => {
+      const c = gen.column(x, z), zn = gen.zone(x, z, c.b);
+      const byZone = { 1: 'mushroom', 2: 'overgrown', 3: 'ice', 4: 'sand', 5: 'crystal', 6: 'web' }[zn];
+      if (byZone && hash2(x, z, seed + 905) < 0.75) return byZone;
+      const pool = deep ? ['stone', 'bone', 'ember', 'flooded', 'crystal'] : ['stone', 'bone', 'flooded', 'overgrown', 'web'];
+      return pool[Math.floor(hash2(z, x, seed + 906) * pool.length)];
+    };
+    const cavY = (floors, salt) => L.cavBot + 12 + (floors - 1) * FLOOR_GAP + Math.floor(hash2(rx + salt, rz, seed + 903) * (L.cavTop - L.cavBot - 52 - (floors - 1) * FLOOR_GAP));
+    const roll = hash2(rx, rz, seed + 900), f2 = hash2(rx, rz, seed + 904);
+    // the big one (most regions have none: the small ones are what you mostly find)
+    if (roll < 0.008 && mid.dist > 260) {
+      const S = 8 * C, at = place(S, 1);
+      if (at) out.push(this._make('crypt', rx, rz, at[0], at[1], cavY(5, 1), 5, 8, { super: true, theme: themeAt(at[0] + S / 2, at[1] + S / 2, true), size: 'large', salt: 1 }));
+    } else if (roll < 0.17) {
+      const n = f2 < 0.4 ? 7 : 6, floors = n === 7 ? (f2 < 0.15 ? 4 : 3) : (f2 < 0.7 ? 3 : 2), S = n * C, at = place(S, 1);
+      if (at) out.push(this._make('crypt', rx, rz, at[0], at[1], cavY(floors, 1), floors, n, { theme: themeAt(at[0] + S / 2, at[1] + S / 2, true), size: 'large', salt: 1 }));
+    } else if (roll < 0.25) {
+      const n = f2 < 0.5 ? 6 : 5, S = n * C, at = place(S, 1);
+      if (at) out.push(this._make('fortress', rx, rz, at[0], at[1], 28, 1, n, { salt: 1 }));
+    } else if (roll < 0.35 && mid.dist > 170) {
+      const n = f2 < 0.5 ? 5 : 4, S = n * C, at = place(S, 1, RING + 3);
+      const y0 = at ? this._castleSite(at[0], at[1], S) : null;
+      if (y0 !== null) out.push(this._make('castle', rx, rz, at[0], at[1], y0, f2 < 0.35 ? 3 : 2, n, { salt: 1 }));
+      else if (at) taken.pop();
     }
-    this.cache.set(key, d);
-    return d;
+    // an abandoned village
+    if (hash2(rx, rz, seed + 907) < 0.3 && mid.dist > 190) {
+      const S = 56, at = place(S, 3);
+      const v = at ? this._village(rx, rz, at[0], at[1], S) : null;
+      if (v) out.push(v); else if (at) taken.pop();
+    }
+    // small and medium dungeons: one to three, near the surface or down in the caves
+    const extras = 1 + Math.floor(hash2(rx, rz, seed + 908) * 3);
+    for (let e = 0; e < extras; e++) {
+      const salt = 10 + e, r2 = hash2(rx + e * 7, rz - e, seed + 909);
+      const n = r2 < 0.35 ? 2 : r2 < 0.7 ? 3 : 4, size = n === 4 || (n === 3 && r2 > 0.55) ? 'medium' : 'small', floors = n === 4 && r2 > 0.88 ? 2 : 1;
+      const S = n * C, at = place(S, salt);
+      if (!at) continue;
+      const cx = at[0] + S / 2, cz = at[1] + S / 2, h = gen.column(cx, cz).h;
+      // the small ones mostly just under the surface (a shrine marks the way down), the medium ones deeper
+      const shallow = size === 'small' && hash2(rx, rz + e, seed + 910) < 0.6 && h > sea - 2;
+      const y0 = shallow ? Math.min(h - 12, sea - 6) - Math.floor(hash2(rx - e, rz, seed + 911) * 8) : cavY(floors, salt);
+      out.push(this._make('crypt', rx, rz, at[0], at[1], y0, floors, n, { theme: themeAt(cx, cz, !shallow), size, salt, shallow }));
+    }
+    return out;
   }
 
   /** Floor height for a castle over this square, or null when the land is wet, too rugged or a town is near. */
@@ -75,10 +157,14 @@ export class Dungeons {
     return y0 + 3 * CASTLE_GAP + 12 < gen.world.height - 4 ? y0 : null;
   }
 
-  _make(kind, rx, rz, ox, oz, y0, floors, n) {
-    const gen = this.gen, rnd = mulberry32((gen.seed ^ Math.imul(rx + 31, 2654435761) ^ Math.imul(rz + 17, 40503)) >>> 0);
+  _make(kind, rx, rz, ox, oz, y0, floors, n, opts = {}) {
+    const gen = this.gen, salt = opts.salt || 0;
+    const rnd = mulberry32((gen.seed ^ Math.imul(rx + 31, 2654435761) ^ Math.imul(rz + 17, 40503) ^ Math.imul(salt + 7, 374761393)) >>> 0);
     const castle = kind === 'castle';
-    const d = { kind, rx, rz, ox, oz, n, shells: [], inner: [], decos: [], clear: [], found: [], key: 'boss:' + rx + ',' + rz };
+    const d = { kind, rx, rz, ox, oz, n, shells: [], inner: [], decos: [], clear: [], found: [], key: 'boss:' + rx + ',' + rz + (salt ? ':' + salt : ''),
+      theme: kind === 'crypt' ? (opts.theme || 'stone') : null, size: opts.size || 'large', super: !!opts.super, shallow: !!opts.shallow };
+    d.T = d.theme ? THEMES[d.theme] : null;
+    d.name = this._name(d, rnd);
     const levels = [];
     for (let f = 0; f < floors; f++) {
       const y = castle ? y0 + f * CASTLE_GAP : y0 - f * FLOOR_GAP;
@@ -127,12 +213,20 @@ export class Dungeons {
     const dist = new Map([[arrive, 0]]), q = [arrive];
     while (q.length) { const r = q.shift(); for (const o of r.links) if (!dist.has(o)) { dist.set(o, dist.get(r) + 1); q.push(o); } }
     const far = last.rooms.filter(r => r.type === 'plain').sort((a, b) => dist.get(b) - dist.get(a));
-    if (far[0]) { const b = far[0]; b.type = 'boss'; b.h = 8; b.x0 = b.cx - 6; b.x1 = b.cx + 6; b.z0 = b.cz - 6; b.z1 = b.cz + 6; }
+    const bigRoom = (b, t) => { b.type = t; b.h = 8; b.x0 = b.cx - 6; b.x1 = b.cx + 6; b.z0 = b.cz - 6; b.z1 = b.cz + 6; };
+    if (far[0] && n >= 3) bigRoom(far[0], 'boss');
+    else if (far[0]) far[0].type = 'vault';                   // a small crypt keeps a treasure, not a lord
     if (far[1]) far[1].type = 'vault';
     if (far[2] && floors > 2) far[2].type = 'vault';
+    if (d.super) {
+      // the Abyss: a second lord halfway down and more treasure
+      const mid = levels[floors >> 1].rooms.filter(r => r.type === 'plain');
+      if (mid[0]) { bigRoom(mid[0], 'boss'); mid[0].bossKey = d.key + ':mid'; }
+      for (const r of far.slice(3, 6)) r.type = 'vault';
+    }
     const kinds = kind === 'fortress' ? ['spawner', 'spawner', 'armory', 'trap', 'prison', 'plain', 'library']
       : castle ? ['spawner', 'spawner', 'barracks', 'armory', 'library', 'prison', 'tombs', 'trap', 'plain']
-        : ['spawner', 'spawner', 'library', 'tombs', 'prison', 'armory', 'trap', 'nest', 'plain'];
+        : ['spawner', 'spawner', 'library', 'tombs', 'prison', 'armory', 'trap', 'nest', 'plain', 'fountain', 'altar', 'storeroom', 'mine', 'garden'];
     for (const lv of levels) for (const r of lv.rooms) if (r.type === 'plain') r.type = kinds[Math.floor(rnd() * kinds.length)];
     // a castle stands on levelled ground inside its curtain wall
     if (castle) this._castleGround(d, y0, floors);
@@ -165,9 +259,9 @@ export class Dungeons {
     // castle halls get arrow-slit windows
     if (castle) for (let x = r.x0 + 1; x < r.x1; x += 3) for (const z of [r.z0 - 1, r.z1 + 1]) if (rnd() < 0.5) this._deco(d, x, y + 2, z, B.IRON_BARS);
     const deco = (x, yy, z, id, meta) => this._deco(d, x, yy, z, id, meta);
-    const pool = hell ? HELL_SPAWNS : castle ? CASTLE_SPAWNS : CRYPT_SPAWNS;
+    const pool = hell ? HELL_SPAWNS : castle ? CASTLE_SPAWNS : d.T?.spawns || CRYPT_SPAWNS;
     const spawnType = () => pool[Math.floor(rnd() * pool.length)];
-    const light = hell ? B.MAGMA : B.LANTERN;
+    const light = hell ? B.MAGMA : d.T?.light || B.LANTERN;
     const wallLamp = () => { deco(r.x0 - 1, y + 2, r.cz, light); deco(r.x1 + 1, y + 2, r.cz, light); };
     const corners = (id, k = 1) => { for (const [x, z] of [[r.x0, r.z0], [r.x1, r.z0], [r.x0, r.z1], [r.x1, r.z1]]) for (let i = 0; i < k; i++) deco(x, y + r.h - 1 - i, z, id); };
     switch (r.type) {
@@ -245,8 +339,8 @@ export class Dungeons {
       case 'boss': {
         for (const [x, z] of [[r.x0 + 2, r.z0 + 2], [r.x1 - 2, r.z0 + 2], [r.x0 + 2, r.z1 - 2], [r.x1 - 2, r.z1 - 2]]) for (let k = 0; k < r.h; k++) deco(x, y + k, z, k === 3 ? light : B.OBSIDIAN);
         // the crypt's lich; in a castle its lord, a necromancer or a giant
-        const boss = castle ? (rnd() < 0.6 ? 'necromancer' : 'giant') : 'lich';
-        deco(r.cx, y, r.cz, B.SPAWNER, { spawner: { type: boss, boss: true, key: d.key } });
+        const boss = castle ? (rnd() < 0.6 ? 'necromancer' : 'giant') : hell ? 'lich' : (r.bossKey ? ['necromancer', 'giant', 'brute'][Math.floor(rnd() * 3)] : d.T?.boss || 'lich');
+        deco(r.cx, y, r.cz, B.SPAWNER, { spawner: { type: boss, boss: true, key: r.bossKey || d.key } });
         for (let x = r.cx - 2; x <= r.cx + 2; x++) deco(x, y - 1, r.cz - 3, B.GOLD_BLOCK);
         for (const x of [r.cx - 2, r.cx, r.cx + 2]) deco(x, y, r.z0, B.CHEST, { tier: 'boss' });
         for (let x = r.x0; x <= r.x1; x += 3) deco(x, y + r.h - 1, r.cz, light);
@@ -254,10 +348,88 @@ export class Dungeons {
         corners(B.COBWEB, 2);
         break;
       }
+      case 'fountain':
+        // a basin of water in the middle, lamps on its corners
+        for (let x = r.cx - 1; x <= r.cx + 1; x++) for (let z = r.cz - 1; z <= r.cz + 1; z++) { deco(x, y - 1, z, B.WATER); if (Math.abs(x - r.cx) + Math.abs(z - r.cz) === 2) deco(x, y, z, B.STONE_BRICKS); }
+        for (const [x, z] of [[r.cx - 2, r.cz - 2], [r.cx + 2, r.cz + 2]]) { deco(x, y, z, B.STONE_BRICKS); deco(x, y + 1, z, light); }
+        if (rnd() < 0.5) deco(r.x1, y, r.z0, B.CHEST, { tier: 'dungeon' });
+        break;
+      case 'altar':
+        for (let x = r.cx - 1; x <= r.cx + 1; x++) deco(x, y, r.cz, B.OBSIDIAN);
+        deco(r.cx, y + 1, r.cz, B.GOLD_BLOCK);
+        deco(r.cx - 1, y + 1, r.cz, B.SKULL_BLOCK); deco(r.cx + 1, y + 1, r.cz, B.SKULL_BLOCK);
+        deco(r.cx, y, r.cz + 2, B.CHEST, { tier: 'vault' });
+        deco(r.cx, y, r.cz - 2, B.SPAWNER, { spawner: { type: spawnType(), cap: 2, hp: 1.6 } });
+        wallLamp();
+        break;
+      case 'storeroom':
+        for (let x = r.x0; x <= r.x1; x++) if (rnd() < 0.6) { deco(x, y, r.z0, rnd() < 0.5 ? B.PLANKS : B.HAY_BALE); if (rnd() < 0.4) deco(x, y + 1, r.z0, B.PLANKS); }
+        for (let k = 0; k < 2; k++) deco(r.x0 + 1 + Math.floor(rnd() * (r.x1 - r.x0 - 1)), y, r.z1, B.CHEST, { tier: 'dungeon' });
+        corners(B.COBWEB);
+        wallLamp();
+        break;
+      case 'mine':
+        // an old mine: ore in the walls, a cart of planks, a pick-room chest
+        for (let k = 0; k < 8; k++) { const side = rnd() < 0.5; const x = side ? (rnd() < 0.5 ? r.x0 - 1 : r.x1 + 1) : r.x0 + Math.floor(rnd() * (r.x1 - r.x0)); const z = side ? r.z0 + Math.floor(rnd() * (r.z1 - r.z0)) : (rnd() < 0.5 ? r.z0 - 1 : r.z1 + 1); deco(x, y + Math.floor(rnd() * 3), z, [B.IRON_ORE, B.GOLD_ORE, B.COAL_ORE, B.CRYSTAL_ORE][Math.floor(rnd() * 4)]); }
+        for (const x of [r.x0 + 1, r.x1 - 1]) for (let k = 0; k < r.h; k++) deco(x, y + k, r.cz, k === r.h - 1 ? B.PLANKS : B.LOG);
+        deco(r.cx, y, r.cz + 1, B.CHEST, { tier: 'dungeon' });
+        deco(r.cx, y + 2, r.cz, B.LANTERN);
+        break;
+      case 'garden': {
+        // what grows down here depends on the dungeon
+        const t = d.theme;
+        const plant = t === 'mushroom' ? B.GLOW_MUSHROOM : t === 'overgrown' ? B.TALL_GRASS : t === 'sand' ? B.DEAD_BUSH : t === 'ice' ? B.SNOW : B.MUSHROOM;
+        for (let x = r.x0; x <= r.x1; x++) for (let z = r.z0; z <= r.z1; z++) if (hash2(x * 3, z * 5, this.gen.seed + 951) < 0.4) deco(x, y, z, plant);
+        deco(r.cx, y, r.cz, B.SPAWNER, { spawner: { type: spawnType(), cap: 2 } });
+        if (rnd() < 0.6) deco(r.x0, y, r.z0, B.CHEST, { tier: 'dungeon' });
+        deco(r.cx, y + r.h - 1, r.cz, light);
+        break;
+      }
       default:
         wallLamp();
         if (rnd() < 0.3) deco(r.cx, y, r.cz, B.CHEST, { tier: 'dungeon' });
     }
+    if (d.theme) this._themeRoom(d, r, rnd);
+  }
+  /** What a dungeon's theme adds to each of its rooms. */
+  _themeRoom(d, r, rnd) {
+    const y = r.y, t = d.theme, deco = (x, yy, z, id) => this._deco(d, x, yy, z, id);
+    const cells = (k) => { const out = []; for (let i = 0; i < k; i++) out.push([r.x0 + Math.floor(rnd() * (r.x1 - r.x0 + 1)), r.z0 + Math.floor(rnd() * (r.z1 - r.z0 + 1))]); return out; };
+    const free = (x, z) => !(x === r.cx && z === r.cz);
+    switch (t) {
+      case 'flooded': for (const [x, z] of cells(6)) if (free(x, z)) deco(x, y - 1, z, B.WATER); break;
+      case 'overgrown':
+        for (const [x, z] of cells(5)) for (let k = 0; k < 1 + Math.floor(rnd() * 3); k++) deco(x, y + r.h - 1 - k, z, B.LEAVES);
+        for (const [x, z] of cells(5)) if (free(x, z)) deco(x, y, z, B.TALL_GRASS);
+        break;
+      case 'mushroom':
+        for (const [x, z] of cells(4)) if (free(x, z)) deco(x, y, z, B.GLOW_MUSHROOM);
+        for (const [x, z] of cells(4)) deco(x, y + r.h, z, B.GLOW_MOSS);
+        break;
+      case 'crystal': for (const [x, z] of cells(3)) deco(x, y + r.h, z, B.AMETHYST); break;
+      case 'ice': for (const [x, z] of cells(4)) for (let k = 0; k < 1 + Math.floor(rnd() * 2); k++) deco(x, y + r.h - 1 - k, z, B.ICE); break;
+      case 'sand':
+        for (const [x, z] of cells(3)) if (free(x, z)) deco(x, y, z, B.SAND);
+        if (rnd() < 0.15) deco(r.x1, y, r.z1, B.GOLD_BLOCK);
+        break;
+      case 'web':
+        for (let x = r.x0; x <= r.x1; x++) for (let z = r.z0; z <= r.z1; z++) {
+          if (hash2(x * 7, z * 3 + y, this.gen.seed + 953) < 0.1 && free(x, z)) deco(x, y + 1 + Math.floor(hash2(x, z, this.gen.seed + 954) * (r.h - 1)), z, B.COBWEB);
+        }
+        break;
+      case 'bone': for (const [x, z] of cells(3)) if (free(x, z)) deco(x, y, z, B.SKULL_BLOCK); break;
+      case 'ember': for (const [x, z] of cells(4)) if (free(x, z)) deco(x, y - 1, z, B.MAGMA); break;
+    }
+  }
+  /** The dungeon's name: «Затопленный склеп тысячи костей», «Ледяные катакомбы», «Бездна семи печатей»… */
+  _name(d, rnd) {
+    const of = OF[Math.floor(rnd() * OF.length)];
+    if (d.kind === 'fortress') return `Крепость преисподней ${of}`;
+    if (d.kind === 'castle') return `Руины замка ${of}`;
+    if (d.super) return `Бездна ${of}`;
+    const list = NOUNS[d.size] || NOUNS.large, [noun, g] = list[Math.floor(rnd() * list.length)];
+    const adj = d.T?.adj?.[GENDER[g]] || '';
+    return `${adj} ${noun}${rnd() < 0.6 ? ' ' + of : ''}`.trim().replace(/^./, (c) => c.toUpperCase());
   }
 
   _corridor(d, a, b, rnd) {
@@ -361,19 +533,81 @@ export class Dungeons {
     for (let k = 0; k < 6; k++) this._deco(d, a0x + 2 + Math.floor(rnd() * (S + 2 * RING - 4)), y0, a1z - 2, rnd() < 0.5 ? B.HAY_BALE : B.SKULL_BLOCK);
   }
 
-  /** Is (x, z) inside a castle's walls? (No trees grow there.) */
+  /** An abandoned village: crumbling houses around a square with a well, a farm gone wild, chests and the dead. */
+  _village(rx, rz, ox, oz, S) {
+    const gen = this.gen, seed = gen.seed, sea = gen.sea;
+    for (const s of gen.sites || []) if (Math.hypot(s.x - ox - S / 2, s.z - oz - S / 2) < S + 110) return null;
+    const rnd = mulberry32((seed ^ Math.imul(rx + 91, 2654435761) ^ Math.imul(rz + 53, 40503)) >>> 0);
+    const cx = ox + S / 2, cz = oz + S / 2, c = gen.column(cx, cz);
+    if (c.h <= sea + 1 || c.b === 8 || c.b === 3) return null;
+    const d = { kind: 'village', rx, rz, ox, oz, n: 0, shells: [], inner: [], decos: [], clear: [], found: [], key: 'village:' + rx + ',' + rz };
+    d.name = `Заброшенная деревня «${VILLAGE_NAMES[Math.floor(rnd() * VILLAGE_NAMES.length)]}»`;
+    const tier = 1 + Math.floor(rnd() * 3);
+    const types = ['house', 'house', 'house', 'house', 'farm', 'storehouse', 'watchtower', 'lumber_camp', 'house'];
+    const spots = [[-17, -17], [3, -19], [-19, 4], [6, 6], [-4, 13], [13, -6], [-14, 14], [15, 13]];
+    let houses = 0, y0 = c.h + 1;
+    // the square and its well
+    d.found.push({ x0: cx - 4, z0: cz - 4, x1: cx + 4, z1: cz + 4, y: c.h });
+    d.clear.push({ x0: cx - 4, z0: cz - 4, x1: cx + 4, z1: cz + 4, y0: c.h + 1, y1: c.h + 8 });
+    for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) { this._deco(d, cx + dx, y0, cz + dz, B.COBBLESTONE); }
+    this._deco(d, cx, c.h, cz, B.WATER);
+    for (const [dx, dz] of [[-1, -1], [1, 1]]) { this._deco(d, cx + dx, y0 + 1, cz + dz, B.LOG); this._deco(d, cx + dx, y0 + 2, cz + dz, B.LOG); }
+    for (const [sx, sz] of spots) {
+      if (rnd() < 0.2) continue;
+      const type = types[Math.floor(rnd() * types.length)], def = BUILDING_TYPES[type];
+      if (!def) continue;
+      const rot = Math.floor(rnd() * 4), variant = Math.floor(rnd() * (def.variants || 1));
+      let Lay;
+      try { Lay = def.layout(rot, variant, tier, def.growAt ? def.growAt(tier) : 0); } catch (e) { continue; }
+      if (!Lay || Lay.w > 16 || Lay.d > 16) continue;
+      const bx = cx + sx - (Lay.w >> 1), bz = cz + sz - (Lay.d >> 1);
+      const hs = [gen.column(bx, bz).h, gen.column(bx + Lay.w - 1, bz).h, gen.column(bx, bz + Lay.d - 1).h, gen.column(bx + Lay.w - 1, bz + Lay.d - 1).h].sort((a, b) => a - b);
+      if (hs[3] - hs[0] > 6 || hs[1] <= sea) continue;
+      const by = hs[1];
+      d.found.push({ x0: bx - 1, z0: bz - 1, x1: bx + Lay.w, z1: bz + Lay.d, y: by, mat: 'grass' });
+      d.clear.push({ x0: bx - 1, z0: bz - 1, x1: bx + Lay.w, z1: bz + Lay.d, y0: by + 1, y1: by + Lay.height + 4 });
+      // the house in ruins: the roof mostly gone, holes in the walls, moss everywhere
+      const top = Lay.height;
+      for (const b of Lay.blocks) {
+        if (b.dy <= 0) continue;
+        const h = hash2(bx + b.dx * 3 + b.dy, bz + b.dz * 5 - b.dy, seed + 980);
+        if (b.dy >= top - 2 && h < 0.65) continue;
+        if (b.dy >= 2 && h < 0.22) continue;
+        let id = b.id;
+        if (h > 0.9 && b.dy <= 3) id = B.MOSSY_COBBLE;
+        this._deco(d, bx + b.dx, by + b.dy, bz + b.dz, id);
+      }
+      const ix = bx + (Lay.w >> 1), iz = bz + (Lay.d >> 1);
+      if (rnd() < 0.6) this._deco(d, ix, by + 1, iz, B.CHEST, { tier: rnd() < 0.2 ? 'vault' : 'dungeon' });
+      if (rnd() < 0.35) this._deco(d, ix + 1, by + 1, iz, B.SPAWNER, { spawner: { type: rnd() < 0.5 ? 'walker' : rnd() < 0.5 ? 'skeleton' : 'runner', cap: 2 } });
+      for (let k = 0; k < 3; k++) this._deco(d, bx + Math.floor(rnd() * Lay.w), by + 2 + Math.floor(rnd() * 2), bz + Math.floor(rnd() * Lay.d), B.COBWEB);
+      houses++;
+    }
+    if (houses < 3) return null;
+    // a path of gravel between the houses, skulls in the grass, a lantern by the well
+    for (let k = -14; k <= 14; k++) for (const [x, z] of [[cx + k, cz + 1], [cx + 1, cz + k]]) if (Math.abs(k) > 4 && hash2(x, z, seed + 981) < 0.7) this._deco(d, x, gen.column(x, z).h, z, B.GRAVEL);
+    for (let k = 0; k < 5; k++) { const x = ox + Math.floor(rnd() * S), z = oz + Math.floor(rnd() * S); this._deco(d, x, gen.column(x, z).h + 1, z, B.SKULL_BLOCK); }
+    this._deco(d, cx + 2, y0, cz + 2, B.LANTERN);
+    d.box = { x0: ox, z0: oz, x1: ox + S, z1: oz + S, y0: c.h - 8, y1: c.h + 20 };
+    return d;
+  }
+
+  /** Is (x, z) inside a castle's walls or an abandoned village? (No trees grow there.) */
   castleAt(x, z) {
-    const d = this.plan(Math.floor(x / R), Math.floor(z / R));
-    if (!d || d.kind !== 'castle') return false;
-    const b = d.box;
-    return x >= b.x0 - 2 && x <= b.x1 + 2 && z >= b.z0 - 2 && z <= b.z1 + 2;
+    for (const d of this.plans(Math.floor(x / R), Math.floor(z / R))) {
+      if (d.kind !== 'castle' && d.kind !== 'village') continue;
+      const b = d.box;
+      if (x >= b.x0 - 2 && x <= b.x1 + 2 && z >= b.z0 - 2 && z <= b.z1 + 2) return true;
+    }
+    return false;
   }
   /** The dungeon whose halls contain (x, y, z), or null. */
   at(x, y, z) {
-    const d = this.plan(Math.floor(x / R), Math.floor(z / R));
-    if (!d) return null;
-    const b = d.box;
-    return x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 && y >= b.y0 && y <= b.y1 ? d : null;
+    for (const d of this.plans(Math.floor(x / R), Math.floor(z / R))) {
+      const b = d.box;
+      if (x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 && y >= b.y0 && y <= b.y1) return d;
+    }
+    return null;
   }
 
   // ---- drawing into a chunk
@@ -381,8 +615,7 @@ export class Dungeons {
     const world = this.gen.world, seed = this.gen.seed;
     const lists = [];
     for (let rz = Math.floor(z0 / R); rz <= Math.floor((z1 - 1) / R); rz++) for (let rx = Math.floor(x0 / R); rx <= Math.floor((x1 - 1) / R); rx++) {
-      const d = this.plan(rx, rz);
-      if (d) lists.push(d);
+      for (const d of this.plans(rx, rz)) if (d.box.x1 >= x0 && d.box.x0 < x1 && d.box.z1 >= z0 && d.box.z0 < z1) lists.push(d);
     }
     if (!lists.length) return;
     const clip = (o) => ({ ax: Math.max(x0, o.x0), bx: Math.min(x1 - 1, o.x1), az: Math.max(z0, o.z0), bz: Math.min(z1 - 1, o.z1), ay: Math.max(1, o.y0), by: Math.min(world.height - 2, o.y1) });
@@ -392,9 +625,11 @@ export class Dungeons {
       const wallId = (x, y, z) => {
         const r = hash2(x * 31 + y, z * 17 - y, seed + 970);
         if (hell) return r < 0.35 ? B.DARK_STONE : r < 0.6 ? B.STONE_BRICKS : r < 0.85 ? B.OBSIDIAN : B.MAGMA;
-        if (castle) return r < 0.5 ? B.STONE_BRICKS : r < 0.68 ? B.CRACKED_BRICKS : r < 0.84 ? B.MOSSY_COBBLE : B.COBBLESTONE;
-        return r < 0.55 ? B.STONE_BRICKS : r < 0.75 ? B.CRACKED_BRICKS : r < 0.9 ? B.MOSSY_COBBLE : B.DARK_STONE;
+        if (castle || d.kind === 'village') return r < 0.5 ? B.STONE_BRICKS : r < 0.68 ? B.CRACKED_BRICKS : r < 0.84 ? B.MOSSY_COBBLE : B.COBBLESTONE;
+        for (const [share, id] of d.T?.walls || THEMES.stone.walls) if (r < share) return id;
+        return B.STONE_BRICKS;
       };
+      const floorIds = d.T?.floor || THEMES.stone.floor;
       // a castle: cut the hill away, then lay the yard and fill the hollows under it
       for (const o of d.clear) {
         if (outside(o)) continue;
@@ -406,7 +641,8 @@ export class Dungeons {
         const c = clip({ ...o, y0: o.y, y1: o.y });
         for (let z = c.az; z <= c.bz; z++) for (let x = c.ax; x <= c.bx; x++) {
           const r = hash2(x, z, seed + 973);
-          blocks[idx(x, o.y, z)] = r < 0.45 ? B.GRAVEL : r < 0.7 ? B.COBBLESTONE : r < 0.85 ? B.MOSSY_COBBLE : B.DIRT;
+          if (o.mat === 'grass') blocks[idx(x, o.y, z)] = r < 0.8 ? B.GRASS : r < 0.92 ? B.DIRT : B.GRAVEL;
+          else blocks[idx(x, o.y, z)] = r < 0.45 ? B.GRAVEL : r < 0.7 ? B.COBBLESTONE : r < 0.85 ? B.MOSSY_COBBLE : B.DIRT;
           for (let y = o.y - 1, k = 0; y > 1 && k < 30; y--, k++) {
             const i = idx(x, y, z), id = blocks[i];
             if (id !== B.AIR && id !== B.WATER && id !== B.TALL_GRASS && id !== B.LEAVES) break;
@@ -425,7 +661,7 @@ export class Dungeons {
             if (o.ruin && y >= o.y1 - 1 && y > o.y0 && hash2(x * 5 + y, z * 3, seed + 974) < 0.3) continue;
             if (o.ruin && y > o.y0 + 1 && y < o.y1 - 1 && hash2(x * 7 - y, z * 11 + y, seed + 975) < 0.03) continue;
           } else if ((cur === B.AIR || cur === B.WATER || cur === B.LAVA) && y > o.y0 && y < o.y1 && hash2(x * 5 + y, z, seed + 971) < 0.6) continue;   // where a cave runs through, the wall stays broken open
-          blocks[i] = y === o.y0 && !castle ? (hell ? B.DARK_STONE : (hash2(x, z, seed + 972) < 0.7 ? B.STONE_BRICKS : B.COBBLESTONE)) : wallId(x, y, z);
+          blocks[i] = y === o.y0 && !castle ? (hell ? B.DARK_STONE : floorIds[hash2(x, z, seed + 972) < 0.7 ? 0 : 1]) : wallId(x, y, z);
         }
       }
       for (const o of d.inner) {
