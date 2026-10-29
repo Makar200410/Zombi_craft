@@ -801,8 +801,11 @@ function* gunnerBrain(v) {
   }
 }
 
-/** Merchant: tends a market stall and sells surplus goods for gold — dearly: gold is hard to come by. */
+/** Merchant: tends a market stall and, now and then, sells a lot of surplus goods for gold. Gold is hard to come
+ *  by: a market with one merchant earns a gold piece in about ten minutes, with two in about five; a higher level
+ *  trades faster and sometimes earns two. */
 const TRADES = [['food', 80, 25], ['wood', 120, 30], ['stone', 150, 35], ['coal', 60, 15]];
+const GOLD_WORK = 600;        // merchant-seconds of trading for one sale
 function* merchantBrain(v) {
   const game = v.game, vil = v.village;
   v.updateTool();
@@ -814,16 +817,22 @@ function* merchantBrain(v) {
     v.task = 'Идёт к прилавку';
     yield* v.walkTo(st, 1.2, { maxTime: 25 });
     const res = game.state.resources;
-    const deal = TRADES.find(([k, keep]) => (res[k] || 0) > keep);
+    const deal = TRADES.find(([k, keep, n]) => (res[k] || 0) > keep + n);
     if (!deal) { v.task = 'Ждёт покупателей: нет излишков'; yield* v.wait(6); continue; }
-    v.task = 'Торгует на рынке';
-    yield* v.work('harvest', 12 / v.workSpeed, 0.8);
-    const [k, keep, n0] = deal;
-    // a bigger market sells the same gold for fewer goods
-    const n = Math.max(5, Math.round(n0 / (m.levelWorkBonus || 1)));
+    const L = m.level || 1;
+    v.task = `Торгует на рынке (до продажи ${Math.min(99, Math.round((m.goldWork || 0) / GOLD_WORK * 100))}%)`;
+    const t = 12 / v.workSpeed;
+    yield* v.work('harvest', t, 0.8);
+    m.goldWork = (m.goldWork || 0) + 12 * (1 + 0.25 * (L - 1));
+    if (m.goldWork < GOLD_WORK) { yield* v.wait(1 + rnd()); continue; }
+    const [k, keep, n] = deal;
     if ((res[k] || 0) <= keep + n) continue;
-    game.state.addAll({ [k]: -n, gold: 1 });
-    game.particles?.emit({ pos: { x: v.position.x, y: v.position.y + 2, z: v.position.z }, count: 6, colors: [0xffd84a, 0xfff0a6], additive: true, speed: 1.2, dir: { x: 0, y: 1.5, z: 0 }, gravity: 2, life: 0.8, size: 0.12 });
+    m.goldWork -= GOLD_WORK;
+    const gold = L >= 3 && rnd() < 0.2 * (L - 2) ? 2 : 1;
+    game.state.addAll({ [k]: -n, gold });
+    vil.floatText?.(v.position, `+${gold} золота`, 'gold');
+    game.particles?.emit({ pos: { x: v.position.x, y: v.position.y + 2, z: v.position.z }, count: 10, colors: [0xffd84a, 0xfff0a6], additive: true, speed: 1.2, dir: { x: 0, y: 1.5, z: 0 }, gravity: 2, life: 0.8, size: 0.12 });
+    game.audio?.play('coins', { pos: v.position, volume: 0.6 });
     yield* v.wait(1 + rnd());
   }
 }
