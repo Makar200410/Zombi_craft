@@ -47,6 +47,7 @@ export class Game {
   constructor() {
     const { q, touch } = detectQuality();
     this.quality = q;
+    try { this._qLocked = localStorage.getItem('zc_quality_user') === '1'; } catch (e) { /* ignore */ }   // the player's own choice is kept
     this.isTouch = touch;
     this.bus = new EventBus();
     this.state = new GameState(this.bus);
