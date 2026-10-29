@@ -516,7 +516,8 @@ export class Zombie extends Entity {
           : e.rivalId != null ? e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId)
           : (!!this.caravan || rv.fightsDead(this.rivalId)) && e.faction === 'undead')            // caravan guards (and commanded towns) fight off the dead
         : (e) => (e.faction === 'village' || e.caravan || (e.rivalId != null && game.rivals?.fightsDead(e.rivalId))) && e.kind !== 'projectile' && !e.hidden && !e.invisible;     // the dead go for caravans and commanded towns too
-      const cand = game.entities.nearest(pos, foe, range);
+      const ign = this._ignore && game.time < this._ignoreUntil ? this._ignore : null;
+      const cand = game.entities.nearest(pos, ign ? (e) => e !== ign && foe(e) : foe, range);
       if (cand) {
         const d = cand.position.distanceTo(pos);
         let ok = d < 5;
@@ -524,11 +525,19 @@ export class Zombie extends Entity {
         if (ok) {
           if (this.target !== cand) {
             if (!this.target && !this.far && game.time - lastRoar > 2.5 && Math.random() < 0.35) { lastRoar = game.time; game.audio?.play('zombie_roar', { pos: this.eye, pitch: voice(T.groanPitch), volume: 0.8 }); }
-            this.target = cand; this.path = null;
+            this.target = cand; this.path = null; this._closeSince = null;
           }
         }
         else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.4) this.target = null;
       } else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.5) this.target = null;
+      // a target it can't get at (up on a tower, behind a wall it can't see over): after a while it gives up on
+      // it for some time and goes back to smashing the village instead of standing there
+      const tg = this.target, close = tg && Math.hypot(tg.position.x - pos.x, tg.position.z - pos.z) < 7;
+      if (!close) this._closeSince = null;
+      else if (this._closeSince == null) this._closeSince = game.time;
+      if (close && game.time - this._closeSince > 7 && game.time - (this._strikeT ?? -1e9) > 7) {
+        this._ignore = tg; this._ignoreUntil = game.time + 15; this.target = null; this.path = null; this._closeSince = null;
+      }
       // people keep near their post: wanderers stay by home, patrols (lead) don't chase far from their town
       if ((this.wanderer || this.lead) && this.target && this.home && pos.distanceTo(this.home) > (this.lead && !this.wanderer ? 60 : 32)) this.target = null;
     }
@@ -558,7 +567,7 @@ export class Zombie extends Entity {
       face = Math.atan2(dx, dz);
       this.losT -= dt;
       if (this.losT <= 0) { this.losT = 0.8; this.losOk = this._los(tgt); }
-      if (this.base === 'spitter' && d < T.keep[1] + 2) {
+      if (this.base === 'spitter' && d < T.keep[1] + 2 && (this.losOk || d < T.keep[0])) {
         // keep distance: back off when too close, hold when in range
         if (d < T.keep[0]) { gx = pos.x - dx; gz = pos.z - dz; speed *= 0.8; }
         else if (d > T.keep[1]) { gx = tgt.position.x; gz = tgt.position.z; }
@@ -936,7 +945,7 @@ export class Zombie extends Entity {
         if (tgt && tgtDist < 20 && this.losOk) { aim = tgt.center.clone(); homing = tgt; }
         else if (this.bTarget) aim = buildingCenter(this.bTarget);
         if (aim) {
-          this.castT = T.boltCd;
+          this.castT = T.boltCd; if (homing) this._strikeT = game.time;
           this.model.play('cast');
           this._pendingCast = { t: 0.35, fn: () => {
             const from = this._handPos();
@@ -955,6 +964,7 @@ export class Zombie extends Entity {
       else if (!tgt && this.bTarget && this.velocity.lengthSq() < 0.3) aim = buildingCenter(this.bTarget);
       if (aim && this.spitT <= 0 && T.proj !== null) {
         this.spitT = T.spitCd * (0.85 + Math.random() * 0.3);
+        if (tgt && aim) this._strikeT = game.time;
         this.model.play('cast');
         this._pendingCast = { t: 0.3, fn: () => this._spit(aim) };
         return;
@@ -966,6 +976,7 @@ export class Zombie extends Entity {
       this.breakCell = null;
       if (this.attackT <= 0) {
         this.attackT = T.cd;
+        this._strikeT = game.time;
         this.model.play('attack');
         const dir = _v.set(tgt.position.x - pos.x, 0, tgt.position.z - pos.z).normalize();
         const combat = game.combat;
@@ -1011,7 +1022,7 @@ export class Zombie extends Entity {
         else if (this._nearBuilding(b)) {
           this.attackT = T.cd;
           this.model.play('attack');
-          try { b.damage?.(T.bldDmg * this.dmgMul, this); } catch (e) { /* ignore */ }
+          try { b.damage?.(T.bldDmg * this.dmgMul * (this.bldMul || 1), this); } catch (e) { /* ignore */ }
           const c = buildingCenter(b);
           game.particles?.emit({ pos: { x: pos.x + Math.sin(this.yaw) * 0.8, y: pos.y + 1, z: pos.z + Math.cos(this.yaw) * 0.8 }, count: 4, colors: [0x7a5a3a, 0x5a4030], speed: 2, life: 0.5, size: 0.1 });
           game.audio?.play('dig_wood', { pos: c, pitch: 0.8, volume: 0.6 });
@@ -1025,10 +1036,10 @@ export class Zombie extends Entity {
     const id = w.getBlock(x, y, z);
     const b = BLOCKS[id];
     this.model.play('attack');
-    const dmg = T.blockDps * T.cd * this.dmgMul;
+    const dmg = T.blockDps * T.cd * this.dmgMul * (this.bldMul || 1);
     const bld = game.village?.buildingAt?.(x, y, z) || null;
     const res = w.hitBlock(x, y, z, dmg, this);
-    if (bld) { try { bld.damage?.(T.bldDmg * this.dmgMul, this); } catch (e) { /* ignore */ } }
+    if (bld) { try { bld.damage?.(T.bldDmg * this.dmgMul * (this.bldMul || 1), this); } catch (e) { /* ignore */ } }
     if (!res.broken) {
       const point = { x: x + 0.5 - Math.sin(this.yaw) * 0.5, y: Math.min(y + 0.5, this.position.y + 1.2), z: z + 0.5 - Math.cos(this.yaw) * 0.5 };
       game.particles?.blockHit(x, y, z, id, point);

@@ -141,43 +141,44 @@ export const ZOMBIE_TYPES = {
     height: 1.8, width: 1, radius: 0.3, aggro: 12, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.5,
     human: true, job: 'merchant', hat: 'cap', hatColor: 0x7a3a8a,
   },
+  // soldiers of the rival towns (their health was halved: town guards were too hard to beat)
   rival_captain: {
-    base: 'walker', name: 'Воевода', hp: 220, speed: 2.2, dmg: 16, cd: 0.9, reach: 1.1, blockDps: 2, bldDmg: 6,
+    base: 'walker', name: 'Воевода', hp: 110, speed: 2.2, dmg: 16, cd: 0.9, reach: 1.1, blockDps: 2, bldDmg: 6,
     height: 1.95, width: 1.05, radius: 0.32, aggro: 28, knock: 6, eye: 0x202020, groanPitch: 0.9, loot: 1.2,
     human: true, job: 'guard', weapon: 'sword_iron', armor: 0.45, hat: 'crown', hatColor: 0xe8c040,
   },
   militia: {
-    base: 'walker', name: 'Ополченец', hp: 38, speed: 2.1, dmg: 7, cd: 0.95, reach: 0.95, blockDps: 1.2, bldDmg: 3,
+    base: 'walker', name: 'Ополченец', hp: 19, speed: 2.1, dmg: 7, cd: 0.95, reach: 0.95, blockDps: 1.2, bldDmg: 3,
     height: 1.8, width: 1, radius: 0.3, aggro: 22, knock: 3, eye: 0x202020, groanPitch: 1, loot: 0.6,
     human: true, job: 'woodcutter', weapon: 'axe_stone',
   },
   rival_guard: {
-    base: 'walker', name: 'Стражник', hp: 60, speed: 2.0, dmg: 9, cd: 1.0, reach: 1.0, blockDps: 1.5, bldDmg: 4,
+    base: 'walker', name: 'Стражник', hp: 30, speed: 2.0, dmg: 9, cd: 1.0, reach: 1.0, blockDps: 1.5, bldDmg: 4,
     height: 1.85, width: 1, radius: 0.3, aggro: 22, knock: 4, eye: 0x202020, groanPitch: 1, loot: 0.7,
     human: true, job: 'guard', weapon: 'sword_iron', armor: 0.3, hat: 'helmet', hatColor: 0x8a8e96,
   },
   rival_archer: {
-    base: 'spitter', proj: 'arrow', name: 'Лучник', hp: 34, speed: 2.0, dmg: 5, cd: 1.0, reach: 0.9, blockDps: 0.6, bldDmg: 2,
+    base: 'spitter', proj: 'arrow', name: 'Лучник', hp: 17, speed: 2.0, dmg: 5, cd: 1.0, reach: 0.9, blockDps: 0.6, bldDmg: 2,
     height: 1.8, width: 1, radius: 0.3, aggro: 26, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.7,
     keep: [7, 15], spitCd: 2.0, spitDmg: 9, human: true, job: 'guard', weapon: 'bow',
   },
   rival_knight: {
-    base: 'walker', name: 'Рыцарь', hp: 120, speed: 1.75, dmg: 15, cd: 1.1, reach: 1.1, blockDps: 2.5, bldDmg: 8,
+    base: 'walker', name: 'Рыцарь', hp: 60, speed: 1.75, dmg: 15, cd: 1.1, reach: 1.1, blockDps: 2.5, bldDmg: 8,
     height: 1.9, width: 1.05, radius: 0.32, aggro: 22, knock: 6, eye: 0x202020, groanPitch: 1, loot: 0.9,
     human: true, job: 'guard', weapon: 'battle_axe', armor: 0.5, hat: 'helmet', hatColor: 0xb0b4bc,
   },
   rival_musketeer: {
-    base: 'spitter', proj: 'bullet', name: 'Мушкетёр', hp: 50, speed: 1.9, dmg: 6, cd: 1.0, reach: 0.9, blockDps: 1, bldDmg: 3,
+    base: 'spitter', proj: 'bullet', name: 'Мушкетёр', hp: 25, speed: 1.9, dmg: 6, cd: 1.0, reach: 0.9, blockDps: 1, bldDmg: 3,
     height: 1.8, width: 1, radius: 0.3, aggro: 28, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.8,
     keep: [10, 18], spitCd: 3.2, spitDmg: 18, human: true, job: 'guard', weapon: 'musket', hat: 'cap', hatColor: 0x2a3a6a,
   },
   rival_rifleman: {
-    base: 'spitter', proj: 'bullet', name: 'Стрелок', hp: 80, speed: 2.1, dmg: 8, cd: 1.0, reach: 0.9, blockDps: 1.5, bldDmg: 5,
+    base: 'spitter', proj: 'bullet', name: 'Стрелок', hp: 40, speed: 2.1, dmg: 8, cd: 1.0, reach: 0.9, blockDps: 1.5, bldDmg: 5,
     height: 1.8, width: 1, radius: 0.3, aggro: 30, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.9,
     keep: [12, 22], spitCd: 1.6, spitDmg: 16, armor: 0.3, human: true, job: 'guard', weapon: 'rifle', hat: 'helmet', hatColor: 0x4a5a3a,
   },
   rival_trooper: {
-    base: 'spitter', proj: 'laser', name: 'Штурмовик', hp: 130, speed: 2.3, dmg: 10, cd: 1.0, reach: 0.9, blockDps: 2, bldDmg: 8,
+    base: 'spitter', proj: 'laser', name: 'Штурмовик', hp: 65, speed: 2.3, dmg: 10, cd: 1.0, reach: 0.9, blockDps: 2, bldDmg: 8,
     height: 1.85, width: 1, radius: 0.3, aggro: 32, knock: 2, eye: 0x202020, groanPitch: 1, loot: 1,
     keep: [12, 24], spitCd: 1.2, spitDmg: 20, armor: 0.4, human: true, job: 'guard', weapon: 'laser_rifle', hat: 'helmet', hatColor: 0xd0d4e0,
   },

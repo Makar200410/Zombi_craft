@@ -214,7 +214,7 @@ export class TownLife {
   allyJoins(r) {
     const R = this.R, o = r.ally != null ? R.get(r.ally) : null;
     if (!o || o.raid || o.army < 3 || o.commander != null || !R.atWarWithPlayer(o.i)) return;
-    R.launchRaid(o, Math.max(3, Math.min(12, Math.round(o.army * 0.5))), true);
+    R.launchRaid(o, Math.max(2, Math.min(6, Math.round(o.army * 0.3))), true);
     this.game.bus.emit('toast', { text: `Союзник «${o.name}» выступил вместе с «${r.name}»!`, kind: 'bad' });
   }
 }

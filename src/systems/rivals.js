@@ -33,6 +33,10 @@ const DRIVES = [1.8, 1.45, 1.2, 1.0, 0.85, 0.7, 0.55, 0.45];
 const NEAR = 130;           // the town's people exist as entities when the player is this close
 const FAR = 190;            // and are sent home beyond this
 const MAX_DEFENDERS = 9;
+/** At most one new war (on the player or between towns) per this many seconds — and none in the first half hour. */
+const WAR_GAP = 1800;
+/** Share of a town's army that marches out to war; the rest stay home to guard it. */
+const MARCH_SHARE = 0.35;
 
 /** Soldier types a town fields at its tier (weighted pick). */
 export function soldierTypes(tier) {
@@ -59,6 +63,7 @@ export class Rivals {
     this.jobs = [];             // buildings rising / being rebuilt in the world (see _work)
     this.life = new TownLife(this);   // townsfolk, patrols, captains and the towns' strategy
     this.t = 0;
+    this.warCD = WAR_GAP;       // seconds until the next declaration of war may happen
     this._world = null;
     const bus = game.bus;
     bus.on('world:ready', ({ world }) => this._attach(world));
@@ -77,7 +82,7 @@ export class Rivals {
   get active() { return this.list.length > 0; }
   _init() {
     const w = this.game.world;
-    this.list = []; this.wars.clear(); this._clearUnits();
+    this.list = []; this.wars.clear(); this._clearUnits(); this.warCD = WAR_GAP;
     const sites = w?.gen?.sites;
     if (!sites || w.format < 4) return;
     const rnd = mulberry32((w.seed ^ 0xa11e5) >>> 0);
@@ -357,23 +362,29 @@ export class Rivals {
   /** Declarations of war and peace between the towns and with the player. */
   _diplomacy(dt) {
     const g = this.game;
+    this.warCD = Math.max(0, this.warCD - dt);
     for (const r of this.list) {
       r.warT -= dt;
       if (r.warT > 0) continue;
       r.warT = 60 + Math.random() * 90;
       if (r.owner !== null || r.commander != null) continue;              // vassals follow their master, commanded towns their commander
       // on the player: aggressive towns that feel strong enough (not before the third day)
-      if (r.rel === 'peace' && g.state.day >= 3 && Math.random() < r.aggro * 0.25 && this.power(r) > this.playerDefense() * 0.6) {
+      const mayDeclare = this.warCD <= 0;
+      // early on (the first three ages) a town that is ahead of the player's village leaves it alone
+      const age = g.state.age | 0, bully = age < 3 && r.tier > age + 1;
+      if (mayDeclare && !bully && r.rel === 'peace' && g.state.day >= 3 && Math.random() < r.aggro * 0.25 && this.power(r) > this.playerDefense() * 0.6) {
         this.declareWar(r, `«${r.name}» объявляет вам войну! Их отряды придут с ${dirFrom(r.x - g.world.size / 2, r.z - g.world.size / 2)}.`);
+        this.warCD = WAR_GAP;
         continue;
       }
       // on a neighbouring town
-      for (const o of this.list) {
+      if (mayDeclare) for (const o of this.list) {
         if (o === r || o.owner === r.i || this.atWar(r.i, o.i) || o.owner === 'player') continue;
         if (Math.hypot(o.x - r.x, o.z - r.z) > 900) continue;
         if (Math.random() < r.aggro * 0.12 && this.power(r) > this.power(o) * 0.8) {
           this.wars.add(r.i < o.i ? r.i + ':' + o.i : o.i + ':' + r.i);
           r.battleT = 90 + Math.random() * 120;
+          this.warCD = WAR_GAP;
           this._news(`«${r.name}» пошла войной на «${o.name}»`, r, o);
           break;
         }
@@ -413,7 +424,7 @@ export class Rivals {
   peacePrice(r) { return Math.round(15 + this.power(r) * 3 + r.tier * 10); }
   _makePeace(r, text) {
     r.rel = 'peace'; r.offer = null; r.lostRaids = 0; r.warT = 600;
-    if (r.raid && !r.raid.arrived) { r.army += r.raid.size; r.raid = null; }
+    if (r.raid && !r.raid.arrived) { r.army += Math.max(0, r.raid.size - (r.raid.levy || 0)); r.raid = null; }
     this.game.bus.emit('toast', { text, kind: 'good' });
     for (const u of this.units.get(r.i) || []) { if (u.type === 'folk') u.peaceful = true; u.target = null; }
   }
@@ -436,7 +447,7 @@ export class Rivals {
       if (!alive.length || raid.t > 240) {
         // all fallen, or they leave with their loot
         for (const u of alive) { u.dead = true; u.removeAt = 0; u.object3d.visible = false; }
-        r.army += alive.length;
+        r.army += Math.max(0, alive.length - (raid.levy || 0));      // the hired swords go their own way
         r.wealth += raid.loot * 2;
         if (!alive.length) { r.lostRaids++; g.bus.emit('toast', { text: `Набег «${r.name}» отбит!`, kind: 'good' }); }
         else g.bus.emit('toast', { text: `Отряд «${r.name}» ушёл${raid.loot ? ` с добычей (${Math.round(raid.loot)})` : ''}`, kind: 'warn' });
@@ -450,16 +461,18 @@ export class Rivals {
     if (r.raidT > 0 || r.army < 3) return;
     // a war party when they think they can win — or out of spite
     if (this.power(r) < this.playerDefense() * 0.5 && Math.random() > r.aggro * 0.4) { r.raidT = 120; return; }
-    this.launchRaid(r, Math.max(3, Math.min(14, Math.round(r.army * 0.6))));
+    this.launchRaid(r, Math.max(2, Math.min(8, Math.round(r.army * MARCH_SHARE))));
     this.life.allyJoins(r);
   }
-  /** A war party of `size` sets off for the player's village. */
+  /** A war party of `size` sets off for the player's village (plus hired swords: more of them every age). */
   launchRaid(r, size, quiet = false) {
     const g = this.game;
     size = Math.max(1, Math.min(Math.floor(r.army), size));
     r.army -= size;
+    const levy = Math.floor((g.state.age | 0) * 0.75);
+    size += levy;
     const c = g.world.size / 2, dist = Math.hypot(r.x - c, r.z - c);
-    r.raid = { size, eta: Math.max(45, Math.min(180, dist / 5)), arrived: false, units: [], t: 0, loot: 0 };
+    r.raid = { size, levy, eta: Math.max(45, Math.min(180, dist / 5)), arrived: false, units: [], t: 0, loot: 0 };
     if (!quiet) g.bus.emit('toast', { text: `«${r.name}» выслала отряд: ${size} воинов. Они придут с ${dirFrom(r.x - c, r.z - c)} через ~${Math.round(r.raid.eta)} с!`, kind: 'bad' });
   }
   /** A town led by a joined player (siege mode): its soldiers fight the dead too, and the dead come for it. */
@@ -468,13 +481,15 @@ export class Rivals {
     const g = this.game, W = g.waves, c = g.world.size / 2;
     const raid = r.raid; raid.arrived = true;
     const ang = Math.atan2(r.z - c, r.x - c);
+    // every age of the player's village the war parties come tougher
+    const age = g.state.age | 0, power = { hp: 1 + age * 0.12, dmg: 1 + age * 0.08 };
     for (let k = 0; k < raid.size; k++) {
       const p = W?._edgePoint?.(ang + (Math.random() - 0.5) * 0.4, 6);
       if (!p) continue;
       // a big party is led by the town's captain
       const lead = k === 0 && raid.size >= 4 && (r.captainCD || 0) <= g.time;
-      const u = this._spawnUnit(r, lead ? 'rival_captain' : pick(soldierTypes(r.tier)), p.x, p.z, p.y, { wanderer: false });
-      if (u) { u.raider = true; raid.units.push(u); if (lead) { u.captain = true; raid.captain = u; } }
+      const u = this._spawnUnit(r, lead ? 'rival_captain' : pick(soldierTypes(r.tier)), p.x, p.z, p.y, { wanderer: false, power });
+      if (u) { u.raider = true; u.bldMul = 2; raid.units.push(u); if (lead) { u.captain = true; raid.captain = u; } }
     }
     if (raid.captain) g.bus.emit('toast', { text: `Отряд «${r.name}» ведёт воевода — сразите его, и остальные побегут`, kind: 'warn' });
     g.bus.emit('toast', { text: `Отряд «${r.name}» у стен деревни!`, kind: 'bad' });
@@ -500,7 +515,7 @@ export class Rivals {
       if (att.battleT > 0) continue;
       att.battleT = 180 + Math.random() * 200;
       if (att.army < 3) continue;
-      const party = Math.max(2, Math.round(att.army * 0.6));
+      const party = Math.max(2, Math.round(att.army * MARCH_SHARE));
       att.army -= party;
       if (this._near(def, NEAR + 40)) { this._fieldBattle(att, def, party); continue; }
       // reckoned from the armies (the defenders fight on their own ground)
@@ -623,12 +638,12 @@ export class Rivals {
     }
     return null;
   }
-  _spawnUnit(r, type, x, z, y, { peaceful = false, wanderer = true, home = null, job, hat, held, name } = {}) {
+  _spawnUnit(r, type, x, z, y, { peaceful = false, wanderer = true, home = null, job, hat, held, name, power = null } = {}) {
     const W = this.game.waves; if (!W) return null;
     const T = ['rival_trooper', 'rival_rifleman'].includes(type) ? 1.2 : 1;
     const u = W.spawn(type, x, z, {
       y: y ?? undefined, emerge: false, cave: true, wanderer, sunproof: true, silent: true, rivalId: r.i, peaceful,
-      wave: 3 + r.tier * 2, hpMul: (0.8 + r.tier * 0.12) * T, dmgMul: 0.8 + r.tier * 0.08,
+      wave: 3 + r.tier * 2, hpMul: (0.8 + r.tier * 0.12) * T * (power?.hp || 1), dmgMul: (0.8 + r.tier * 0.08) * (power?.dmg || 1),
       name: name || `${type === 'folk' ? 'Житель' : this._soldierName(type)} «${r.name}»`, hatColor: type === 'rival_captain' ? 0xe8c040 : parseInt(r.color.slice(1), 16),
       ...(job ? { job, hat, held } : {}),
     });
@@ -672,11 +687,12 @@ export class Rivals {
     return {
       list: this.list.map(r => {
         const o = { ...r };
-        if (r.raid) { o.army = r.army + (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size); }
+        if (r.raid) { o.army = r.army + Math.max(0, (r.raid.arrived ? r.raid.units.filter(u => !u.dead).length : r.raid.size) - (r.raid.levy || 0)); }
         delete o.raid; delete o.capT; delete o._capMsgT; delete o.next; delete o.commander; delete o.commanderName; delete o.alarm; delete o.captainCD; delete o.waverUntil; delete o.stratT;
         return o;
       }),
       wars: [...this.wars],
+      warCD: this.warCD,
     };
   }
   deserialize(o) {
@@ -684,6 +700,7 @@ export class Rivals {
     this._clearUnits();
     this.list = o.list.map((r, k) => ({ ...r, raid: null, drive: r.drive ?? DRIVES[(k * 5 + 3) % DRIVES.length] }));
     this.wars = new Set(o.wars || []);
+    this.warCD = Math.max(o.warCD ?? WAR_GAP, 0);
     this.plans.clear();
     for (const r of this.list) this._recount(r);
   }
