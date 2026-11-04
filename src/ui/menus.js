@@ -3,6 +3,7 @@ import { h, img, glyph, glyphImg, resourceIcon, itemIcon, clear } from './dom.js
 import { CREDITS } from '../audio/library.js';
 import { AGES } from '../systems/ages.js';
 import { renderWorkshop } from './workshop.js';
+import { getGameIconDataUrl } from './rustorePanel.js';
 
 const agoText = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'только что'; if (m < 60) return m + ' мин назад'; const hh = Math.round(m / 60); if (hh < 24) return hh + ' ч назад'; const d = Math.round(hh / 24); return d + ' дн назад'; };
 
@@ -59,7 +60,10 @@ export class Menus {
     this.current = 'main';
     const s = this._screen('zc-mainmenu');
     const logo = h('div.zc-logo',
-      h('div.zc-logo-title', h('span.l1', 'ZOMBI'), h('span.l2', 'CRAFT')),
+      h('div.zc-logo-row',
+        h('img.zc-logo-crest.ui-i', { src: getGameIconDataUrl(), alt: 'Zombi Craft', title: 'Открыть витрину RuStore и иконку', onclick: () => this.ui.rustore?.toggle(true) }),
+        h('div.zc-logo-title', h('span.l1', 'ZOMBI'), h('span.l2', 'CRAFT'))
+      ),
       h('div.zc-logo-sub', h('i'), 'Осада нежити', h('i')));
     this.card = h('div.zc-mm-card.zc-panel.ornate');
     s.append(h('div.zc-mm-vignette'), h('div.zc-mm-inner', logo, this.card),
@@ -91,6 +95,7 @@ export class Menus {
       this.btn('Новый мир', () => this.page('new'), last ? 'big' : 'primary big', glyph('sword')),
       this.btn('Сетевая игра', () => this.page('net'), '', glyph('flag'), 'по локальной сети'),
       this.btn('Мастерская', () => this.page('workshop'), '', glyph('hammer'), 'чертежи и миры друзей'),
+      this.btn('Витрина RuStore', () => this.ui.rustore?.toggle(true), '', glyph('star'), 'иконка и 5 HD-скриншотов'),
       this.btn('Настройки', () => this.page('settings'), '', glyph('gear')),
       this.btn('Как играть', () => this.page('help'), '', glyph('book')),
     );
@@ -316,6 +321,7 @@ export class Menus {
         this.btn('Продолжить', () => this.ui.resume(), 'primary big', glyph('play')),
         this.game.net?.isClient ? null : this.btn('Сохранить игру', () => { if (this.game.save?.save?.({ toast: true })) this._pausePage('home'); }, '', glyph('book')),
         this._netButton(),
+        this.btn('Витрина RuStore', () => this.ui.rustore?.toggle(true), '', glyph('star'), 'иконка и 5 HD-скриншотов'),
         this.btn('Настройки', () => this._pausePage('settings'), '', glyph('gear')),
         this.btn('Как играть', () => this._pausePage('help'), '', glyph('flag')),
         this.btn('Пройти обучение заново', () => { this.ui.resume(); this.ui.tutorial?.restart(); }, 'ghost', glyph('book')),

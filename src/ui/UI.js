@@ -17,6 +17,7 @@ import { SiegePanel } from './siegePanel.js';
 import { ChroniclePanel } from './chroniclePanel.js';
 import { MechBook } from './mechBook.js';
 import { WorkshopPanel } from './workshop.js';
+import { RuStorePanel, getGameIconDataUrl } from './rustorePanel.js';
 import { Tutorial } from './tutorial.js';
 
 const SETTINGS_KEY = 'zc_settings';
@@ -36,6 +37,15 @@ export class UI {
     toggle(root, 'zc-touch', !!game.isTouch);
     root.style.setProperty('--noise', `url(${noiseURL()})`);
 
+    try {
+      const iconHref = getGameIconDataUrl();
+      for (const rel of ['icon', 'apple-touch-icon']) {
+        let link = document.querySelector(`link[rel="${rel}"]`);
+        if (!link) { link = document.createElement('link'); link.rel = rel; document.head.appendChild(link); }
+        link.href = iconHref;
+      }
+    } catch (e) { /* ignore */ }
+
     this.vignette = h('div.zc-vignette');
     this.hitflash = h('div.zc-hitflash');
     this.minimap = new Minimap(this);
@@ -54,11 +64,12 @@ export class UI {
     this.chronicle = new ChroniclePanel(this);
     this.mechBook = new MechBook(this);
     this.workshop = new WorkshopPanel(this);
+    this.rustore = new RuStorePanel(this);
     this.tutorial = new Tutorial(this);
     this.menus = new Menus(this);
     this.dialogLayer = h('div.zc-dialogs');
     root.append(this.vignette, this.hitflash, this.dmg.root, this.hud.root, this.command.root, this.command.inspector, this.toasts.root, this.banner.root,
-      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.siege.bar, this.chronicle.root, this.mechBook.root, this.workshop.root, this.tutorial.root, this.menus.root, this.dialogLayer);
+      this.research.root, this.craft.root, this.inventory.root, this.quests.root, this.rivals.root, this.siege.root, this.siege.bar, this.chronicle.root, this.mechBook.root, this.workshop.root, this.tutorial.root, this.menus.root, this.rustore.root, this.dialogLayer);
 
     // keep UI interactions from reaching game input listeners on window/document
     for (const ev of STOP_EVENTS) {
@@ -293,6 +304,7 @@ export class UI {
       if (this.chronicle.open) { this.chronicle.close(); e.preventDefault(); return; }
       if (this.mechBook.open) { this.mechBook.close(); e.preventDefault(); return; }
       if (this.workshop.open) { this.workshop.close(); e.preventDefault(); return; }
+      if (this.rustore.open) { this.rustore.toggle(false); e.preventDefault(); return; }
       if (this.menus.current === 'pause') { this.resume(); e.preventDefault(); return; }
       if (this.menus.current === 'main') { if (this.menus.card?.dataset.page !== 'home') this.menus.page('home'); return; }
       if (this.menus.current) return;

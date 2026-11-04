@@ -37,6 +37,15 @@ jobs:
           sed -i 's/android:name=".MainActivity"/android:name=".MainActivity"\n            android:screenOrientation="fullUser"/' android/app/src/main/AndroidManifest.xml
           # network games on the local network use plain ws:// / http:// to the host's computer
           grep -q usesCleartextTraffic android/app/src/main/AndroidManifest.xml || sed -i 's/<application /<application android:usesCleartextTraffic="true" /' android/app/src/main/AndroidManifest.xml
+          # apply custom Zombi Craft icon across all Android mipmap densities
+          for d in android/app/src/main/res/mipmap-*; do
+            if [ -d "$d" ]; then
+              cp -f public/icon-512.png "$d/ic_launcher.png" || true
+              cp -f public/icon-512.png "$d/ic_launcher_round.png" || true
+              cp -f public/icon-512.png "$d/ic_launcher_foreground.png" || true
+            fi
+          done
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26 || true
       - name: Build debug APK
         working-directory: android
         run: |
