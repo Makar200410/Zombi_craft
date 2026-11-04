@@ -137,9 +137,9 @@ export const ZOMBIE_TYPES = {
     human: true, job: 'idle',
   },
   merchant: {
-    base: 'walker', name: 'Торговец', hp: 45, speed: 1.9, dmg: 3, cd: 1.0, reach: 0.9, blockDps: 0, bldDmg: 0,
-    height: 1.8, width: 1, radius: 0.3, aggro: 12, knock: 2, eye: 0x202020, groanPitch: 1, loot: 0.5,
-    human: true, job: 'merchant', hat: 'cap', hatColor: 0x7a3a8a,
+    base: 'walker', name: 'Торговец', hp: 55, speed: 1.9, dmg: 7, cd: 1.0, reach: 1.0, blockDps: 0, bldDmg: 0,
+    height: 1.8, width: 1, radius: 0.3, aggro: 18, knock: 3, eye: 0x202020, groanPitch: 1, loot: 0.3,
+    human: true, job: 'merchant', weapon: 'axe_stone', hat: 'cap', hatColor: 0x7a3a8a,
   },
   // soldiers of the rival towns (their health was halved: town guards were too hard to beat)
   rival_captain: {

@@ -206,9 +206,9 @@ export class TerrainGenV2 {
       }
     };
     ore(B.COAL_ORE, 300, 12, SEA + 22, 9);
-    ore(B.IRON_ORE, 140, 6, SEA - 4, 5);            // iron is a real resource: fewer, smaller veins
-    ore(B.GOLD_ORE, 80, 3, SEA - 18, 5);
-    ore(B.CRYSTAL_ORE, 55, 2, SEA - 28, 4);
+    ore(B.IRON_ORE, 160, 6, SEA - 4, 5);            // iron is a real resource: fewer, smaller veins
+    ore(B.GOLD_ORE, 65, 3, SEA - 18, 4);            // gold is rarer than iron
+    ore(B.CRYSTAL_ORE, 30, 2, SEA - 28, 3);         // crystals are rarer than gold
     // surface outcrops in the hills so early iron/coal is visible
     if (rnd() < 40 * this.perChunk * 1.5) {
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);

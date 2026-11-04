@@ -21,10 +21,30 @@ const HOME_END = 62, TOWN_END = 50;     // roads stop short of the village centr
 
 /** What a town sells (resource, lot size, price in gold, from tier) and buys from the player. */
 export const SELLS = [
-  ['food', 20, 8, 1], ['iron', 10, 22, 2], ['coal', 10, 10, 2], ['crystal', 5, 35, 2], ['steel', 5, 45, 4], ['uranium', 2, 70, 8],
+  ['wood', 25, 6, 1],
+  ['stone', 25, 6, 1],
+  ['food', 20, 8, 1],
+  ['coal', 10, 10, 1],
+  ['iron_ore', 10, 14, 1],
+  ['iron', 10, 22, 1],
+  ['gold_ore', 5, 18, 1],
+  ['crystal', 5, 35, 1],
+  ['steel', 5, 45, 1],
+  ['uranium', 2, 70, 1],
 ];
 // (gold is meant to be hard to earn: the towns pay little for common goods)
-export const BUYS = [['wood', 20, 2, 1], ['stone', 20, 2, 1], ['food', 20, 2, 1], ['iron', 10, 6, 2], ['coal', 10, 3, 3]];
+export const BUYS = [
+  ['wood', 20, 2, 1],
+  ['stone', 20, 2, 1],
+  ['food', 20, 2, 1],
+  ['coal', 10, 3, 1],
+  ['iron_ore', 10, 4, 1],
+  ['iron', 10, 6, 1],
+  ['gold_ore', 5, 7, 1],
+  ['crystal', 5, 12, 1],
+  ['steel', 5, 15, 1],
+  ['uranium', 2, 22, 1],
+];
 const LOTS = 3;                   // lots of each good per day (sold and bought)
 
 const sideways = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [-dz / l, dx / l]; };
@@ -105,12 +125,13 @@ export class Caravans {
       }
     }
     if (!cells) return false;
-    const w = this.game.world, gen = w.gen, sea = w.sea;
+    const w = this.game.world, gen = w.gen, sea = w.sea, vil = this.game.village;
     let drawn = false;
     for (let i = 0; i < 256; i++) {
       if (!cells[i]) continue;
       const x = x0 + (i & 15), z = z0 + (i >> 4);
       if (this._offRoad(x, z)) continue;
+      if (vil?.foot?.get(x, z) || vil?.quarryAt?.(x, z)) continue;
       const h = gen.column(x, z).h;
       // the ground: the highest solid block near the generator's height that is not a tree
       let y = -1;
@@ -120,7 +141,12 @@ export class Caravans {
         if (isWater(id)) break;
       }
       const wet = isWater(w.rawGet(x, Math.max(y, h) + 1, z)) || isWater(w.rawGet(x, sea, z));
-      const set = (yy, id) => { w.rawSet(x, yy, z, id); if (touched) touched.push(x, yy, z); };
+      const set = (yy, id) => {
+        const idx = w.index(x, yy, z);
+        if (w.changes?.has(idx) || vil?.cellIndex?.has(idx)) return;
+        w.rawSet(x, yy, z, id);
+        if (touched) touched.push(x, yy, z);
+      };
       if (wet) {
         set(sea + 1, B.PLANKS);
         for (let yy = sea + 2; yy < sea + 6; yy++) if (w.rawGet(x, yy, z)) set(yy, 0);
@@ -166,11 +192,28 @@ export class Caravans {
     const pts = rd.a === a ? rd.pts : [...rd.pts].reverse();
     return pts;
   }
-  /** Home village trading spot: in front of the town hall. */
-  _homeSpot() {
+  /** Free walkable column near (x, z) outside any village building or quarry pit. */
+  _freeSpotNear(x, z) {
+    const vil = this.game.village, w = this.game.world;
+    const ix = Math.round(x), iz = Math.round(z);
+    if (!vil || !w) return [ix, iz];
+    for (let r = 0; r <= 12; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const cx = ix + dx, cz = iz + dz;
+        if (vil.foot?.get(cx, cz) || vil.quarryAt?.(cx, cz)) continue;
+        const gy = vil.groundY ? vil.groundY(cx, cz) : w.surfaceY(cx, cz);
+        if (!w.isGenerated?.(cx, cz) || w.isWalkable(cx, gy + 1, cz)) return [cx, cz];
+      }
+    }
+    return [ix, iz];
+  }
+  /** Home village trading spot: in front of the town hall, on open ground outside buildings. */
+  _homeSpot(fromTown = 0) {
     const th = this.game.village?.townHall;
     const c = th?.center || { x: this.game.world.size / 2, z: this.game.world.size / 2 };
-    return [Math.round(c.x), Math.round(c.z + (th ? th.d / 2 + 4 : 6))];
+    const offX = ((fromTown % 3) - 1) * 4;
+    return this._freeSpotNear(Math.round(c.x + offX), Math.round(c.z + (th ? th.d / 2 + 4 : 6)));
   }
   _launch(r) {
     const R = this.rivals, g = this.game;
@@ -181,10 +224,10 @@ export class Caravans {
     const to = pick(dests);
     const pts = this._road(r.i, to);
     if (!pts) return;
-    if (to === HOME) pts[pts.length - 1] = this._homeSpot();
+    if (to === HOME) pts[pts.length - 1] = this._homeSpot(r.i);
     const cum = [0];
     for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
-    const guards = Math.min(3, 1 + Math.floor(r.tier / 3));
+    const guards = Math.max(2, Math.min(4, 1 + Math.ceil(r.tier / 2)));
     const c = { id: this.nextId++, from: r.i, to, pts, cum, len: cum[cum.length - 1], d: TOWN_END * 0.6, state: 'go', wait: 0, guards, esc: 0, units: null, tier: r.tier };
     this.list.push(c);
     if (to === HOME) g.bus.emit('toast', { text: `Караван «${r.name}» вышел к вам по дороге — его можно проводить или встретить у ратуши`, kind: 'info' });
@@ -287,10 +330,10 @@ export class Caravans {
     c.units = [];
     types.forEach((type, k) => {
       const [ox, oz] = this._slot(c, k);
-      const px = Math.floor(x + ox), pz = Math.floor(z + oz);
+      const [px, pz] = this._freeSpotNear(Math.floor(x + ox), Math.floor(z + oz));
       const y = g.underground?._standAt?.(px, g.world.heightAt(px, pz) + 1, pz, 10);
       if (y === null || y === undefined) return;
-      const u = R._spawnUnit(r, type, px + 0.5, pz + 0.5, y, { peaceful: type === 'merchant', wanderer: false });
+      const u = R._spawnUnit(r, type, px + 0.5, pz + 0.5, y, { peaceful: false, wanderer: false });
       if (!u) return;
       u.caravan = c; u.lead = { x: px + 0.5, z: pz + 0.5 };
       if (type === 'merchant') { u.trader = true; u.name = `Торговец «${r.name}»`; this._pack(u); }
@@ -323,11 +366,15 @@ export class Caravans {
       c.units.forEach((u, k) => {
         if (u.dead) return;
         let x, z;
-        if (c.state === 'trade') { const e = c.pts[c.pts.length - 1], [ox, oz] = this._slot(c, k); x = e[0] + 0.5 + ox; z = e[1] + 0.5 + oz; }
-        else {
+        if (c.state === 'trade') {
+          const e = c.pts[c.pts.length - 1], [ox, oz] = this._slot(c, k);
+          const [fx, fz] = this._freeSpotNear(Math.round(e[0] + ox), Math.round(e[1] + oz));
+          x = fx + 0.5; z = fz + 0.5;
+        } else {
           const along = k === 0 ? 0 : k % 2 ? 3 + k : -2 - k, side = k === 0 ? 0 : (k % 2 ? 1 : -1) * 1.2;
           const [px, pz, a] = this.posAt(c, c.d + 2 + along);
-          x = px + Math.cos(a) * side; z = pz - Math.sin(a) * side;
+          const [fx, fz] = this._freeSpotNear(Math.round(px + Math.cos(a) * side), Math.round(pz - Math.sin(a) * side));
+          x = fx + 0.5; z = fz + 0.5;
         }
         u.lead.x = x; u.lead.z = z;
       });
@@ -365,10 +412,17 @@ export class Caravans {
   priceMul(r) { return (r.owner === 'player' ? 0.7 : 1) * (1 - 0.04 * (r.favor || 0)); }
   sellPrice(r, price) { return Math.max(1, Math.round(price * this.priceMul(r))); }
   buyPrice(r, price) { return Math.max(1, Math.round(price * (2 - this.priceMul(r)) * 0.9)); }
+  /** Returns current lot stock for key ('s_...' or 'b_...'), lazily initializing missing keys on older saves. */
+  stockOf(r, key) {
+    if (!r) return 0;
+    if (!r.stock) r.stock = {};
+    if (r.stock[key] === undefined) r.stock[key] = LOTS;
+    return r.stock[key];
+  }
   /** The player buys a lot of res from town r. */
   buy(r, res) {
     const o = SELLS.find(s => s[0] === res), st = this.game.state;
-    if (!o || r.tier < o[3] || this.whyNoTrade(r) || !(r.stock?.['s_' + res] > 0)) return false;
+    if (!o || r.tier < o[3] || this.whyNoTrade(r) || !(this.stockOf(r, 's_' + res) > 0)) return false;
     const price = this.sellPrice(r, o[2]);
     if (!st.spend({ gold: price })) { this.game.bus.emit('toast', { text: 'Не хватает золота', kind: 'bad' }); return false; }
     st.add(res, o[1]); r.stock['s_' + res]--; r.wealth += price; st.stats.trades = (st.stats.trades || 0) + 1;
@@ -378,7 +432,7 @@ export class Caravans {
   /** The player sells a lot of res to town r. */
   sell(r, res) {
     const o = BUYS.find(s => s[0] === res), st = this.game.state;
-    if (!o || r.tier < o[3] || this.whyNoTrade(r) || !(r.stock?.['b_' + res] > 0)) return false;
+    if (!o || r.tier < o[3] || this.whyNoTrade(r) || !(this.stockOf(r, 'b_' + res) > 0)) return false;
     if (!st.spend({ [res]: o[1] })) { this.game.bus.emit('toast', { text: `Не хватает: ${RESOURCE_LABELS[res] || res}`, kind: 'bad' }); return false; }
     const price = this.buyPrice(r, o[2]);
     st.add('gold', price); r.stock['b_' + res]--; st.stats.trades = (st.stats.trades || 0) + 1;

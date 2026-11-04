@@ -1,16 +1,18 @@
 import * as THREE from 'three';
-import { ageWorkBonus } from '../systems/ages.js';
+import { ageOf, ageWorkBonus } from '../systems/ages.js';
+import { woodcutterEffectiveLevel, woodcutterTreesForNextLevel } from '../systems/resourceBalance.js';
 import { Entity } from '../entities/Entity.js';
+import { collides } from '../world/physics.js';
 import { HumanoidModel } from '../entities/HumanoidModel.js';
 import { makeShieldMesh } from '../entities/shield.js';
 import { villagerSkin } from '../art/skins.js';
-import { B } from '../core/blocks.js';
+import { B, LOG_BLOCKS } from '../core/blocks.js';
 import { JOBS } from './names.js';
 import { makeBlockMesh } from './visuals.js';
 import { brainFor } from './jobs.js';
 
 const CARRY_BLOCK = { wood: B.LOG, stone: B.COBBLESTONE, food: B.HAY_BALE, coal: B.COAL_ORE, iron: B.IRON_BLOCK, gold: B.GOLD_ORE, crystal: B.CRYSTAL_ORE, iron_ore: B.IRON_ORE, gold_ore: B.GOLD_ORE };
-export const RES_GEN = { wood: 'дерева', stone: 'камня', food: 'еды', coal: 'угля', iron: 'железа', gold: 'золота', crystal: 'кристаллов', iron_ore: 'железной руды', gold_ore: 'золотой руды' };
+export const RES_GEN = { wood: 'дерева', stone: 'камня', food: 'еды', coal: 'угля', iron: 'железа', gold: 'золота', crystal: 'кристаллов', iron_ore: 'железной руды', gold_ore: 'золотой руды', uranium: 'урана' };
 
 /**
  * Living villager (Millénaire-style). Behaviour is written as generator "brains" (see jobs.js):
@@ -24,6 +26,8 @@ export class Villager extends Entity {
     this.female = !!o.female;
     this.seed = o.seed ?? ((Math.random() * 1e9) | 0);
     this.job = o.job || 'idle';
+    this.level = Math.max(1, (o.level | 0) || 1);
+    this.treesFelled = Math.max(0, (o.treesFelled | 0) || 0);
     this.workplace = null;
     this.home = null;
     this.task = 'Осматривается';
@@ -90,26 +94,44 @@ export class Villager extends Entity {
     this.buildModel();
   }
 
-  // ---------------------------------------------------------------- carrying goods
-  get carryTotal() { let n = 0; for (const k in this.carry) n += this.carry[k]; return n; }
+  // ---------------------------------------------------------------- carrying goods & levels
+  get effectiveLevel() {
+    return this.job === 'woodcutter' ? woodcutterEffectiveLevel(this) : Math.max(1, this.level || 1, this.workplace?.level || 1);
+  }
+  gainWoodcutterXp(trees = 1) {
+    this.treesFelled = (this.treesFelled || 0) + trees;
+    const maxLv = Math.min(10, ageOf(this.game)?.maxLevel || 10);
+    while (this.level < maxLv && this.treesFelled >= woodcutterTreesForNextLevel(this.level)) {
+      this.treesFelled -= woodcutterTreesForNextLevel(this.level);
+      this.level++;
+      this.village?.toast?.(`Лесоруб ${this.name} повысил мастерство до ${this.level} ур.!`, 'good');
+    }
+  }
+  get carryTotal() { let n = 0; for (const k in this.carry) n += Math.floor(this.carry[k] + 1e-6); return n; }
   addCarry(res, n) { if (n <= 0) return; this.carry[res] = (this.carry[res] || 0) + n; this.refreshCarryMesh(); }
   carryText() {
-    const ks = Object.keys(this.carry).filter(k => this.carry[k] >= 1);
+    const ks = Object.keys(this.carry).filter(k => this.carry[k] >= 1 - 1e-6);
     if (!ks.length) return '';
     ks.sort((a, b) => this.carry[b] - this.carry[a]);
-    return Math.floor(this.carry[ks[0]]) + ' ' + RES_GEN[ks[0]];
+    return Math.floor(this.carry[ks[0]] + 1e-6) + ' ' + RES_GEN[ks[0]];
   }
   depositCarry() {
     const out = {};
-    for (const k in this.carry) { const n = Math.floor(this.carry[k]); if (n > 0) out[k] = n; }
+    for (const k in this.carry) {
+      const n = Math.floor(this.carry[k] + 1e-6);
+      if (n > 0) {
+        out[k] = n;
+        this.carry[k] = Math.max(0, +(this.carry[k] - n).toFixed(4));
+      }
+      if (this.carry[k] <= 1e-4) delete this.carry[k];
+    }
     this.game.state.addAll(out);
-    this.carry = {};
     this.refreshCarryMesh();
     return out;
   }
   refreshCarryMesh() {
     let res = null, best = 0;
-    for (const k in this.carry) if (this.carry[k] > best) { best = this.carry[k]; res = k; }
+    for (const k in this.carry) if (this.carry[k] >= 1 - 1e-6 && this.carry[k] > best) { best = this.carry[k]; res = k; }
     if (res === this._carryRes) return;
     if (this._carryMesh) { this._carryMesh.parent?.remove(this._carryMesh); this._carryMesh = null; }
     this._carryRes = res;
@@ -164,6 +186,7 @@ export class Villager extends Entity {
       if (r.done) { this.brain = null; }
     }
     if (!this.hidden) {
+      this._unstuckUpdate(dt);
       this.moveUpdate(dt);
       if (!this._climbing) this.physics(dt);
     }
@@ -222,16 +245,203 @@ export class Villager extends Entity {
       const d = Math.hypot(dx, dz);
       const sp = s.speed * sm * (this.inWater ? 0.6 : 1);
       const k = d > 0.05 ? Math.min(1, d * 3) : 0;
-      const tx = d > 0.001 ? dx / d * sp * k : 0, tz = d > 0.001 ? dz / d * sp * k : 0;
+      let mx = d > 0.001 ? dx / d : 0, mz = d > 0.001 ? dz / d : 0;
+      if (this._sideT > 0) {
+        this._sideT -= dt;
+        const sign = this._sideSign || 1;
+        const px = -mz * sign, pz = mx * sign;
+        mx = mx * 0.65 + px * 0.55;
+        mz = mz * 0.65 + pz * 0.55;
+        const ml = Math.hypot(mx, mz) || 1;
+        mx /= ml; mz /= ml;
+      }
+      let tx = mx * sp * k, tz = mz * sp * k;
+      // Gentle separation so multiple builders/woodcutters never stack on the exact same coordinate
+      const mates = this.village?.villagers;
+      if (mates && mates.length > 1) {
+        let sx = 0, sz = 0;
+        for (const m of mates) {
+          if (m === this || m.dead || m.sleeping) continue;
+          const rx = this.position.x - m.position.x, rz = this.position.z - m.position.z;
+          const d2 = rx * rx + rz * rz;
+          if (d2 > 0.0001 && d2 < 0.30) {
+            const inv = (0.55 - Math.sqrt(d2)) / Math.sqrt(d2);
+            sx += rx * inv; sz += rz * inv;
+          }
+        }
+        tx += sx * 2.2;
+        tz += sz * 2.2;
+      }
       const a = Math.min(1, dt * 10);
       v.x += (tx - v.x) * a; v.z += (tz - v.z) * a;
       if (d > 0.1) this.turnTo(Math.atan2(dx, dz), dt);
-      if (this.onGround && this.hitWall && (s.wantUp || this._stuckJump)) v.y = 8;
+      if (this.onGround && this.hitWall && this._canStepUpAhead(mx, mz)) {
+        v.y = Math.max(v.y, 8.2);
+      }
       if (this.inWater) v.y = Math.max(v.y, 2.2);
     } else {
       const a = Math.min(1, dt * 12);
       v.x -= v.x * a; v.z -= v.z * a;
     }
+  }
+
+  /** True only if the obstacle directly ahead is a 1-block terrain step that can be hopped onto (not a fence, furniture, or 2+ block wall). */
+  _canStepUpAhead(mx, mz) {
+    const w = this.game.world;
+    if (!w) return false;
+    const p = this.position;
+    const nx = Math.floor(p.x + mx * 0.55), nz = Math.floor(p.z + mz * 0.55);
+    const by = Math.floor(p.y + 0.1);
+    if (!w.isSolid(nx, by, nz) || w.isSolid(nx, by + 1, nz) || w.isSolid(nx, by + 2, nz)) return false;
+    const id = w.getBlock(nx, by, nz);
+    if (LOG_BLOCKS.has(id) || id === B.FENCE || id === B.ELECTRIC_FENCE || id === B.PALISADE || id === B.HAY_BALE || id === B.WORKBENCH || id === B.FURNACE || id === B.ARCANE_TABLE) return false;
+    const cell = this.village?.cellIndex?.get(w.index(nx, by, nz));
+    if (cell && cell.b.blocks[cell.i]?.dy >= 1) return false;
+    return true;
+  }
+
+  /** Continuous watchdog that climbs out of excavated mine quarry pits and steps out if embedded in a block or perched on a fence/roof. */
+  _unstuckUpdate(dt) {
+    if (this._climbing) return;
+    const vil = this.village, w = this.game.world;
+    if (!vil || !w) return;
+    const p = this.position;
+    // Non-miners that fall into an actually excavated quarry pit climb out onto safe ground
+    if (this.job !== 'miner') {
+      const mine = vil.isInQuarryPit?.(p.x, p.y, p.z);
+      if (mine && !(this.job === 'builder' && this.buildTarget === mine && p.y >= mine.y - 0.5)) {
+        this._pitT = (this._pitT || 0) + dt;
+        if (p.y < mine.y - 0.35 || this._pitT > 0.45) {
+          this._pitT = 0;
+          this.climbOutOfPit();
+          return;
+        }
+      } else {
+        this._pitT = 0;
+      }
+    }
+    // Check embedded/bad-support every 0.25s instead of every frame to keep frame time low
+    this._chkT = (this._chkT || 0) + dt;
+    if (this._chkT >= 0.25) {
+      const dtChk = this._chkT;
+      this._chkT = 0;
+      const bx = Math.floor(p.x), by = Math.floor(p.y + 0.15), bz = Math.floor(p.z);
+      const uy = Math.floor(p.y - 0.1);
+      const under = w.getBlock(bx, uy, bz);
+      const fid = vil.foot?.get(bx, bz) || 0;
+      const bld = fid ? vil.byId?.get(fid) : null;
+      const onPerchedBld = !this.onPost && this.onGround && bld && bld.state !== 'destroyed' && bld.type !== 'watchtower' && bld.type !== 'town_hall' && p.y > bld.y + 1.2;
+      const buriedInBld = bld && bld.state !== 'destroyed' && p.y < bld.y + 0.85 && w.isSolid(bx, bld.y, bz) && !(this.job === 'miner' && vil.isInQuarryPit?.(p.x, p.y, p.z));
+      const onBadSupport = !this.onPost && this.onGround && (LOG_BLOCKS.has(under) || under === B.FENCE || under === B.ELECTRIC_FENCE || under === B.PALISADE || under === B.HAY_BALE || onPerchedBld || buriedInBld);
+      const inSolid = w.isSolid(bx, by, bz) || w.isSolid(bx, Math.floor(p.y + 1.05), bz);
+      if (inSolid || onBadSupport) {
+        this._embedT = (this._embedT || 0) + dtChk;
+        if (this._embedT >= 0.25) {
+          this._embedT = 0;
+          this.unstick(this._steer);
+          return;
+        }
+      } else {
+        this._embedT = 0;
+      }
+    }
+    if (!this._steer) {
+      this._progT = 0;
+      this._wallT = 0;
+      return;
+    }
+    // Hit a wall while moving: only hop if it's a 1-block step, otherwise sidestep after sustained contact
+    if (this.hitWall) {
+      this._wallT = (this._wallT || 0) + dt;
+      const dx = this._steer.x - p.x, dz = this._steer.z - p.z, dl = Math.hypot(dx, dz) || 1;
+      const ux = dx / dl, uz = dz / dl;
+      if (this.onGround && this._canStepUpAhead(ux, uz)) {
+        this.velocity.y = Math.max(this.velocity.y, 8.2);
+      }
+      if (this._wallT > 0.5 && !(this._sideT > 0)) {
+        const leftOpen = !w.isSolid(Math.floor(p.x - uz * 0.9), Math.floor(p.y + 0.5), Math.floor(p.z + ux * 0.9));
+        const rightOpen = !w.isSolid(Math.floor(p.x + uz * 0.9), Math.floor(p.y + 0.5), Math.floor(p.z - ux * 0.9));
+        this._sideSign = leftOpen && !rightOpen ? 1 : rightOpen && !leftOpen ? -1 : (Math.random() < 0.5 ? 1 : -1);
+        this._sideT = 0.45;
+      }
+    } else {
+      this._wallT = Math.max(0, (this._wallT || 0) - dt * 2);
+    }
+    // Progress watchdog while steering (fires if wedged for >2.2s)
+    if (this._progX === undefined) { this._progX = p.x; this._progZ = p.z; this._progT = 0; }
+    this._progT = (this._progT || 0) + dt;
+    if (this._progT >= 2.2) {
+      const moved = Math.hypot(p.x - this._progX, p.z - this._progZ);
+      const distGoal = Math.hypot(this._steer.x - p.x, this._steer.z - p.z);
+      this._progX = p.x; this._progZ = p.z; this._progT = 0;
+      if (moved < 0.35 && distGoal > 0.85) {
+        this.unstick(this._steer);
+      }
+    }
+  }
+
+  /** Scrambles out of a mine quarry pit onto the nearest safe surface edge without damaging any buildings. */
+  climbOutOfPit() {
+    const vil = this.village;
+    if (vil?.smartRescueVillager) return vil.smartRescueVillager(this);
+    if (!vil?.findSafeGroundNear) return false;
+    const safe = vil.findSafeGroundNear(this.position, 14);
+    if (!safe) return false;
+    this.puff();
+    this.position.set(safe.x, safe.y + 0.02, safe.z);
+    this.velocity.set(0, 0, 0);
+    this._progX = safe.x; this._progZ = safe.z; this._progT = 0;
+    this.puff();
+    return true;
+  }
+
+  /** Steps onto the best nearby walkable cell toward targetPos without breaking any village buildings. */
+  unstick(targetPos = null) {
+    const vil = this.village, w = this.game.world, p = this.position;
+    if (!w) return false;
+    if (vil?.smartRescueVillager) {
+      return vil.smartRescueVillager(this, targetPos);
+    }
+    if (this.job !== 'miner' && vil?.isInQuarryPit?.(p.x, p.y, p.z)) {
+      return this.climbOutOfPit();
+    }
+    const goal = targetPos || this._steer || this.fightTarget?.position || vil?.townHall?.door || p;
+    const px = Math.floor(p.x), pz = Math.floor(p.z);
+    let best = null, bestScore = Infinity;
+    for (let r = 1; r <= 4; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = px + dx, z = pz + dz;
+        const gy = vil?.groundY ? vil.groundY(x, z) + 1 : w.groundBelow(x, p.y + 3, z) + 1;
+        if (this.job !== 'miner' && vil?.isInQuarryPit?.(x, gy, z)) continue;
+        const yCands = [gy, Math.floor(p.y), Math.floor(p.y) - 1, Math.floor(p.y) + 1];
+        for (const y of yCands) {
+          if (Math.abs(y - gy) > 2.2) continue;
+          if (!w.isWalkable(x, y, z)) continue;
+          const floorId = w.getBlock(x, y - 1, z);
+          if (LOG_BLOCKS.has(floorId) || floorId === B.FENCE || floorId === B.ELECTRIC_FENCE || floorId === B.PALISADE || floorId === B.HAY_BALE) continue;
+          const floorCell = vil?.cellIndex?.get(w.index(x, y - 1, z));
+          if (floorCell && floorCell.b.blocks[floorCell.i]?.dy >= 1) continue;
+          const cellEntry = vil?.cellIndex?.get(w.index(x, y, z));
+          const onGhostWall = cellEntry && !cellEntry.b.built[cellEntry.i] ? 5 : 0;
+          const fid = vil?.foot?.get(x, z) || 0;
+          const inFoot = fid && fid !== this.workplace?.id ? 2.5 : 0;
+          const distGoal = Math.hypot(x + 0.5 - goal.x, z + 0.5 - goal.z);
+          const score = distGoal + r * 0.25 + Math.abs(y - gy) * 0.6 + onGhostWall + inFoot;
+          if (score < bestScore) {
+            bestScore = score;
+            best = { x: x + 0.5, y, z: z + 0.5 };
+          }
+        }
+      }
+      if (best && r >= 2) break;
+    }
+    if (!best && vil?.findSafeGroundNear) best = vil.findSafeGroundNear(p, 10);
+    if (!best) return false;
+    this.position.set(best.x, best.y + 0.02, best.z);
+    this.velocity.set(0, 0, 0);
+    this._progX = best.x; this._progZ = best.z; this._progT = 0;
+    return true;
   }
   turnTo(yaw, dt, rate = 10) {
     let d = yaw - this.yaw;
@@ -252,6 +462,7 @@ export class Villager extends Entity {
     const speed = o.speed || this.walkSpeed * (this.hunger < 25 ? 0.75 : 1);
     const t0 = this.game.time;
     const maxTime = o.maxTime ?? 40;
+    const w = this.game.world;
     let tries = 0;
     while (true) {
       if (this.near(tgt, range, o.dyMax)) { this.stopMove(); return true; }
@@ -261,16 +472,30 @@ export class Villager extends Entity {
         return false;
       }
       tries++;
-      const req = this.village.requestPath(this, tgt, Math.max(0, Math.floor(range)));
+      const req = this.village.requestPath(this, tgt, Math.max(0, range - 0.15));
       while (!req.done) yield;
       const path = req.path;
       if (!path || path.length < 2) {
+        if (this.near(tgt, Math.max(range, 2.2), o.dyMax)) { this.stopMove(); return true; }
+        // Check if a 2-block wall is directly between us and tgt; if so, don't ram into the wall
+        const dx = tgt.x - this.position.x, dz = tgt.z - this.position.z, dl = Math.hypot(dx, dz) || 1;
+        const ux = dx / dl, uz = dz / dl;
+        const nx = Math.floor(this.position.x + ux * 0.65), nz = Math.floor(this.position.z + uz * 0.65);
+        const by = Math.floor(this.position.y + 0.1);
+        if (w.isSolid(nx, by, nz) && w.isSolid(nx, by + 1, nz)) {
+          tries += 2;
+          yield* this.wait(0.15);
+          continue;
+        }
         // no path (or already on the goal cell): try walking straight for a moment
         let tt = 0;
         const cx = this.position.x, cz = this.position.z;
-        while (tt < 2 && !this.near(tgt, range, o.dyMax)) { this.steerTo(tgt.x, tgt.z, speed, true); this._stuckJump = tt > 0.8; tt += yield; }
+        while (tt < 1.2 && !this.near(tgt, range, o.dyMax)) {
+          this.steerTo(tgt.x, tgt.z, speed, this._canStepUpAhead(ux, uz));
+          tt += yield;
+        }
         this._stuckJump = false;
-        if (Math.hypot(this.position.x - cx, this.position.z - cz) < 0.5) tries++;
+        if (Math.hypot(this.position.x - cx, this.position.z - cz) < 0.45) tries++;
         continue;
       }
       let i = 1, chkX = this.position.x, chkZ = this.position.z, chkT = this.game.time;
@@ -281,7 +506,6 @@ export class Villager extends Entity {
         const dh = Math.hypot(dx, dz);
         if (dh < (i === path.length - 1 ? 0.3 : 0.45) && Math.abs(wp.y - this.position.y) < 1.3) { i++; continue; }
         if (this.near(tgt, range, o.dyMax)) break;
-        // cut corners: if the waypoint after next is on the same level and adjacent, aim a bit ahead
         this.steerTo(wx, wz, speed, wp.y > this.position.y + 0.4);
         const dt = yield;
         void dt;
@@ -289,11 +513,14 @@ export class Villager extends Entity {
           chkX = this.position.x; chkZ = this.position.z; chkT = this.game.time; this._stuckJump = false;
         } else {
           const st = this.game.time - chkT;
-          this._stuckJump = st > 1.0;
-          if (st > 3.5) break;     // re-path
+          this._stuckJump = st > 1.0 && wp.y > this.position.y + 0.2;
+          if (st > 2.5) break;     // re-path
         }
       }
       this._stuckJump = false;
+      if (path.partial && !this.near(tgt, range, o.dyMax)) {
+        tries++;
+      }
     }
   }
   /** Sub-generator: wait (seconds). */
@@ -312,16 +539,23 @@ export class Villager extends Entity {
   }
 
   teleportNear(t, range = 1) {
-    const w = this.game.world;
+    const w = this.game.world, vil = this.village;
     const fx = Math.floor(t.x), fz = Math.floor(t.z);
-    for (let r = 0; r <= 4; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    for (let r = 0; r <= 5; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
       const x = fx + dx, z = fz + dz;
-      const y0 = Math.floor(t.y);
-      for (const y of [y0, y0 + 1, y0 - 1, y0 + 2]) {
+      const gy = vil?.groundY ? vil.groundY(x, z) + 1 : w.groundBelow(x, (t.y ?? this.position.y) + 4, z) + 1;
+      const y0 = Math.floor(t.y ?? gy);
+      if (this.job !== 'miner' && vil?.isInQuarryPit?.(x, gy, z)) continue;
+      for (const y of [gy, y0, y0 + 1, y0 - 1]) {
+        if (Math.abs(y - gy) > 2.2) continue;
+        const floorId = w.getBlock(x, y - 1, z);
+        if (LOG_BLOCKS.has(floorId) || floorId === B.FENCE || floorId === B.ELECTRIC_FENCE || floorId === B.PALISADE || floorId === B.HAY_BALE) continue;
+        const floorCell = vil?.cellIndex?.get(w.index(x, y - 1, z));
+        if (floorCell && floorCell.b.blocks[floorCell.i]?.dy >= 1) continue;
         if (w.isWalkable(x, y, z)) {
           this.puff();
-          this.position.set(x + 0.5, y, z + 0.5);
+          this.position.set(x + 0.5, y + 0.02, z + 0.5);
           this.velocity.set(0, 0, 0);
           this.puff();
           return true;
@@ -399,6 +633,7 @@ export class Villager extends Entity {
   serialize() {
     return {
       name: this.name, female: this.female, seed: this.seed, job: this.job,
+      level: this.level || 1, treesFelled: this.treesFelled || 0,
       workplace: this.workplace ? this.workplace.id : null, home: this.home ? this.home.id : null,
       hp: this.hp, x: +this.position.x.toFixed(2), y: +this.position.y.toFixed(2), z: +this.position.z.toFixed(2),
       hunger: Math.round(this.hunger), mood: Math.round(this.mood), carry: { ...this.carry },

@@ -10,22 +10,32 @@ const VERT = `
 attribute vec4 seed;          // x,z in the box (0..1), y phase (0..1), w = per-drop random
 attribute vec2 corner;        // x: -1..1 across, y: 0 head .. 1 tail
 uniform vec3 uCenter; uniform float uTime, uBox, uHeight, uFall, uLen, uWidth, uAmount, uSnow;
-uniform vec2 uWind; uniform sampler2D uOcc; uniform vec2 uOccOrigin;
-varying float vA; varying vec2 vUv;
+uniform vec2 uWind; uniform vec2 uWindPhase; uniform sampler2D uOcc; uniform vec2 uOccOrigin;
+varying float vA; varying vec2 vUv; varying float vLayer;
 void main(){
   if (seed.w > uAmount) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-  float fall = uFall * (0.85 + 0.3 * seed.w);
+  float layer = fract(seed.w * 7.13);
+  vLayer = layer;
+  float fall = uFall * (uSnow > 0.5 ? (0.85 + 0.3 * layer) : (0.78 + 0.48 * layer));
   vec3 p;
   p.y = seed.y * uHeight - uTime * fall;
-  p.xz = seed.xz * uBox + uWind * uTime * (uSnow > 0.5 ? 0.7 : 1.0);
-  if (uSnow > 0.5) { p.x += sin(uTime * 1.3 + seed.w * 40.0) * 0.6; p.z += cos(uTime * 1.1 + seed.w * 23.0) * 0.6; }
+  // Use incrementally integrated uWindPhase instead of uWind * uTime so gusts never whip drops sideways
+  p.xz = seed.xz * uBox + uWindPhase * (uSnow > 0.5 ? 0.65 : (0.75 + 0.35 * layer));
+  if (uSnow > 0.5) {
+    p.x += sin(uTime * 1.3 + seed.w * 40.0) * 0.6;
+    p.z += cos(uTime * 1.1 + seed.w * 23.0) * 0.6;
+  } else {
+    // Subtle micro-turbulence so rain sheets don't look like a rigid grid
+    p.x += sin(uTime * 2.4 + seed.w * 91.0) * 0.08;
+    p.z += cos(uTime * 2.1 + seed.w * 57.0) * 0.08;
+  }
   // wrap into the box around the view point
   p.xz = uCenter.xz + mod(p.xz - uCenter.xz + uBox * 0.5, uBox) - uBox * 0.5;
   p.y = uCenter.y + mod(p.y - uCenter.y + uHeight * 0.5, uHeight) - uHeight * 0.5;
   // under a roof? (roof map stores the top of the highest block of the column)
   vec2 ouv = (floor(p.xz) - uOccOrigin + 0.5) / ${OCC.toFixed(1)};
   float roof = (ouv.x > 0.0 && ouv.y > 0.0 && ouv.x < 1.0 && ouv.y < 1.0) ? texture2D(uOcc, ouv).r : 0.0;
-  if (p.y < roof) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  if (p.y < roof + 0.15) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec3 vel = normalize(vec3(uWind.x, -fall, uWind.y));
   vec3 toCam = normalize(cameraPosition - p);
   vec3 side;
@@ -36,20 +46,33 @@ void main(){
     p += r * corner.x * uWidth + u * (corner.y * 2.0 - 1.0) * uWidth;
   } else {
     side = normalize(cross(vel, toCam));
-    p += side * corner.x * uWidth - vel * corner.y * uLen * (0.8 + 0.4 * seed.w);
+    float dropW = uWidth * (0.72 + 0.55 * layer);
+    float dropL = uLen * (0.75 + 0.65 * layer);
+    p += side * corner.x * dropW - vel * corner.y * dropL;
   }
   float d = distance(p, cameraPosition);
-  vA = (1.0 - smoothstep(uBox * 0.3, uBox * 0.5, distance(p.xz, uCenter.xz))) * smoothstep(0.3, 1.5, d);
+  float distFade = (1.0 - smoothstep(uBox * 0.28, uBox * 0.5, distance(p.xz, uCenter.xz))) * smoothstep(0.45, 1.8, d);
+  vA = distFade * (uSnow > 0.5 ? 1.0 : (0.55 + 0.45 * layer));
   vUv = corner;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 const FRAG = `
-uniform vec3 uColor; uniform float uOpacity, uSnow; varying float vA; varying vec2 vUv;
+uniform vec3 uColor; uniform float uOpacity, uSnow; varying float vA; varying vec2 vUv; varying float vLayer;
 void main(){
   float a;
-  if (uSnow > 0.5) { vec2 q = vec2(vUv.x, vUv.y * 2.0 - 1.0); a = 1.0 - smoothstep(0.55, 1.0, length(q)); }
-  else a = (1.0 - abs(vUv.x)) * (1.0 - vUv.y * 0.7);
-  gl_FragColor = vec4(uColor, a * vA * uOpacity);
+  vec3 col = uColor;
+  if (uSnow > 0.5) {
+    vec2 q = vec2(vUv.x, vUv.y * 2.0 - 1.0);
+    a = 1.0 - smoothstep(0.55, 1.0, length(q));
+  } else {
+    // Sleek raindrop streak: bright, dense leading tip (vUv.y ~ 0.1) tapering into a translucent motion-blurred tail (vUv.y -> 1)
+    float radial = pow(max(0.0, 1.0 - abs(vUv.x)), 1.75);
+    float tip = smoothstep(0.0, 0.08, vUv.y);
+    float tail = pow(max(0.0, 1.0 - vUv.y), 1.35);
+    a = radial * tip * tail;
+    col = mix(uColor, vec3(0.94, 0.97, 1.0), (1.0 - vUv.y) * 0.35 * vLayer);
+  }
+  gl_FragColor = vec4(col, a * vA * uOpacity);
 }`;
 
 function precipMesh(count, occTex) {
@@ -69,9 +92,10 @@ function precipMesh(count, occTex) {
   const mat = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
     uniforms: {
-      uCenter: { value: new THREE.Vector3() }, uTime: { value: 0 }, uBox: { value: 44 }, uHeight: { value: 34 }, uFall: { value: 24 },
-      uLen: { value: 1.1 }, uWidth: { value: 0.022 }, uAmount: { value: 0 }, uSnow: { value: 0 }, uWind: { value: new THREE.Vector2() },
-      uOcc: { value: occTex }, uOccOrigin: { value: new THREE.Vector2() }, uColor: { value: new THREE.Color(0xb8c8dc) }, uOpacity: { value: 0.55 },
+      uCenter: { value: new THREE.Vector3() }, uTime: { value: 0 }, uBox: { value: 44 }, uHeight: { value: 34 }, uFall: { value: 26 },
+      uLen: { value: 1.45 }, uWidth: { value: 0.016 }, uAmount: { value: 0 }, uSnow: { value: 0 },
+      uWind: { value: new THREE.Vector2() }, uWindPhase: { value: new THREE.Vector2() },
+      uOcc: { value: occTex }, uOccOrigin: { value: new THREE.Vector2() }, uColor: { value: new THREE.Color(0xb8cce0) }, uOpacity: { value: 0.62 },
     },
   });
   const m = new THREE.Mesh(g, mat);
@@ -88,10 +112,12 @@ export class WeatherFx {
     this.occ.needsUpdate = true;
     this.occOrigin = { x: -1e6, z: -1e6 };
     this._occT = 0;
+    this.windPhase = new THREE.Vector2();
+    this.smoothWind = new THREE.Vector2(1.2, 0.5);
     const q = game.quality;
-    const n = q === 'low' ? 3200 : q === 'medium' ? 5200 : 8000;
+    const n = q === 'low' ? 5000 : q === 'medium' ? 8500 : 13000;
     this.rain = precipMesh(n, this.occ);
-    this.snow = precipMesh(Math.round(n * 0.6), this.occ);
+    this.snow = precipMesh(Math.round(n * 0.5), this.occ);
     const su = this.snow.material.uniforms;
     su.uSnow.value = 1; su.uFall.value = 2.6; su.uWidth.value = 0.07; su.uColor.value.set(0xffffff); su.uOpacity.value = 0.9; su.uBox.value = 40; su.uHeight.value = 26;
     game.scene.add(this.rain, this.snow);
@@ -112,10 +138,11 @@ export class WeatherFx {
     const w = this.game.world, S = w.size;
     if (x < 0 || z < 0 || x >= S || z >= S) return 0;
     const c = w.colAt(x, z);
-    if (!c) return 0;
-    const base = (x & 15) + 16 * (z & 15);
-    for (let y = w.height - 1; y >= 0; y--) if (c[base + 256 * y]) return y + 1;
-    return 0;
+    if (c) {
+      const base = (x & 15) + 16 * (z & 15);
+      for (let y = w.height - 1; y >= 0; y--) if (c[base + 256 * y]) return y + 1;
+    }
+    return w.surfaceY ? w.surfaceY(x, z) + 1 : 0;
   }
   _updateOcc(force) {
     const c = this.center;
@@ -138,21 +165,38 @@ export class WeatherFx {
     else this.center.copy(g.camera.position);
     const active = w.rain > 0.01 || w.snow > 0.01;
     this._occT -= dt;
-    if (active) { this._updateOcc(this._occT <= 0); if (this._occT <= 0) this._occT = 1.2; }
+    if (active) { this._updateOcc(this._occT <= 0); if (this._occT <= 0) this._occT = 1.0; }
+    // Smooth wind and integrate drift phase incrementally so gusts never cause sudden sideways jumps
+    const wk = Math.min(1, dt * 1.8);
+    this.smoothWind.x += (w.wind.x * 0.32 - this.smoothWind.x) * wk;
+    this.smoothWind.y += (w.wind.z * 0.32 - this.smoothWind.y) * wk;
+    this.windPhase.x = (this.windPhase.x + this.smoothWind.x * dt) % 4096;
+    this.windPhase.y = (this.windPhase.y + this.smoothWind.y * dt) % 4096;
     const t = g.time;
     for (const [m, amt] of [[this.rain, w.rain], [this.snow, w.snow]]) {
       m.visible = amt > 0.01;
       if (!m.visible) continue;
       const u = m.material.uniforms;
       u.uCenter.value.copy(this.center); u.uTime.value = t; u.uAmount.value = Math.min(1, amt);
-      u.uWind.value.set(w.wind.x, w.wind.z);
+      u.uWind.value.copy(this.smoothWind);
+      u.uWindPhase.value.copy(this.windPhase);
       u.uOccOrigin.value.set(this.occOrigin.x, this.occOrigin.z);
-      const big = cmd ? 1.8 : 1;
-      if (m === this.rain) { u.uBox.value = 44 * big; u.uHeight.value = 34 * big; u.uFall.value = 22 + 8 * amt; u.uLen.value = 1.0 + amt * 0.7; u.uWidth.value = cmd ? 0.07 : 0.032; u.uOpacity.value = 0.55 + amt * 0.35; }
-      else { u.uBox.value = 40 * big; u.uHeight.value = 26 * big; u.uWidth.value = cmd ? 0.14 : 0.07; }
+      const big = cmd ? 1.75 : 1;
+      if (m === this.rain) {
+        u.uBox.value = 46 * big;
+        u.uHeight.value = 34 * big;
+        u.uFall.value = 26 + 9 * amt;
+        u.uLen.value = (1.55 + amt * 0.95) * (cmd ? 1.2 : 1);
+        u.uWidth.value = cmd ? 0.036 : 0.015;
+        u.uOpacity.value = 0.48 + amt * 0.34;
+      } else {
+        u.uBox.value = 40 * big;
+        u.uHeight.value = 26 * big;
+        u.uWidth.value = cmd ? 0.14 : 0.07;
+      }
       // night: rain picks up less light
       const night = g.state.nightFactor;
-      if (m === this.rain) u.uColor.value.setRGB(0.86, 0.9, 1).multiplyScalar(1 - night * 0.72);
+      if (m === this.rain) u.uColor.value.setRGB(0.76, 0.85, 0.96).multiplyScalar(1 - night * 0.65);
       else u.uColor.value.setScalar(1 - night * 0.55);
     }
     if (w.rain > 0.05) this._splashes(dt, w.rain);
@@ -162,16 +206,21 @@ export class WeatherFx {
   // splashes where drops hit the ground (or a roof) near the view point
   _splashes(dt, amt) {
     const g = this.game;
-    this._splashT += dt * amt * (g.quality === 'low' ? 30 : 80);
+    this._splashT += dt * amt * (g.quality === 'low' ? 45 : 110);
     const P = g.particles, c = this.center;
     const night = g.state.nightFactor;
-    const col = [night > 0.5 ? 0x5a6478 : 0xc8d6e6, night > 0.5 ? 0x48526a : 0xe2ecf6];
+    const col = [night > 0.5 ? 0x687890 : 0xcfe0f2, night > 0.5 ? 0x52627a : 0xe8f2fc];
     while (this._splashT >= 1) {
       this._splashT -= 1;
-      const x = c.x + (Math.random() - 0.5) * 26, z = c.z + (Math.random() - 0.5) * 26;
+      const x = c.x + (Math.random() - 0.5) * 28, z = c.z + (Math.random() - 0.5) * 28;
       const y = this.roofAt(x, z);
       if (!y || Math.abs(y - g.camera.position.y) > 24) continue;
-      P.emit({ pos: { x, y: y + 0.05, z }, count: 3, colors: col, speed: 1.6, spread: 0.7, dir: { x: 0, y: 1.8, z: 0 }, gravity: 12, drag: 0.8, life: 0.25, size: 0.08, alpha: 0.8 });
+      // Fine upward water crown droplets
+      P.emit({ pos: { x, y: y + 0.03, z }, count: 2, colors: col, speed: 1.25, spread: 0.85, dir: { x: 0, y: 1.5, z: 0 }, gravity: 14, drag: 0.9, life: 0.2, size: 0.045, alpha: 0.65 });
+      // Subtle low splash mist/ripple on impact
+      if (Math.random() < 0.35) {
+        P.emit({ pos: { x, y: y + 0.04, z }, count: 1, colors: col, speed: 0.3, spread: 1.0, dir: { x: 0, y: 0.35, z: 0 }, gravity: 1.2, drag: 1.2, life: 0.28, size: 0.13, alpha: 0.32 });
+      }
     }
   }
 

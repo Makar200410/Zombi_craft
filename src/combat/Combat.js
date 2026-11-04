@@ -68,13 +68,22 @@ export class Combat {
 
   // ------------------------------------------------------------------ helpers
   isEnemy(a, b) {
-    if (!a || !b || a === b) return false;
+    if (!a || !b || a === b || b.kind === 'projectile') return false;
+    if (typeof a === 'object') {
+      // Village defenders/towers never friendly-fire peaceful caravans or neutral rival folk
+      if (a.faction === 'village' && a.kind !== 'player' && b.human && b.rivalId != null && !this.game.rivals?.foeOfHome?.(b.rivalId)) return false;
+      if (b.faction === 'village' && a.human && a.rivalId != null && !this.game.rivals?.foeOfHome?.(a.rivalId)) return false;
+      // Human rival/caravan units and undead zombies (or predators) are always enemies
+      if (!!a.human !== !!b.human && (a.faction === 'undead' || b.faction === 'undead')) return true;
+      if (a.human && b.human && a.rivalId != null && b.rivalId != null) {
+        return a.rivalId !== b.rivalId && !!this.game.rivals?.atWar?.(a.rivalId, b.rivalId);
+      }
+    }
     const fa = a.faction ?? a, fb = b.faction;
-    return fa !== fb && fb !== undefined && b.kind !== 'projectile';
+    return fa !== fb && fb !== undefined;
   }
   _enemyFilter(user) {
-    const f = user?.faction;
-    return (e) => e !== user && !e.dead && e.kind !== 'projectile' && e.faction !== f && e.hp > 0;
+    return (e) => e !== user && !e.dead && e.kind !== 'projectile' && this.isEnemy(user, e) && e.hp > 0;
   }
   /** Seconds until itemId is ready again for user. (user.cooldowns[id] mirrors this as remaining seconds for UIs.) */
   cooldownLeft(user, itemId) { const t = user?._cdUntil?.[itemId] || 0; return Math.max(0, t - this.game.time); }
@@ -246,7 +255,7 @@ export class Combat {
   meleeHit(user, target, damage, opts = {}) {
     const g = this.game;
     if (!target || target.dead) return false;
-    if (user && target.faction === user.faction) return false;     // no friendly fire
+    if (user && !this.isEnemy(user, target)) return false;     // no friendly fire
     const dir = opts.dir ? _v.copy(opts.dir) : (user ? _v.subVectors(target.position, user.position).setY(0) : _v.set(0, 0, 0));
     if (dir.lengthSq() > 1e-6) dir.normalize();
     let kb;
@@ -425,7 +434,7 @@ export class Combat {
     if (opts.breakBlocks === true) opts = { ...opts, breakBlocks: 'all' };
     // damage entities (never same faction)
     let hits = 0;
-    for (const e of g.entities.query(center, radius + 1.5, (e) => e.kind !== 'projectile' && !e.dead && (faction === undefined || e.faction !== faction) && e !== opts.exclude)) {
+    for (const e of g.entities.query(center, radius + 1.5, (e) => e.kind !== 'projectile' && !e.dead && (source ? this.isEnemy(source, e) : (faction === undefined || e.faction !== faction)) && e !== opts.exclude)) {
       _v.subVectors(e.center, center);
       const d = Math.max(0, _v.length() - e.radius);
       if (d > radius) continue;

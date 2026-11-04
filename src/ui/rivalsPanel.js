@@ -149,13 +149,13 @@ export class RivalsPanel {
     for (const [res, n, price, tier] of SELLS) {
       const name = `${RESOURCE_LABELS[res] || res} ×${n}`;
       if (r.tier < tier) { sells.push(row(name, `Появится в эпоху «${AGES[tier - 1]?.name || tier}»`, null)); continue; }
-      const left = r.stock?.['s_' + res] || 0, p = C.sellPrice(r, price);
+      const left = C.stockOf ? C.stockOf(r, 's_' + res) : (r.stock?.['s_' + res] ?? 3), p = C.sellPrice(r, price);
       sells.push(row(name, `${p} золота · в запасе ${left}`, h('button.zc-chipbtn.ui-i' + (left && !why ? '.sel' : '.off'), { onclick: () => { if (why) return this.ui.toast(why, 'bad'); if (C.buy(r, res)) this.render(); } }, 'Купить')));
     }
     for (const [res, n, price, tier] of BUYS) {
       if (r.tier < tier) continue;
       const name = `${RESOURCE_LABELS[res] || res} ×${n}`;
-      const left = r.stock?.['b_' + res] || 0, p = C.buyPrice(r, price);
+      const left = C.stockOf ? C.stockOf(r, 'b_' + res) : (r.stock?.['b_' + res] ?? 3), p = C.buyPrice(r, price);
       buys.push(row(name, `за ${p} золота · возьмут ещё ${left} · у вас ${Math.floor(st.resources[res] || 0)}`, h('button.zc-chipbtn.ui-i' + (left && !why ? '.sel' : '.off'), { onclick: () => { if (why) return this.ui.toast(why, 'bad'); if (C.sell(r, res)) this.render(); } }, 'Продать')));
     }
     this.body.append(

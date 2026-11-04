@@ -134,7 +134,24 @@ export class Hud {
     bus.on('resources:changed', () => this.onResources());
     bus.on('hotbar:select', () => { this._lastSel = -1; });
     bus.on('item:unlocked', ({ id }) => this.flashUnlocked(id));
-    bus.on('game:begin', () => { this._prevRes = { ...this.game.state.resources }; for (const r of RESOURCES) { this.chips[r].shown = this.game.state.resources[r] || 0; } });
+    bus.on('game:begin', () => this.syncResourcesImmediate());
+  }
+
+  syncResourcesImmediate() {
+    const res = this.game.state.resources;
+    this._prevRes = { ...res };
+    for (const r of RESOURCES) {
+      const c = this.chips[r];
+      if (!c) continue;
+      const cur = res[r] || 0;
+      c.shown = cur;
+      setText(c.n, fmtNum(Math.round(cur)));
+      if (r.endsWith('_ore') || r === 'steel' || r === 'uranium') {
+        const show = cur > 0;
+        c._vis = show;
+        c.el.style.display = show ? '' : 'none';
+      }
+    }
   }
 
   // ------------------------------------------------------------------ resources
@@ -146,7 +163,11 @@ export class Hud {
       if (prev === cur) continue;
       const d = cur - prev;
       const c = this.chips[r];
-      if (!this.game.running) { c.shown = cur; continue; }
+      if (!this.game.running) {
+        c.shown = cur;
+        setText(c.n, fmtNum(Math.round(cur)));
+        continue;
+      }
       // merge rapid consecutive deltas of the same sign into one floating label
       if (c.delta && now - c.deltaT < 700 && Math.sign(c.deltaV) === Math.sign(d)) {
         c.deltaV += d; c.delta.textContent = (c.deltaV > 0 ? '+' : '−') + fmtNum(Math.abs(c.deltaV));
@@ -221,10 +242,17 @@ export class Hud {
     // resource number tween
     for (const r of RESOURCES) {
       const c = this.chips[r], target = st.resources[r] || 0;
+      const resCap = st.getCap ? st.getCap(r) : Infinity;
       if (c.shown !== target) {
         const diff = target - c.shown;
         c.shown = Math.abs(diff) < 1 ? target : c.shown + diff * Math.min(1, dt * 10);
-        setText(c.n, fmtNum(Math.round(c.shown)));
+      }
+      setText(c.n, fmtNum(Math.round(c.shown)));
+      if (isFinite(resCap)) {
+        const full = target >= resCap - 0.01;
+        if (c._full !== full) { c._full = full; toggle(c.el, 'low', full); }
+        const tip = `${RESOURCE_LABELS[r] || r}: ${Math.floor(target)} / ${resCap}${full ? ' (склад полон)' : ''}`;
+        if (c._tip !== tip) { c._tip = tip; c.el.title = tip; }
       }
       // raw ores only take space in the bar while you actually have some
       if (r.endsWith('_ore') || r === 'steel' || r === 'uranium') { const show = target > 0; if (c._vis !== show) { c._vis = show; c.el.style.display = show ? '' : 'none'; } }

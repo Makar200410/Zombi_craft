@@ -84,18 +84,33 @@ async function idbDo(mode, fn) {
     tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
   });
 }
+const memCache = new Map();
+const STATE_SUFFIX = ':state';
+
 const store = {
   async get(id) {
-    try { const v = await idbDo('readonly', st => st.get(id)); if (v != null) return v; } catch (e) { /* fall back */ }
-    try { return localStorage.getItem(LS_PREFIX + id); } catch (e) { return null; }
+    if (memCache.has(id)) return memCache.get(id);
+    let idbVal = null, lsVal = null;
+    try { idbVal = await idbDo('readonly', st => st.get(id)); } catch (e) { /* fall back */ }
+    try { lsVal = localStorage.getItem(LS_PREFIX + id); } catch (e) { /* ignore */ }
+    if (idbVal != null && lsVal != null) {
+      try {
+        const a = JSON.parse(idbVal), b = JSON.parse(lsVal);
+        return (b?.savedAt || 0) >= (a?.savedAt || 0) ? lsVal : idbVal;
+      } catch (e) { return lsVal || idbVal; }
+    }
+    return lsVal ?? idbVal;
   },
   async put(id, data) {
-    try { await idbDo('readwrite', st => st.put(data, id)); try { localStorage.removeItem(LS_PREFIX + id); } catch (e) { /* ignore */ } return true; }
-    catch (e) { localStorage.setItem(LS_PREFIX + id, data); return true; }
+    memCache.set(id, data);
+    try { localStorage.setItem(LS_PREFIX + id, data); } catch (e) { /* quota exceeded: rely on idb + state snapshot */ }
+    try { await idbDo('readwrite', st => st.put(data, id)); return true; }
+    catch (e) { return true; }
   },
   async del(id) {
+    memCache.delete(id);
     try { await idbDo('readwrite', st => st.delete(id)); } catch (e) { /* ignore */ }
-    try { localStorage.removeItem(LS_PREFIX + id); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(LS_PREFIX + id); localStorage.removeItem(LS_PREFIX + id + STATE_SUFFIX); } catch (e) { /* ignore */ }
   },
 };
 
@@ -111,21 +126,38 @@ export class SaveSystem {
     const bus = this.game.bus;
     bus.on('time:dawn', () => { if (this._canAutosave()) this.save({ toast: true, auto: true }); });
     bus.on('game:over', () => this.deleteSave());
-    bus.on('game:begin', () => { this._timer = 0; });
+    bus.on('game:begin', () => { this._timer = 0; this._saveStateSnapshot(); });
+    bus.on('resources:changed', () => { if (this._canAutosave()) this._saveStateSnapshot(); });
+    for (const ev of ['building:placed', 'building:completed', 'building:upgraded', 'building:removed', 'research:done', 'quest:done', 'age:changed']) {
+      bus.on(ev, () => { if (this._canAutosave()) this._saveStateSnapshot(); });
+    }
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden' && this._canAutosave()) this.save({ toast: false, auto: true });
     });
     addEventListener('pagehide', () => { if (this._canAutosave()) this.save({ toast: false, auto: true }); });
+    addEventListener('beforeunload', () => { if (this._canAutosave()) this.save({ toast: false, auto: true }); });
   }
   _canAutosave() {
     const g = this.game;
     return g.running && !this.loading && !g.gameOver && !(g.player?.dead);
   }
+  /** Immediately writes a small synchronous snapshot of current resources & game state to localStorage. */
+  _saveStateSnapshot() {
+    const g = this.game;
+    if (!g.running || this.loading || g.net?.isClient || !this.worldId) return;
+    try {
+      const snap = {
+        savedAt: Date.now(),
+        state: g.state.serialize(),
+      };
+      localStorage.setItem(LS_PREFIX + this.worldId + STATE_SUFFIX, JSON.stringify(snap));
+    } catch (e) { /* ignore */ }
+  }
   update(dt) {
     this._timer += dt;
-    if (this._timer >= AUTOSAVE_EVERY) {
+    if (this._timer >= 30) {
       this._timer = 0;
-      if (this._canAutosave()) this.save({ toast: true, auto: true });
+      if (this._canAutosave()) this.save({ toast: false, auto: true });
     }
   }
 
@@ -223,11 +255,14 @@ export class SaveSystem {
     try { obj = this.serialize(); data = JSON.stringify(obj); } catch (e) { console.error('save serialize failed', e); return false; }
     if (!this.worldId) this.createWorld('', { difficulty: g.state.difficulty });
     const id = this.worldId;
-    // update the world list right away (small), write the data in the background
+    // update the world list and state snapshot synchronously right away
     const list = this.worlds(), w = list.find(x => x.id === id);
     if (w) { Object.assign(w, this._meta(obj)); this._writeIndex(list); }
     else { list.push({ id, name: 'Мир ' + (list.length + 1), created: Date.now(), ...this._meta(obj) }); this._writeIndex(list); }
-    try { localStorage.setItem(LAST, id); } catch (e) { /* ignore */ }
+    try {
+      localStorage.setItem(LAST, id);
+      localStorage.setItem(LS_PREFIX + id + STATE_SUFFIX, JSON.stringify({ savedAt: obj.savedAt, state: obj.state }));
+    } catch (e) { /* ignore */ }
     this.lastSaveAt = Date.now();
     this._timer = 0;
     this._pending = store.put(id, data).then(() => {
@@ -245,14 +280,26 @@ export class SaveSystem {
     const g = this.game;
     id = id || this.lastWorld()?.id;
     if (!id) return false;
+    if (this._pending) { try { await this._pending; } catch (e) { /* ignore */ } }
     let o;
     try { o = JSON.parse(await store.get(id)); } catch (e) { o = null; }
     if (!o) return false;
+    // Merge any newer synchronous state snapshot (from resources:changed or pagehide)
+    try {
+      const rawSnap = localStorage.getItem(LS_PREFIX + id + STATE_SUFFIX);
+      if (rawSnap) {
+        const snap = JSON.parse(rawSnap);
+        if (snap?.state && (snap.savedAt || 0) >= (o.savedAt || 0)) {
+          o.state = snap.state;
+        }
+      }
+    } catch (e) { /* ignore */ }
     this.worldId = id;
     try { localStorage.setItem(LAST, id); } catch (e) { /* ignore */ }
     this.loading = true;
     try {
       g.running = false;
+      const savedState = o.state ? { ...o.state, resources: o.state.resources ? { ...o.state.resources } : undefined } : {};
       await g.setup({ seed: o.seed, size: o.size || 192, format: o.format || 1 }, progress);
       const w = g.world;
       progress(0.96, 'Восстанавливаем постройки…');
@@ -262,7 +309,7 @@ export class SaveSystem {
       g.chunkRenderer?.buildAll?.();
       w.changes = changes;
       g.bus.emit('world:loaded', { world: w });
-      g.state.deserialize(o.state || {});
+      g.state.deserialize(savedState);
       const safe = (sys, data) => { try { if (data != null) sys?.deserialize?.(data); } catch (e) { console.error('deserialize failed', sys?.constructor?.name, e); } };
       safe(g.research, o.research);
       safe(g.crafting, o.crafting);
@@ -277,8 +324,11 @@ export class SaveSystem {
       safe(g.electric, o.electric);
       safe(g.chronicle, o.chronicle);
       safe(g.cameraRig, o.camera);
+      // Re-apply savedState so no subsystem deserialize (e.g. upgrade refunds) alters saved resources
+      g.state.deserialize(savedState);
       if (g.mode !== 'explore') g.setMode('explore');
       g.begin({ loaded: true });
+      g.ui?.hud?.syncResourcesImmediate?.();
       this._timer = 0;
       progress(1, '');
       return true;

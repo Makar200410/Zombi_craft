@@ -7,6 +7,8 @@
 // cost: resources consumed when the player / builders place it
 // light: 0..15 emitted block light
 
+import { BASE_WOOD_PER_LOG_BLOCK, BASE_STONE_DROP, BASE_WHEAT_BLOCK_DROP, BASE_FORAGE_FOOD_DROP, ORE_HARDNESS } from '../systems/resourceBalance.js';
+
 export const B = {};
 export const BLOCKS = [];
 
@@ -40,19 +42,19 @@ function def(id, name, o = {}) {
 def(0, 'air', { solid: false, render: 'none', shape: 'none', hardness: 0, placeable: false, replaceable: true, tiles: 'stone' });
 def(1, 'grass', { label: 'Трава', tiles: { top: 'grass_top', side: 'grass_side', bottom: 'dirt' }, hardness: 1.2, tool: 'shovel' });
 def(2, 'dirt', { label: 'Земля', hardness: 1.1, tool: 'shovel' });
-def(3, 'stone', { label: 'Камень', hardness: 3, drop: { stone: 1 }, cost: { stone: 1 }, tool: 'pick' });
-def(4, 'cobblestone', { label: 'Булыжник', hardness: 3, drop: { stone: 1 }, cost: { stone: 1 }, tool: 'pick' });
+def(3, 'stone', { label: 'Камень', hardness: 3, drop: { stone: BASE_STONE_DROP }, cost: { stone: 1 }, tool: 'pick' });
+def(4, 'cobblestone', { label: 'Булыжник', hardness: 3, drop: { stone: BASE_STONE_DROP }, cost: { stone: 1 }, tool: 'pick' });
 def(5, 'sand', { label: 'Песок', hardness: 1, tool: 'shovel' });
 def(6, 'gravel', { label: 'Гравий', hardness: 1.2, tool: 'shovel' });
 def(7, 'water', { label: 'Вода', shape: 'liquid', render: 'transparent', solid: false, hardness: 0, placeable: false, replaceable: true });
-def(8, 'log', { label: 'Дубовое бревно', tiles: { top: 'log_top', side: 'log_side' }, hardness: 2.5, drop: { wood: 2 }, cost: { wood: 2 }, tool: 'axe' });
-def(9, 'leaves', { label: 'Листва', render: 'cutout', hardness: 0.4, drop: {}, tool: 'axe' });
-def(10, 'planks', { label: 'Доски', hardness: 2, drop: { wood: 1 }, cost: { wood: 1 }, tool: 'axe' });
-def(11, 'stone_bricks', { label: 'Каменный кирпич', hardness: 4, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
-def(12, 'coal_ore', { label: 'Угольная руда', hardness: 3.5, drop: { stone: 1, coal: 2 }, tool: 'pick' });
-def(13, 'iron_ore', { label: 'Железная руда', hardness: 4.5, drop: { iron_ore: 2 }, tool: 'pick' });
-def(14, 'gold_ore', { label: 'Золотая руда', hardness: 5, drop: { gold_ore: 2 }, tool: 'pick' });
-def(15, 'crystal_ore', { label: 'Кристалл маны', hardness: 5, drop: { crystal: 2 }, light: 9, tool: 'pick' });
+def(8, 'log', { label: 'Дубовое бревно', tiles: { top: 'log_top', side: 'log_side' }, hardness: 2.5, drop: { wood: BASE_WOOD_PER_LOG_BLOCK }, cost: { wood: 2 }, tool: 'axe' });
+def(9, 'leaves', { label: 'Листва', render: 'cutout', solid: false, hardness: 0.4, drop: {}, tool: 'axe' });
+def(10, 'planks', { label: 'Доски', hardness: 2, drop: { wood: 0.6 }, cost: { wood: 1 }, tool: 'axe' });
+def(11, 'stone_bricks', { label: 'Каменный кирпич', hardness: 4, drop: { stone: BASE_STONE_DROP }, cost: { stone: 2 }, tool: 'pick' });
+def(12, 'coal_ore', { label: 'Угольная руда', hardness: ORE_HARDNESS.coal_ore, drop: { stone: BASE_STONE_DROP, coal: 2 }, tool: 'pick' });
+def(13, 'iron_ore', { label: 'Железная руда', hardness: ORE_HARDNESS.iron_ore, drop: { iron_ore: 2 }, tool: 'pick' });
+def(14, 'gold_ore', { label: 'Золотая руда', hardness: ORE_HARDNESS.gold_ore, drop: { gold_ore: 1 }, tool: 'pick' });
+def(15, 'crystal_ore', { label: 'Кристалл маны', hardness: ORE_HARDNESS.crystal_ore, drop: { crystal: 1 }, light: 9, tool: 'pick' });
 def(16, 'glass', { label: 'Стекло', render: 'transparent', hardness: 0.6, cost: { stone: 1 } });
 def(17, 'thatch', { label: 'Соломенная крыша', hardness: 1, drop: { food: 0 }, cost: { wood: 1 }, tool: 'axe' });
 def(18, 'roof_tiles', { label: 'Черепица', hardness: 2.5, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
@@ -60,14 +62,14 @@ def(19, 'farmland', { label: 'Пашня', tiles: { top: 'farmland', side: 'dirt
 def(20, 'wheat_0', { label: 'Пшеница', tiles: 'wheat_0', shape: 'cross', render: 'cutout', solid: false, hardness: 0.1, placeable: false, replaceable: true });
 def(21, 'wheat_1', { label: 'Пшеница', tiles: 'wheat_1', shape: 'cross', render: 'cutout', solid: false, hardness: 0.1, placeable: false, replaceable: true });
 def(22, 'wheat_2', { label: 'Пшеница', tiles: 'wheat_2', shape: 'cross', render: 'cutout', solid: false, hardness: 0.1, placeable: false, replaceable: true });
-def(23, 'wheat_3', { label: 'Спелая пшеница', tiles: 'wheat_3', shape: 'cross', render: 'cutout', solid: false, hardness: 0.1, drop: { food: 3 }, placeable: false, replaceable: true });
+def(23, 'wheat_3', { label: 'Спелая пшеница', tiles: 'wheat_3', shape: 'cross', render: 'cutout', solid: false, hardness: 0.1, drop: { food: BASE_WHEAT_BLOCK_DROP }, placeable: false, replaceable: true });
 def(24, 'torch', { label: 'Факел', tiles: 'torch', shape: 'cross', render: 'cutout', solid: false, hardness: 0.1, light: 14, cost: { wood: 1 } });
 def(25, 'bedrock', { label: 'Коренная порода', hardness: Infinity, placeable: false });
 def(26, 'tall_grass', { label: 'Высокая трава', tiles: 'tall_grass', shape: 'cross', render: 'cutout', solid: false, hardness: 0, placeable: false, replaceable: true });
 def(27, 'flower_red', { label: 'Мак', tiles: 'flower_red', shape: 'cross', render: 'cutout', solid: false, hardness: 0, replaceable: true });
 def(28, 'flower_yellow', { label: 'Одуванчик', tiles: 'flower_yellow', shape: 'cross', render: 'cutout', solid: false, hardness: 0, replaceable: true });
-def(29, 'spruce_log', { label: 'Еловое бревно', tiles: { top: 'spruce_log_top', side: 'spruce_log_side' }, hardness: 2.5, drop: { wood: 2 }, cost: { wood: 2 }, tool: 'axe' });
-def(30, 'spruce_leaves', { label: 'Хвоя', render: 'cutout', hardness: 0.4, tool: 'axe' });
+def(29, 'spruce_log', { label: 'Еловое бревно', tiles: { top: 'spruce_log_top', side: 'spruce_log_side' }, hardness: 2.5, drop: { wood: BASE_WOOD_PER_LOG_BLOCK }, cost: { wood: 2 }, tool: 'axe' });
+def(30, 'spruce_leaves', { label: 'Хвоя', render: 'cutout', solid: false, hardness: 0.4, tool: 'axe' });
 def(31, 'lantern', { label: 'Фонарь', hardness: 1, light: 15, cost: { iron: 1, wood: 1 } });
 def(32, 'iron_block', { label: 'Железный блок', hardness: 6, cost: { iron: 4 }, drop: { iron: 3 }, tool: 'pick' });
 def(33, 'workbench', { label: 'Верстак', tiles: { top: 'workbench_top', side: 'workbench_side', bottom: 'planks' }, hardness: 2, cost: { wood: 3 }, drop: { wood: 2 }, tool: 'axe' });
@@ -77,17 +79,17 @@ def(36, 'arcane_table', { label: 'Магический стол', tiles: { top: 
 def(37, 'hay_bale', { label: 'Сноп сена', tiles: { top: 'hay_top', side: 'hay_side' }, hardness: 0.8, cost: { food: 2 }, drop: { food: 1 } });
 def(38, 'plaster', { label: 'Штукатурка', hardness: 2, cost: { stone: 1 }, tool: 'pick' });
 def(39, 'timber_frame', { label: 'Фахверк', hardness: 2, cost: { wood: 1, stone: 1 }, drop: { wood: 1 }, tool: 'axe' });
-def(40, 'mossy_cobble', { label: 'Замшелый булыжник', hardness: 3, drop: { stone: 1 }, cost: { stone: 1 }, tool: 'pick' });
-def(41, 'dark_stone', { label: 'Тёмный камень', hardness: 5, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
+def(40, 'mossy_cobble', { label: 'Замшелый булыжник', hardness: 3, drop: { stone: BASE_STONE_DROP }, cost: { stone: 1 }, tool: 'pick' });
+def(41, 'dark_stone', { label: 'Тёмный камень', hardness: 5, drop: { stone: BASE_STONE_DROP }, cost: { stone: 2 }, tool: 'pick' });
 def(42, 'path', { label: 'Тропинка', tiles: { top: 'path_top', side: 'dirt', bottom: 'dirt' }, hardness: 1, tool: 'shovel' });
 def(43, 'snow', { label: 'Снег', tiles: { top: 'snow', side: 'snow_side', bottom: 'dirt' }, hardness: 1, tool: 'shovel' });
 def(44, 'palisade', { label: 'Частокол', tiles: { top: 'palisade_top', side: 'palisade_side' }, hardness: 5, cost: { wood: 3 }, drop: { wood: 1 }, tool: 'axe' });
 def(45, 'reinforced_wall', { label: 'Укреплённая стена', tiles: { top: 'reinforced_top', side: 'reinforced_side' }, hardness: 12, cost: { stone: 3, iron: 1 }, drop: { stone: 1 }, tool: 'pick' });
 def(46, 'banner', { label: 'Знамя деревни', tiles: 'banner', hardness: 1, cost: { wood: 1, food: 1 } });
-def(47, 'mushroom', { label: 'Гриб', tiles: 'mushroom', shape: 'cross', render: 'cutout', solid: false, hardness: 0, drop: { food: 1 }, replaceable: true });
+def(47, 'mushroom', { label: 'Гриб', tiles: 'mushroom', shape: 'cross', render: 'cutout', solid: false, hardness: 0, drop: { food: BASE_FORAGE_FOOD_DROP }, replaceable: true });
 def(48, 'dead_bush', { label: 'Сухой куст', tiles: 'dead_bush', shape: 'cross', render: 'cutout', solid: false, hardness: 0, replaceable: true });
-def(49, 'birch_log', { label: 'Берёзовое бревно', tiles: { top: 'birch_log_top', side: 'birch_log_side' }, hardness: 2.5, drop: { wood: 2 }, cost: { wood: 2 }, tool: 'axe' });
-def(50, 'birch_leaves', { label: 'Берёзовая листва', render: 'cutout', hardness: 0.4, tool: 'axe' });
+def(49, 'birch_log', { label: 'Берёзовое бревно', tiles: { top: 'birch_log_top', side: 'birch_log_side' }, hardness: 2.5, drop: { wood: BASE_WOOD_PER_LOG_BLOCK }, cost: { wood: 2 }, tool: 'axe' });
+def(50, 'birch_leaves', { label: 'Берёзовая листва', render: 'cutout', solid: false, hardness: 0.4, tool: 'axe' });
 // civilisation-age materials
 def(51, 'brick', { label: 'Кирпич', hardness: 4.5, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
 def(52, 'marble', { label: 'Мрамор', hardness: 4, drop: { stone: 1 }, cost: { stone: 2 }, tool: 'pick' });
@@ -104,7 +106,7 @@ def(55, 'cannon', { label: 'Пушка', tiles: { top: 'cannon_top', side: 'cann
 def(62, 'wattle', { label: 'Плетень с глиной', hardness: 1.6, cost: { wood: 1 }, drop: { wood: 1 }, tool: 'axe' });
 def(63, 'hide', { label: 'Шкуры', hardness: 0.8, cost: { food: 1 }, tool: 'axe' });
 def(64, 'mudbrick', { label: 'Сырцовый кирпич', hardness: 2.5, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
-def(65, 'sandstone', { label: 'Песчаник', tiles: { top: 'sandstone_top', side: 'sandstone' }, hardness: 3, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
+def(65, 'sandstone', { label: 'Песчаник', tiles: { top: 'sandstone_top', side: 'sandstone' }, hardness: 3, cost: { stone: 1 }, drop: { stone: BASE_STONE_DROP }, tool: 'pick' });
 def(66, 'shingles', { label: 'Деревянная дранка', hardness: 1.6, cost: { wood: 1 }, drop: { wood: 1 }, tool: 'axe' });
 def(67, 'stucco', { label: 'Охровая штукатурка', hardness: 3, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
 def(68, 'slate', { label: 'Сланцевая кровля', hardness: 3.5, cost: { stone: 1 }, drop: { stone: 1 }, tool: 'pick' });
@@ -124,22 +126,22 @@ def(78, 'nano', { label: 'Нанокомпозит', hardness: 10, cost: { steel
 // underground & biomes (deep worlds)
 def(81, 'lava', { label: 'Лава', shape: 'liquid', solid: false, hardness: 0, light: 15, placeable: false, replaceable: true });
 def(82, 'chest', { label: 'Сундук', tiles: { top: 'chest_top', side: 'chest_side', bottom: 'planks' }, hardness: 1.5, placeable: false, tool: 'axe' });
-def(83, 'glow_mushroom', { label: 'Светящийся гриб', tiles: 'glow_mushroom', shape: 'cross', render: 'cutout', solid: false, hardness: 0, light: 11, drop: { food: 1 }, replaceable: true });
-def(84, 'glow_moss', { label: 'Светящийся мох', tiles: { top: 'glow_moss_top', side: 'glow_moss_side', bottom: 'dark_stone' }, hardness: 2.5, light: 7, drop: { stone: 1 }, tool: 'pick' });
-def(85, 'cactus', { label: 'Кактус', tiles: { top: 'cactus_top', side: 'cactus_side' }, render: 'cutout', hardness: 0.8, drop: { food: 1 }, tool: 'axe' });
+def(83, 'glow_mushroom', { label: 'Светящийся гриб', tiles: 'glow_mushroom', shape: 'cross', render: 'cutout', solid: false, hardness: 0, light: 11, drop: { food: BASE_FORAGE_FOOD_DROP }, replaceable: true });
+def(84, 'glow_moss', { label: 'Светящийся мох', tiles: { top: 'glow_moss_top', side: 'glow_moss_side', bottom: 'dark_stone' }, hardness: 2.5, light: 7, drop: { stone: BASE_STONE_DROP }, tool: 'pick' });
+def(85, 'cactus', { label: 'Кактус', tiles: { top: 'cactus_top', side: 'cactus_side' }, render: 'cutout', hardness: 0.8, drop: { food: BASE_FORAGE_FOOD_DROP }, tool: 'axe' });
 def(86, 'ice', { label: 'Лёд', render: 'transparent', hardness: 1, tool: 'pick' });
 def(87, 'mud', { label: 'Ил', hardness: 1, tool: 'shovel' });
 def(88, 'dry_grass', { label: 'Сухая трава', tiles: { top: 'dry_grass_top', side: 'dry_grass_side', bottom: 'dirt' }, hardness: 1.2, tool: 'shovel' });
 def(89, 'reeds', { label: 'Камыш', tiles: 'reeds', shape: 'cross', render: 'cutout', solid: false, hardness: 0, replaceable: true });
 def(90, 'cobweb', { label: 'Паутина', tiles: 'cobweb', shape: 'cross', render: 'cutout', solid: false, hardness: 0.3, replaceable: true });
-def(91, 'obsidian', { label: 'Обсидиан', hardness: 14, drop: { stone: 1 }, cost: { stone: 3 }, tool: 'pick' });
-def(92, 'amethyst', { label: 'Аметистовая жеода', render: 'opaque', hardness: 4, light: 7, drop: { crystal: 1 }, tool: 'pick' });
+def(91, 'obsidian', { label: 'Обсидиан', hardness: 14, drop: { stone: BASE_STONE_DROP }, cost: { stone: 3 }, tool: 'pick' });
+def(92, 'amethyst', { label: 'Аметистовая жеода', render: 'opaque', hardness: ORE_HARDNESS.amethyst, light: 7, drop: { crystal: 1 }, tool: 'pick' });
 def(93, 'red_sand', { label: 'Красный песок', hardness: 1, tool: 'shovel' });
-def(94, 'acacia_leaves', { label: 'Листва акации', render: 'cutout', hardness: 0.4, tool: 'axe' });
+def(94, 'acacia_leaves', { label: 'Листва акации', render: 'cutout', solid: false, hardness: 0.4, tool: 'axe' });
 def(95, 'packed_ice', { label: 'Плотный лёд', hardness: 2, tool: 'pick' });
 // the underworld and the underground jungle (deep worlds)
 def(96, 'ash', { label: 'Пепел', hardness: 1.4, tool: 'shovel' });
-def(97, 'magma', { label: 'Адский камень', hardness: 6, light: 10, drop: { stone: 1, coal: 1 }, tool: 'pick' });
+def(97, 'magma', { label: 'Адский камень', hardness: 6, light: 10, drop: { stone: BASE_STONE_DROP, coal: 1 }, tool: 'pick' });
 def(98, 'jungle_grass', { label: 'Мшистый ил', tiles: { top: 'jungle_grass_top', side: 'jungle_grass_side', bottom: 'mud' }, hardness: 1.2, tool: 'shovel' });
 // dungeons
 def(99, 'spawner', { label: 'Клетка-спавнер', render: 'cutout', hardness: 7, light: 6, placeable: false, tool: 'pick' });

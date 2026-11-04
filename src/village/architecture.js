@@ -608,42 +608,68 @@ function lumberCamp(v, t) {
   return bp;
 }
 
-function farm(v, t) {
-  const e = eraOf(t), bp = new BP(9, 9);
-  bp.box(0, 0, 0, 8, 0, 8, e.pave === B.POLYMER ? B.GRASS : B.PATH);
+function farm(v, t, grow = 0) {
+  const E = Math.max(0, grow | 0);
+  const W = 9 + 2 * E, D = 9 + 2 * E, mid = 4 + E, zMid = D >> 1;
+  const e = eraOf(t), bp = new BP(W, D);
+  const pathBlock = e.pave === B.POLYMER ? B.GRASS : B.PATH;
+  bp.box(0, 0, 0, W - 1, 0, D - 1, pathBlock);
   const fence = pick([0, B.LOG, B.LOG, B.PALISADE, B.PLANKS, B.MARBLE, B.CAST_IRON, B.CONCRETE, B.STEEL_BLOCK, B.ALUMINUM, B.NANO], t);
-  bp.ring(0, 1, 0, 8, 1, 8, fence);
-  bp.del(4, 1, 8);
+  bp.ring(0, 1, 0, W - 1, 1, D - 1, fence);
+  // Wide front gate and side gates so farmers & guards never bottleneck or get trapped
+  for (const dx of [-1, 0, 1]) bp.del(mid + dx, 1, D - 1);
+  for (const dz of [-1, 0, 1]) {
+    if (zMid + dz >= 2 && zMid + dz <= D - 2) {
+      bp.del(0, 1, zMid + dz);
+      bp.del(W - 1, 1, zMid + dz);
+    }
+  }
   const lamp = isCube(e.light) ? e.light : B.TORCH;
   const ph = t >= 7 ? 3 : 2;
-  for (const [x, z] of [[0, 0], [8, 0], [0, 8], [8, 8]]) { bp.box(x, 2, z, x, ph, z, t >= 6 ? e.post : B.LOG); bp.set(x, ph + 1, z, lamp); }
-  for (let z = 2; z <= 7; z++) {
-    for (const x of [1, 2, 3, 5, 6, 7]) { bp.set(x, 0, z, B.FARMLAND); bp.plots.push({ dx: x, dy: 0, dz: z }); }
-    bp.set(4, 0, z, B.WATER);
+  for (const [x, z] of [[0, 0], [W - 1, 0], [0, D - 1], [W - 1, D - 1]]) {
+    bp.box(x, 2, z, x, ph, z, t >= 6 ? e.post : B.LOG);
+    bp.set(x, ph + 1, z, lamp);
   }
-  bp.set(4, 0, 7, B.PATH);
+  // Flat, solid farmland plots with a walkable central path (no open water holes to fall into)
+  for (let z = 2; z <= D - 2; z++) {
+    for (let x = 1; x <= W - 2; x++) {
+      if (x === mid) {
+        bp.set(x, 0, z, pathBlock);
+      } else {
+        bp.set(x, 0, z, B.FARMLAND);
+        bp.plots.push({ dx: x, dy: 0, dz: z });
+      }
+    }
+  }
+  // Back row (z = 1): 2-block-high storage stacks (so villagers never step onto them) + era landmark at mid
   if (t <= 3) {
-    bp.box(1, 1, 1, 2, 1, 1, B.HAY_BALE); bp.set(1, 2, 1, B.HAY_BALE);
-    bp.box(6, 1, 1, 7, 1, 1, B.HAY_BALE);
-    bp.set(4, 1, 1, B.LOG); bp.set(4, 2, 1, B.LOG); bp.set(4, 3, 1, B.HAY_BALE); bp.set(3, 2, 1, B.PLANKS); bp.set(5, 2, 1, B.PLANKS); bp.set(4, 4, 1, B.THATCH);
+    bp.box(1, 1, 1, 2, 2, 1, B.HAY_BALE);
+    bp.box(W - 3, 1, 1, W - 2, 2, 1, B.HAY_BALE);
+    bp.set(mid, 1, 1, B.LOG); bp.set(mid, 2, 1, B.LOG); bp.set(mid, 3, 1, B.HAY_BALE);
+    bp.set(mid - 1, 2, 1, B.PLANKS); bp.set(mid + 1, 2, 1, B.PLANKS); bp.set(mid, 4, 1, B.THATCH);
   } else if (t <= 5) {
     // windmill
-    bp.box(4, 1, 1, 4, 8, 1, t === 5 ? B.STUCCO : B.SPRUCE_LOG);
-    bp.set(4, 9, 1, e.roof);
-    for (let k = 1; k <= 3; k++) { bp.set(4 - k, 7, 0, B.PLANKS); bp.set(4 + k, 7, 0, B.PLANKS); bp.set(4, 7 - k, 0, B.PLANKS); bp.set(4, 7 + k, 0, B.PLANKS); }
-    bp.set(4, 7, 0, B.LOG);
-    bp.box(1, 1, 1, 2, 1, 1, B.HAY_BALE); bp.box(6, 1, 1, 7, 1, 1, B.HAY_BALE);
+    bp.box(mid, 1, 1, mid, 8, 1, t === 5 ? B.STUCCO : B.SPRUCE_LOG);
+    bp.set(mid, 9, 1, e.roof);
+    for (let k = 1; k <= 3; k++) {
+      bp.set(mid - k, 7, 0, B.PLANKS); bp.set(mid + k, 7, 0, B.PLANKS);
+      bp.set(mid, 7 - k, 0, B.PLANKS); bp.set(mid, 7 + k, 0, B.PLANKS);
+    }
+    bp.set(mid, 7, 0, B.LOG);
+    bp.box(1, 1, 1, 2, 2, 1, B.HAY_BALE);
+    bp.box(W - 3, 1, 1, W - 2, 2, 1, B.HAY_BALE);
   } else {
     // water tower / irrigation tank, then grow lights
     const tank = pick([0, 0, 0, 0, 0, 0, B.CORRUGATED, B.CONCRETE, B.STEEL_BLOCK, B.ALUMINUM, B.ENERGY_GLASS], t);
     const h = 4 + t - 6;
-    bp.box(4, 1, 1, 4, h, 1, e.post);
-    bp.box(3, h + 1, 0, 5, h + 2, 1, tank); bp.set(4, h + 3, 1, lamp);
-    bp.box(1, 1, 1, 2, 1, 1, e.crate); bp.box(6, 1, 1, 7, 1, 1, e.crate);
-    if (t >= 9) for (const x of [2, 6]) { bp.box(x, 1, 8, x, 3, 8, e.post); bp.set(x, 4, 8, lamp); }
+    bp.box(mid, 1, 1, mid, h, 1, e.post);
+    bp.box(mid - 1, h + 1, 0, mid + 1, h + 2, 1, tank); bp.set(mid, h + 3, 1, lamp);
+    bp.box(1, 1, 1, 2, 2, 1, e.crate);
+    bp.box(W - 3, 1, 1, W - 2, 2, 1, e.crate);
+    if (t >= 9) for (const x of [2, W - 3]) { bp.box(x, 1, D - 1, x, 3, D - 1, e.post); bp.set(x, 4, D - 1, lamp); }
   }
-  bp.point('door', 4, 1, 8);
-  bp.point('work', 4, 1, 7);
+  bp.point('door', mid, 1, D - 1);
+  bp.point('work', mid, 1, D - 2);
   return bp;
 }
 
@@ -668,10 +694,11 @@ function mine(v, t) {
   bp.box(2, hh + 1, 3, 6, hh + 1, 3, hp);
   if (t >= 6) { bp.ring(3, hh - 2, 3, 5, hh, 3, e.trim); bp.set(4, hh - 1, 3, B.AIR); }      // winding wheel
   bp.set(4, hh + 2, 3, isCube(e.light) ? e.light : B.LANTERN);
-  // fence around the quarry
+  // fence around the quarry (with side and front gates)
   const fence = pick([0, B.LOG, B.LOG, B.PALISADE, B.LOG, B.MARBLE, B.CAST_IRON, B.CONCRETE, B.STEEL_BLOCK, B.ALUMINUM, B.NANO], t);
   for (let z = 4; z <= 11; z++) { bp.set(1, 1, z, fence); bp.set(7, 1, z, fence); }
   bp.box(1, 1, 11, 7, 1, 11, fence);
+  bp.del(4, 1, 11); bp.del(1, 1, 5); bp.del(7, 1, 5);
   for (const [x, z] of [[1, 11], [7, 11], [1, 4], [7, 4]]) { bp.set(x, 2, z, fence); bp.set(x, 3, z, isCube(e.light) ? e.light : B.TORCH); }
   bp.quarry = { x0: 2, z0: 4, x1: 6, z1: 10 };
   bp.point('door', 4, 1, 3);
@@ -747,15 +774,16 @@ function watchtower(v, t) {
   return bp;
 }
 
-const OWN_T4 = new Set(['house']);
+const OWN_T4 = new Set(['house', 'farm']);
 const DESIGNS = { town_hall: townHall, house, builder_hut: builderHut, storehouse, granary, barracks, laboratory, forge, lumber_camp: lumberCamp, farm, mine, market, watchtower };
 
 // ---------------------------------------------------------------- growing wider
-// After the iron age buildings also grow in width: every side gets `grow` more blocks (side wings, a yard, a
-// fence), so the town has to make room for them. Index = tier.
+// Regular buildings keep their base footprint across all levels so they never pile onto neighboring buildings.
+// Farms expand into larger estates when there is sufficient free space around them. Index = tier.
 const GROW = {
-  default: [0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2],
-  watchtower: [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
+  default: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  farm: [0, 0, 0, 1, 2, 2, 3, 3, 3, 3, 3],
+  watchtower: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 /** How many blocks per side a type grows at a tier. */
 export function growOf(id, t) {
@@ -848,6 +876,7 @@ function widen(core, t, E) {
 export function tiered(id, medieval) {
   const f = DESIGNS[id];
   if (!f) return null;
+  if (id === 'farm') return (v, t = 4, grow = growOf(id, t)) => farm(v, t, grow);
   return (v, t = 4, grow = growOf(id, t)) => {
     const core = t === 4 && medieval && !OWN_T4.has(id) ? medieval(v) : f(v, t);
     return grow > 0 ? widen(core, t, grow) : core;

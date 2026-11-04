@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { B, BLOCKS, WATER_IDS, WATER_LEVEL, LOG_BLOCKS, LEAF_BLOCKS, PALETTE, ORE_BLOCKS } from '../core/blocks.js';
 import { RESOURCE_LABELS } from '../core/items.js';
+import { SMELT_TIME } from './resourceBalance.js';
 import { worldUniforms } from '../render/chunkMaterials.js';
 
 const DIR6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
@@ -281,13 +282,16 @@ export class Kinetics {
     if (logs.length) this.game.audio?.play('chop', { pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, volume: 0.8 });
   }
   _crush(m, k, dt) {
-    const st = this.game.state;
+    const st = this.game.state, r = st.resources;
+    const hasIron = (r.iron_ore || 0) >= 1;
+    const hasGold = !hasIron && (r.gold_ore || 0) >= 1;
+    if (!hasIron && !hasGold) { m.prog = 0; return; }
+    const need = hasIron ? SMELT_TIME.crusher.iron_ore : SMELT_TIME.crusher.gold_ore;
     m.prog += k * dt;
-    if (m.prog < 2) return;
+    if (m.prog < need) return;
     m.prog = 0;
-    for (const [ore, metal] of [['iron_ore', 'iron'], ['gold_ore', 'gold']]) {
-      if (st.spend({ [ore]: 1 })) { st.add(metal, Math.random() < 0.25 ? 2 : 1); return; }
-    }
+    if (hasIron && st.spend({ iron_ore: 1 })) { st.add('iron', Math.random() < 0.25 ? 2 : 1); return; }
+    if (hasGold && st.spend({ gold_ore: 1 })) { st.add('gold', 1); }
   }
   _fan(m, k, dt) {
     const w = this.game.world, [dx, dy, dz] = m.dir;

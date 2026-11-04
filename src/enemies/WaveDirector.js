@@ -203,8 +203,8 @@ export class WaveDirector {
     this.waveActive = false;
     this.spawnDirections = [];
     const mul = this.diff.reward * (this.bonus ? 1.5 : 1);
-    const gold = Math.round((4 + n * 3) * mul);
-    const crystal = Math.floor((Math.floor(n / 3) + (n % 5 === 0 ? 2 : 0)) * mul);
+    const gold = Math.max(1, Math.round((2 + n * 1.4) * mul));
+    const crystal = n >= 4 ? Math.floor((Math.floor((n - 2) / 4) + (n % 5 === 0 ? 1 : 0)) * mul) : 0;
     game.state.add('gold', gold);
     if (crystal) game.state.add('crystal', crystal);
     if (game.state.stats) game.state.stats.wavesSurvived = (game.state.stats.wavesSurvived || 0) + 1;

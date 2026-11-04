@@ -143,19 +143,19 @@ function lumberCamp(v) {
 function farm(v) {
   const bp = new BP(9, 9);
   bp.box(0, 0, 0, 8, 0, 8, B.PATH);
-  // fence ring of logs with a gate
+  // fence ring of logs with wide gates
   bp.ring(0, 1, 0, 8, 1, 8, B.LOG);
-  bp.del(4, 1, 8);
+  for (const x of [3, 4, 5]) bp.del(x, 1, 8);
+  for (const z of [3, 4, 5]) { bp.del(0, 1, z); bp.del(8, 1, z); }
   for (const [x, z] of [[0, 0], [8, 0], [0, 8], [8, 8]]) { bp.set(x, 2, z, B.LOG); bp.set(x, 3, z, B.TORCH); }
-  // fields & irrigation channel
+  // fields & central path aisle
   for (let z = 2; z <= 7; z++) {
     for (const x of [1, 2, 3, 5, 6, 7]) { bp.set(x, 0, z, B.FARMLAND); bp.plots.push({ dx: x, dy: 0, dz: z }); }
-    bp.set(4, 0, z, B.WATER);
+    bp.set(4, 0, z, B.PATH);
   }
-  bp.set(4, 0, 7, B.PATH);
-  // hay stacks & scarecrow along the back
-  bp.box(1, 1, 1, 2, 1, 1, B.HAY_BALE); bp.set(1, 2, 1, B.HAY_BALE);
-  bp.box(6, 1, 1, 7, 1, 1, B.HAY_BALE); bp.set(7, 2, 1, B.HAY_BALE);
+  // 2-high hay stacks & scarecrow along the back
+  bp.box(1, 1, 1, 2, 2, 1, B.HAY_BALE);
+  bp.box(6, 1, 1, 7, 2, 1, B.HAY_BALE);
   bp.set(4, 1, 1, B.LOG); bp.set(4, 2, 1, B.LOG); bp.set(4, 3, 1, B.HAY_BALE); bp.set(3, 2, 1, B.PLANKS); bp.set(5, 2, 1, B.PLANKS);
   bp.set(4, 4, 1, B.THATCH);
   bp.point('door', 4, 1, 8);
@@ -173,15 +173,16 @@ function mine(v) {
   bp.posts(0, 0, 8, 2, 1, 3, B.SPRUCE_LOG);
   bp.gableX(0, 8, 0, 3, 4, B.PLANKS, null, 0, 8, B.SPRUCE_LOG);
   bp.box(0, 3, 3, 8, 3, 3, B.PLANKS);
-  bp.set(0, 3, 3, B.SPRUCE_LOG); bp.set(8, 3, 3, B.SPRUCE_LOG); bp.box(0, 1, 3, 0, 2, 3, B.SPRUCE_LOG); bp.box(8, 1, 3, 8, 2, 3, B.SPRUCE_LOG);
+  bp.set(0, 3, 3, B.SPRUCE_LOG); bp.set(8, 3, 3, B.SPRUCE_LOG);
   bp.set(1, 1, 1, B.WORKBENCH); bp.set(7, 1, 1, B.FURNACE);
   bp.box(2, 1, 1, 3, 1, 1, B.COBBLESTONE); bp.set(2, 2, 1, B.COBBLESTONE); bp.set(6, 1, 1, B.IRON_BLOCK);
   // headframe over the pit entrance
   bp.box(2, 4, 3, 2, 6, 3, B.SPRUCE_LOG); bp.box(6, 4, 3, 6, 6, 3, B.SPRUCE_LOG);
   bp.box(2, 7, 3, 6, 7, 3, B.SPRUCE_LOG); bp.set(4, 6, 3, B.LANTERN);
-  // fence around the quarry
+  // fence around the quarry (with side and front gates so builders & villagers never get boxed in)
   for (let z = 4; z <= 11; z++) { bp.set(1, 1, z, B.LOG); bp.set(7, 1, z, B.LOG); }
   bp.box(1, 1, 11, 7, 1, 11, B.LOG);
+  bp.del(4, 1, 11); bp.del(1, 1, 5); bp.del(7, 1, 5);
   for (const [x, z] of [[1, 11], [7, 11], [1, 4], [7, 4]]) { bp.set(x, 2, z, B.LOG); bp.set(x, 3, z, B.TORCH); }
   bp.quarry = { x0: 2, z0: 4, x1: 6, z1: 10 };      // stairs descend towards +z
   bp.point('door', 4, 1, 3);
@@ -1056,8 +1057,8 @@ function def(id, o) {
 }
 
 def('town_hall', {
-  name: 'Ратуша', desc: 'Сердце деревни: жильё для 4 жителей, 2 поста стражи, лучники на башне сами стреляют по нежити. Если её разрушат — игра окончена.',
-  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, jobs: { guard: 2 }, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal', 'uranium'], auto: true,
+  name: 'Ратуша', desc: 'Сердце деревни: жильё для 4 жителей, 2 поста стражи, базовое хранилище ресурсов, лучники на башне сами стреляют по нежити. Если её разрушат — игра окончена.',
+  cost: { wood: 200, stone: 200 }, hp: 2000, popBonus: 4, jobs: { guard: 2 }, category: 'economy', maxCount: 1, design: townHall, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'steel', 'gold', 'gold_ore', 'crystal', 'uranium'], auto: true,
 });
 def('house', {
   name: 'Дом', desc: 'Уютный фахверковый дом. +4 к населению. Ночью жители прячутся внутри.',
@@ -1076,8 +1077,8 @@ def('farm', {
   cost: { wood: 15, stone: 5 }, hp: 200, jobs: { farmer: 2 }, category: 'economy', design: farm, storage: ['food'],
 });
 def('storehouse', {
-  name: 'Склад', desc: 'Ближняя точка сдачи ресурсов: рабочие меньше ходят и больше работают.',
-  cost: { wood: 30, stone: 15 }, hp: 350, category: 'economy', design: storehouse, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'gold', 'gold_ore', 'crystal', 'uranium'],
+  name: 'Склад', desc: 'Увеличивает максимальный запас всех ресурсов в деревне (растёт с уровнем) и служит ближней точкой сдачи для рабочих.',
+  cost: { wood: 30, stone: 15 }, hp: 350, category: 'economy', design: storehouse, storage: ['wood', 'stone', 'food', 'iron', 'iron_ore', 'coal', 'steel', 'gold', 'gold_ore', 'crystal', 'uranium'],
 });
 def('mine', {
   name: 'Шахта', desc: 'Шахтёры роют настоящий карьер ступенями вглубь: камень, уголь, железо, золото и кристаллы.',
@@ -1118,8 +1119,8 @@ def('smelter', {
   cost: { stone: 70, wood: 50, iron: 10 }, hp: 550, age: 2, jobs: { smelter: 2 }, category: 'economy', maxCount: 3, design: smelter, storage: ['iron_ore', 'gold_ore', 'coal', 'iron', 'gold'],
 });
 def('granary', {
-  name: 'Амбар', desc: 'Хранилище урожая: фермы дают на 25% больше еды (не суммируется), рядом удобно сдавать еду и дерево.',
-  cost: { wood: 60, stone: 40 }, hp: 450, age: 1, category: 'economy', maxCount: 2, design: granary, storage: ['food', 'wood'],
+  name: 'Амбар', desc: 'Хранилище урожая: увеличивает максимальный запас еды и дерева (растёт с уровнем), а фермы дают на 25% больше еды (не суммируется).',
+  cost: { wood: 60, stone: 40 }, hp: 450, age: 1, category: 'economy', maxCount: 4, design: granary, storage: ['food', 'wood'],
 });
 def('market', {
   name: 'Рынок', desc: 'Торговцы понемногу продают излишки еды, дерева и камня за золото. Здесь же можно обменять одни товары на другие — по дорогому курсу; улучшенный рынок даёт курс лучше.',

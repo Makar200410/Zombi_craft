@@ -1,10 +1,20 @@
 // Axis-separated AABB vs voxel collision. entity: position (feet), velocity, radius, height.
-import { B, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
+import { B, LEAF_BLOCKS, LOG_BLOCKS, WATER_IDS } from '../core/blocks.js';
 import { waterFlow } from './waterShape.js';
 import { SOLID } from './World.js';
 
 const LEAF = new Uint8Array(256);
 for (const id of LEAF_BLOCKS) LEAF[id] = 1;
+
+const NO_VILLAGER_STEP = new Uint8Array(256);
+for (const id of LOG_BLOCKS) NO_VILLAGER_STEP[id] = 1;
+NO_VILLAGER_STEP[B.FENCE] = 1;
+NO_VILLAGER_STEP[B.ELECTRIC_FENCE] = 1;
+NO_VILLAGER_STEP[B.PALISADE] = 1;
+NO_VILLAGER_STEP[B.HAY_BALE] = 1;
+NO_VILLAGER_STEP[B.WORKBENCH] = 1;
+NO_VILLAGER_STEP[B.FURNACE] = 1;
+NO_VILLAGER_STEP[B.ARCANE_TABLE] = 1;
 
 export const GRAVITY = 28;
 const _flow = { x: 0, z: 0, fall: false };
@@ -19,8 +29,48 @@ export function collides(world, px, py, pz, r, h, foliage = false) {
   return false;
 }
 
+function canStepUp(world, nx, py, pz, r, h, fo, e) {
+  if (collides(world, nx, py + 1.01, pz, r, h, fo)) return false;
+  if (e?.kind !== 'villager') return true;
+  const vil = e.village;
+  const y = Math.floor(py + 0.1);
+  const x0 = Math.floor(nx - r), x1 = Math.floor(nx + r - 1e-4);
+  const z0 = Math.floor(pz - r), z1 = Math.floor(pz + r - 1e-4);
+  for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    const id = world.getBlock(x, y, z);
+    if (NO_VILLAGER_STEP[id]) return false;
+    if (vil?.cellIndex && world.index) {
+      const cell = vil.cellIndex.get(world.index(x, y, z));
+      if (cell && cell.b.blocks[cell.i]?.dy >= 1) return false;
+    }
+  }
+  return true;
+}
+
+/** If an entity's horizontal AABB is already overlapping a solid block, nudge it out to the nearest clear offset. */
+function depenetrateHorizontal(world, p, r, h, fo) {
+  if (!collides(world, p.x, p.y + 0.05, p.z, r, h - 0.1, fo)) return;
+  const dirs = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+  ];
+  for (let dist = 0.08; dist <= 0.72; dist += 0.08) {
+    for (const [dx, dz] of dirs) {
+      const len = Math.hypot(dx, dz);
+      const tx = p.x + (dx / len) * dist;
+      const tz = p.z + (dz / len) * dist;
+      if (!collides(world, tx, p.y + 0.05, tz, r, h - 0.1, fo)) {
+        p.x = tx;
+        p.z = tz;
+        return;
+      }
+    }
+  }
+}
+
 export function moveEntity(world, e, dt) {
   const r = e.radius, h = e.height, fo = e.passFoliage !== false;
+  const isVillager = e.kind === 'villager';
   const p = e.position, v = e.velocity;
   const feet = world.getBlock(p.x, p.y + 0.1, p.z), body = world.getBlock(p.x, p.y + h * 0.6, p.z);
   // lava is a thick liquid that sets you on fire
@@ -32,9 +82,9 @@ export function moveEntity(world, e, dt) {
     if (e._lavaAcc > 0.5) { e._lavaAcc = 0; e.damage(7, null, { kind: 'fire' }); }
   }
   e.headInWater = WATER_IDS[world.getBlock(p.x, p.y + h * 0.9, p.z)] === 1;
-  // pushing through leaves is a bit slower
+  // pushing through leaves is a bit slower for non-villagers
   e.inFoliage = fo && (LEAF[feet] || LEAF[body]) === 1;
-  const hs = e.inFoliage ? 0.7 : 1;
+  const hs = (e.inFoliage && !isVillager) ? 0.7 : 1;
   if (!e.flying) {
     if (e.inWater) {
       v.y -= GRAVITY * 0.25 * dt; v.y = Math.max(v.y, -3); v.x *= Math.pow(0.2, dt); v.z *= Math.pow(0.2, dt);
@@ -70,16 +120,42 @@ export function moveEntity(world, e, dt) {
   p.y = ny;
   // X
   let nx = p.x + v.x * dt * hs;
-  if (collides(world, nx, p.y, p.z, r, h, fo)) {
-    if (e.autoStep && (wasOnGround || e.inWater) && !collides(world, nx, p.y + 1.01, p.z, r, h, fo) && !collides(world, p.x, p.y + 1.01, p.z, r, h, fo)) { p.y += 1.01; v.y = Math.max(v.y, 0); }
-    else { nx = v.x > 0 ? Math.floor(nx + r) - r - 1e-3 : Math.floor(nx - r) + 1 + r + 1e-3; v.x = 0; e.hitWall = true; }
+  if (nx !== p.x && collides(world, nx, p.y, p.z, r, h, fo)) {
+    if (e.autoStep && (wasOnGround || e.inWater) && canStepUp(world, nx, p.y, p.z, r, h, fo, e) && !collides(world, p.x, p.y + 1.01, p.z, r, h, fo)) {
+      p.y += 1.01;
+      v.y = Math.max(v.y, 0);
+    } else {
+      const candX = v.x > 0 ? Math.floor(nx + r) - r - 1e-3 : Math.floor(nx - r) + 1 + r + 1e-3;
+      if ((v.x > 0 ? (candX >= p.x - 1e-4 && candX <= nx) : (candX <= p.x + 1e-4 && candX >= nx)) && !collides(world, candX, p.y, p.z, r, h, fo)) {
+        nx = candX;
+      } else {
+        depenetrateHorizontal(world, p, r, h, fo);
+        nx = p.x + v.x * dt * hs;
+        if (collides(world, nx, p.y, p.z, r, h, fo)) nx = p.x;
+      }
+      v.x = 0;
+      e.hitWall = true;
+    }
   }
   p.x = nx;
   // Z
   let nz = p.z + v.z * dt * hs;
-  if (collides(world, p.x, p.y, nz, r, h, fo)) {
-    if (e.autoStep && (wasOnGround || e.inWater) && !collides(world, p.x, p.y + 1.01, nz, r, h, fo) && !collides(world, p.x, p.y + 1.01, p.z, r, h, fo)) { p.y += 1.01; v.y = Math.max(v.y, 0); }
-    else { nz = v.z > 0 ? Math.floor(nz + r) - r - 1e-3 : Math.floor(nz - r) + 1 + r + 1e-3; v.z = 0; e.hitWall = true; }
+  if (nz !== p.z && collides(world, p.x, p.y, nz, r, h, fo)) {
+    if (e.autoStep && (wasOnGround || e.inWater) && canStepUp(world, p.x, p.y, nz, r, h, fo, e) && !collides(world, p.x, p.y + 1.01, p.z, r, h, fo)) {
+      p.y += 1.01;
+      v.y = Math.max(v.y, 0);
+    } else {
+      const candZ = v.z > 0 ? Math.floor(nz + r) - r - 1e-3 : Math.floor(nz - r) + 1 + r + 1e-3;
+      if ((v.z > 0 ? (candZ >= p.z - 1e-4 && candZ <= nz) : (candZ <= p.z + 1e-4 && candZ >= nz)) && !collides(world, p.x, p.y, candZ, r, h, fo)) {
+        nz = candZ;
+      } else {
+        depenetrateHorizontal(world, p, r, h, fo);
+        nz = p.z + v.z * dt * hs;
+        if (collides(world, p.x, p.y, nz, r, h, fo)) nz = p.z;
+      }
+      v.z = 0;
+      e.hitWall = true;
+    }
   }
   p.z = nz;
   // safety: fell out of the world

@@ -1,11 +1,26 @@
 // Villager behaviour "brains" written as generators. Each yield = one frame; `yield` returns dt.
 import * as THREE from 'three';
 import { B, BLOCKS, LOG_BLOCKS } from '../core/blocks.js';
+import {
+  BASE_WOOD_CLEAR_LOG,
+  BASE_STONE_DROP,
+  BASE_FARMER_WHEAT_YIELD,
+  farmWheatYield,
+  woodcutterEffectiveLevel,
+  woodcutterLevelMultiplier,
+  woodcutterTreeYield,
+  ORE_MINING_SLOWDOWN,
+  SMELT_TIME,
+  quarryOreChances,
+  pickQuarryOre,
+  minerOreYield,
+  BLACKSMITH_GUARD_ARMOR_COST,
+} from '../systems/resourceBalance.js';
 
 const rnd = Math.random;
 const pick = (a) => a[Math.floor(rnd() * a.length)];
 const TREE_NAMES = { [B.LOG]: 'дуб', [B.BIRCH_LOG]: 'берёзу', [B.SPRUCE_LOG]: 'ель' };
-const ORE_TASK = { [B.COAL_ORE]: 'Добывает уголь', [B.IRON_ORE]: 'Добывает железо', [B.GOLD_ORE]: 'Добывает золото', [B.CRYSTAL_ORE]: 'Добывает кристаллы' };
+const ORE_TASK = { [B.COAL_ORE]: 'Добывает уголь', [B.IRON_ORE]: 'Добывает железо', [B.GOLD_ORE]: 'Добывает золото (медленно)', [B.CRYSTAL_ORE]: 'Добывает редкие кристаллы', [B.AMETHYST]: 'Добывает редкий аметист' };
 const DEST = { town_hall: 'в ратушу', storehouse: 'на склад', farm: 'в амбар', lumber_camp: 'на лесопилку', mine: 'к шахте' };
 
 export function brainFor(v, mode) {
@@ -119,15 +134,19 @@ function* builderBrain(v) {
     if (b.state === 'destroyed') { b.state = 'constructing'; b.computeOps(); vil.onRebuildStarted(b); }
     if (b.state === 'planned') { b.state = 'constructing'; }
     const skip = (op) => vil.cellOccupied(op.x, op.y, op.z, op.id);
-    const i = b.nextOp(v.position, skip);
+    let i = b.nextOp(v.position, skip);
+    if (i < 0 && (b.state === 'constructing' || b.needsRepair)) {
+      // If all available ops are occupied by a villager/guard standing on the ghost block, pick the op anyway and nudge them off
+      i = b.nextOp(v.position, null);
+    }
     if (i < 0) {
       if (b.state === 'constructing') {
         if (b.remainingOps === 0) { if (!b.reserved.size) vil.completeBuilding(b); yield* v.wait(0.3); continue; }
-        // someone stands where we need to build: step aside
-        v.task = 'Ждёт, пока освободят место';
+        // another builder reserved the remaining ops: step aside briefly
+        v.task = 'Ждёт завершения кладки';
         const t = vil.randomWalkable(b.center, Math.max(b.w, b.d) / 2 + 3);
-        if (t) yield* v.walkTo(t, 1, { maxTime: 8, teleport: false });
-        yield* v.wait(0.5);
+        if (t) yield* v.walkTo(t, 1.5, { maxTime: 6, teleport: false });
+        yield* v.wait(0.4);
         continue;
       }
       // complete building: blocks fine, hp missing → hammer repair
@@ -148,10 +167,12 @@ function* builderBrain(v) {
     b.reserved.add(i);
     const rel = v.onRelease(() => b.reserved.delete(i));
     const opPos = { x: op.x + 0.5, y: b.y + 1, z: op.z + 0.5 };
-    const REACH = 5.2;
-    if (v.distTo(opPos) > REACH || Math.abs(v.position.y - (b.y + 1)) > 3) {
+    const REACH = 6.5;
+    const inTargetCell = Math.floor(v.position.x) === op.x && Math.floor(v.position.z) === op.z;
+    if ((b.distanceTo(v.position) > 3.5 && v.distTo(opPos) > REACH) || Math.abs(v.position.y - (b.y + 1)) > 4.5 || inTargetCell) {
       v.task = (b.state === 'complete' ? 'Идёт чинить: ' : 'Идёт строить: ') + b.name;
-      yield* v.walkTo(opPos, 3.5, { maxTime: 35 });
+      const standPos = vil.builderStandSpot ? vil.builderStandSpot(b, op, v) : opPos;
+      yield* v.walkTo(standPos, 2.4, { maxTime: 8 });
     }
     const repairing = b.state === 'complete';
     v.task = (op.kind === CLEAR ? 'Расчищает место: ' : repairing ? 'Чинит: ' : 'Строит: ') + b.name;
@@ -163,15 +184,22 @@ function* builderBrain(v) {
     const dur = op.kind === CLEAR ? (def && def.solid ? 0.35 + Math.min(1.2, def.hardness * 0.15) : 0.15) : 0.55;
     v.model.play(op.kind === CLEAR && def && def.tool === 'pick' ? 'mine' : 'hammer');
     yield* v.wait(dur / speed);
-    if (!b.opDone(op) && !vil.cellOccupied(op.x, op.y, op.z, op.id) && b.state !== 'destroyed') {
+    if (!b.opDone(op) && b.state !== 'destroyed') {
+      if (vil.cellOccupied(op.x, op.y, op.z, op.id)) {
+        vil.nudgeEntitiesOutOfCell?.(op.x, op.y, op.z, op.id, b);
+      }
       const prev = game.world.getBlock(op.x, op.y, op.z);
       b.applyOp(i, v);
+      if (vil.cellOccupied(op.x, op.y, op.z, op.id)) {
+        vil.nudgeEntitiesOutOfCell?.(op.x, op.y, op.z, op.id, b);
+        vil.rescueStuckVillagers?.();
+      }
       const p = { x: op.x + 0.5, y: op.y + 0.5, z: op.z + 0.5 };
       if (op.kind === CLEAR) {
         game.particles?.blockBreak(op.x, op.y, op.z, prev);
         if (BLOCKS[prev]?.solid) game.audio?.play(LOG_BLOCKS.has(prev) ? 'dig_wood' : 'dig_stone', { pos: p, volume: 0.5 });
-        // leftovers: wood from cleared trees goes to stock
-        if (LOG_BLOCKS.has(prev)) game.state.add('wood', 1);
+        // leftovers: wood from cleared trees goes to stock (5x reduced base)
+        if (LOG_BLOCKS.has(prev)) game.state.add('wood', BASE_WOOD_CLEAR_LOG);
       } else {
         beat++;
         game.audio?.play(beat % 2 ? 'hammer' : 'place_block', { pos: p, volume: 0.55, pitch: 0.9 + rnd() * 0.2 });
@@ -191,7 +219,9 @@ function* woodcutterBrain(v) {
     const base = (v.workplace && v.workplace.isComplete) ? v.workplace : vil.townHall;
     if (!base) { yield* idleStep(v); continue; }
     if (v.workplace && !v.workplace.isComplete && v.workplace.state !== 'destroyed' && !vil.townHall) { yield* waitForWorkplace(v); continue; }
-    if (v.carryTotal >= 14) { yield* deposit(v); continue; }
+    const wcLevel = woodcutterEffectiveLevel(v);
+    const carryCap = Math.max(9, Math.round(10 * woodcutterLevelMultiplier(wcLevel)));
+    if (v.carryTotal >= carryCap) { yield* deposit(v); continue; }
     // replant felled trees; when the woods thin out, plant new ones (checked now and then)
     let sap = vil.takeReplantSpot(base, v);
     if (!sap && v.workplace === base && (v._forestT = (v._forestT || 0) - 1) <= 0) { v._forestT = 4; sap = vil.forestSpot(base); }
@@ -204,8 +234,12 @@ function* woodcutterBrain(v) {
         v.face({ x: sap.x + 0.5, z: sap.z + 0.5 });
         yield* v.work('hoe', 1.6);
         vil.plantSapling(sap);
+      } else {
+        const si = vil.replantSpots.indexOf(sap);
+        if (si >= 0) vil.replantSpots.splice(si, 1);
       }
       v.release(rel);
+      yield;
       continue;
     }
     v.task = 'Ищет дерево';
@@ -220,19 +254,20 @@ function* woodcutterBrain(v) {
     vil.treeReserved.add(key);
     const rel = v.onRelease(() => vil.treeReserved.delete(key));
     v.task = 'Идёт к дереву';
-    const ok = yield* v.walkTo({ x: tree.x + 0.5, y: tree.y, z: tree.z + 0.5 }, 1.7, { maxTime: 40 });
-    if (!ok || game.world.getBlock(tree.x, tree.y, tree.z) !== tree.id) { v.release(rel); tree.bad = true; continue; }
-    v.task = 'Рубит ' + (TREE_NAMES[tree.id] || 'дерево');
+    const ok = yield* v.walkTo({ x: tree.x + 0.5, y: tree.y, z: tree.z + 0.5 }, 2.1, { maxTime: 40, dyMax: 2.8 });
+    if (!ok || game.world.getBlock(tree.x, tree.y, tree.z) !== tree.id) { v.release(rel); tree.bad = true; yield; continue; }
+    v.task = 'Рубит ' + (TREE_NAMES[tree.id] || 'дерево') + ' (ур. ' + wcLevel + ')';
     v.face({ x: tree.x + 0.5, z: tree.z + 0.5 });
     const hitP = { x: tree.x + 0.5, y: tree.y + 0.8, z: tree.z + 0.5 };
     yield* v.work('chop', 2.3 / v.workSpeed, 0.5, () => {
       game.audio?.play('chop', { pos: hitP, volume: 0.6, pitch: 0.9 + rnd() * 0.2 });
       game.particles?.blockHit(tree.x, tree.y, tree.z, tree.id, hitP);
     });
-    if (game.world.getBlock(tree.x, tree.y, tree.z) !== tree.id) { v.release(rel); continue; }
+    if (game.world.getBlock(tree.x, tree.y, tree.z) !== tree.id) { v.release(rel); tree.bad = true; yield; continue; }
     v.task = 'Валит ' + (TREE_NAMES[tree.id] || 'дерево');
     const logs = yield* fellTree(v, tree);
-    v.addCarry('wood', logs * 4);
+    v.addCarry('wood', woodcutterTreeYield(logs, wcLevel));
+    v.gainWoodcutterXp?.(1);
     vil.onTreeFelled(tree);
     v.release(rel);
   }
@@ -267,7 +302,8 @@ function* farmerBrain(v) {
   while (true) {
     const farm = v.workplace;
     if (!farm || farm.type !== 'farm' || !farm.isComplete) { if (v.carryTotal > 0) yield* deposit(v); yield* waitForWorkplace(v, 'Ждёт ферму'); continue; }
-    if (v.carryTotal >= 8) { yield* deposit(v); continue; }
+    const carryCap = Math.max(2, Math.round(2 * (farm.levelWorkBonus || 1)));
+    if (v.carryTotal >= carryCap) { yield* deposit(v); continue; }
     // choose a plot: ripe → harvest, bare soil → till, empty farmland → sow
     let best = null, bestScore = Infinity, kind = null;
     for (const p of farm.plots) {
@@ -285,9 +321,12 @@ function* farmerBrain(v) {
     if (!best) {
       if (v.carryTotal > 0) { yield* deposit(v); continue; }
       // tend the crops
+      if (!farm.contains(v.position.x, v.position.z) || Math.abs(v.position.y - (farm.y + 1)) > 0.6) {
+        yield* v.walkTo(farm.door, 0.9, { maxTime: 18, dyMax: 0.8 });
+      }
       const p = pick(farm.plots);
       v.task = 'Ухаживает за посевами';
-      yield* v.walkTo({ x: p.x + 0.5, y: p.y + 1, z: p.z + 0.5 }, 1.2, { maxTime: 15 });
+      yield* v.walkTo({ x: p.x + 0.5, y: p.y + 1, z: p.z + 0.5 }, 0.75, { maxTime: 15, dyMax: 0.8 });
       v.face({ x: p.x + 0.5, z: p.z + 0.5 });
       yield* v.work('hoe', 2.5, 0.6);
       const a = w.getBlock(p.x, p.y + 1, p.z);
@@ -299,7 +338,10 @@ function* farmerBrain(v) {
     vil.plotReserved.add(key);
     const rel = v.onRelease(() => vil.plotReserved.delete(key));
     v.task = kind === 'harvest' ? 'Идёт собирать урожай' : kind === 'till' ? 'Идёт пахать' : 'Идёт сеять';
-    yield* v.walkTo({ x: best.x + 0.5, y: best.y + 1, z: best.z + 0.5 }, 1.3, { maxTime: 20 });
+    if (!farm.contains(v.position.x, v.position.z) || Math.abs(v.position.y - (farm.y + 1)) > 0.6) {
+      yield* v.walkTo(farm.door, 0.9, { maxTime: 18, dyMax: 0.8 });
+    }
+    yield* v.walkTo({ x: best.x + 0.5, y: best.y + 1, z: best.z + 0.5 }, 0.75, { maxTime: 20, dyMax: 0.8 });
     v.face({ x: best.x + 0.5, z: best.z + 0.5 });
     const P = { x: best.x + 0.5, y: best.y + 1.2, z: best.z + 0.5 };
     if (kind === 'harvest') {
@@ -308,7 +350,13 @@ function* farmerBrain(v) {
       if (w.getBlock(best.x, best.y + 1, best.z) === B.WHEAT_3) {
         vil.editBlock(best.x, best.y + 1, best.z, B.AIR);
         game.particles?.emit({ pos: P, box: 0.4, count: 8, colors: [0xe8c860, 0xd0a840, 0xf0e090], speed: 1.5, dir: { x: 0, y: 2, z: 0 }, gravity: 8, life: 0.7, size: 0.12 });
-        const yieldAmt = 1.5 * (game.state.researchDone.has('agriculture') ? 1.5 : 1) * (vil.hasBuilding('granary') ? 1.25 : 1) * (vil.hasWonder('ziggurat') ? 1.25 : 1) * (v.workplace?.levelWorkBonus || 1);
+        const yieldAmt = farmWheatYield({
+          level: farm.level || 1,
+          plotsCount: farm.plots?.length || 36,
+          hasAgriculture: game.state.researchDone.has('agriculture'),
+          hasGranary: vil.hasBuilding('granary'),
+          hasZiggurat: vil.hasWonder('ziggurat'),
+        });
         v.addCarry('food', yieldAmt);
         v.task = 'Сеет пшеницу';
         yield* v.work('hoe', 0.7);
@@ -336,7 +384,7 @@ function* minerBrain(v) {
   while (true) {
     const mine = v.workplace;
     if (!mine || mine.type !== 'mine' || !mine.isComplete) { if (v.carryTotal > 0) yield* deposit(v); yield* waitForWorkplace(v, 'Ждёт шахту'); continue; }
-    if (v.carryTotal >= 8) { yield* deposit(v); continue; }
+    if (v.carryTotal >= 5) { yield* deposit(v); continue; }
     const t = vil.nextQuarryBlock(mine);
     if (t && t.torch) {
       v.task = 'Ставит факел';
@@ -346,19 +394,32 @@ function* minerBrain(v) {
       continue;
     }
     if (!t) {
-      // quarry finished: work the deepest face
+      // quarry finished: work the deepest face (stone yield reduced by 2x; gold slower than iron; rare resources rarer than gold)
       const deep = vil.quarryBottom(mine);
       v.task = 'Добывает камень в глубине карьера';
       yield* v.walkTo(deep, 1.5, { maxTime: 30 });
       v.face({ x: deep.x + 1, z: deep.z + 1 });
       yield* v.work('mine', 4.5 / v.workSpeed, 0.5, () => game.audio?.play('pick_hit', { pos: deep, volume: 0.5 }));
-      v.addCarry('stone', 1);
-      // ore finds: iron is scarce in a small mine and grows with the mine's level (+30% per level)
-      const r = rnd();
-      const lucky = game.state.researchDone.has('mining') ? 1.5 : 1, lvl = 1 + 0.3 * ((mine.level || 1) - 1);
-      const pC = 0.2 * lucky, pI = pC + 0.08 * lvl * lucky, pG = pI + 0.05 * lvl * lucky, pX = pG + 0.03 * lucky;
-      if (r < pC) v.addCarry('coal', 1); else if (r < pI) v.addCarry('iron_ore', 1); else if (r < pG) v.addCarry('gold_ore', 1); else if (r < pX) v.addCarry('crystal', 1);
-      if (game.state.researchDone.has('nuclear') && rnd() < 0.1 * lvl) v.addCarry('uranium', 1);
+      v.addCarry('stone', BASE_STONE_DROP);
+      const chances = quarryOreChances({
+        deep: true,
+        mineLevel: mine.level || 1,
+        hasMiningTech: game.state.researchDone.has('mining'),
+        hasNuclearTech: game.state.researchDone.has('nuclear'),
+      });
+      const found = pickQuarryOre(rnd(), chances);
+      if (found) {
+        if (found === 'gold_ore' || found === 'crystal') {
+          v.task = found === 'gold_ore' ? 'Высекает золотую жилу (медленно)' : 'Осторожно добывает редкий кристалл';
+          yield* v.work('mine', (found === 'gold_ore' ? 2.6 : 4.2) / v.workSpeed, 0.5, () => game.audio?.play('pick_hit', { pos: deep, volume: 0.5 }));
+        }
+        v.addCarry(found, minerOreYield(found, 1));
+      }
+      if (chances.uranium > 0 && rnd() < chances.uranium) {
+        v.task = 'Извлекает редкую урановую руду';
+        yield* v.work('mine', 5.0 / v.workSpeed, 0.5, () => game.audio?.play('pick_hit', { pos: deep, volume: 0.5 }));
+        v.addCarry('uranium', 1);
+      }
       continue;
     }
     const key = t.x + ',' + t.y + ',' + t.z;
@@ -367,12 +428,18 @@ function* minerBrain(v) {
     v.task = 'Копает карьер';
     yield* v.walkTo({ x: t.x + 0.5, y: t.y + 1, z: t.z + 0.5 }, 2.2, { maxTime: 30, dyMax: 2.5 });
     const id = w.getBlock(t.x, t.y, t.z);
-    if (!BLOCKS[id].solid || id === B.BEDROCK) { v.release(rel); continue; }
+    if (!BLOCKS[id].solid || id === B.BEDROCK) {
+      if (id !== B.AIR && id !== B.BEDROCK && !BLOCKS[id].solid) vil.editBlock(t.x, t.y, t.z, B.AIR);
+      v.release(rel);
+      yield;
+      continue;
+    }
     v.task = ORE_TASK[id] || (id === B.STONE || id === B.COBBLESTONE ? 'Добывает камень' : 'Копает карьер');
     v.face({ x: t.x + 0.5, z: t.z + 0.5 });
     const P = { x: t.x + 0.5, y: t.y + 0.9, z: t.z + 0.5 };
     const smith = game.state.researchDone.has('smithing') ? 1.4 : 1;
-    const dur = Math.min(5, 0.6 + BLOCKS[id].hardness * 0.55) / (v.workSpeed * smith);
+    const oreSlow = ORE_MINING_SLOWDOWN[BLOCKS[id].name] || 1;
+    const dur = Math.min(12, (0.6 + BLOCKS[id].hardness * 0.55) * oreSlow) / (v.workSpeed * smith);
     yield* v.work('mine', dur, 0.5, () => { game.audio?.play(BLOCKS[id].tool === 'pick' ? 'pick_hit' : 'dig_dirt', { pos: P, volume: 0.5 }); game.particles?.blockHit(t.x, t.y, t.z, id, P); });
     if (w.getBlock(t.x, t.y, t.z) === id) {
       vil.editBlock(t.x, t.y, t.z, B.AIR);
@@ -381,17 +448,25 @@ function* minerBrain(v) {
       const drop = BLOCKS[id].drop || {};
       const lvl = 1 + 0.3 * ((mine.level || 1) - 1);
       for (const k in drop) if (drop[k] > 0) {
-        // ore veins give one piece of ore, a second one more often in a well-developed mine
-        const n = (k === 'iron_ore' || k === 'gold_ore') ? 1 + (rnd() < 0.12 * (lvl - 1) ? 1 : 0) : drop[k];
-        v.addCarry(k, n);
+        // iron veins yield more than gold veins; coal and iron are scaled by minerOreYield (2.5x reduction)
+        const raw = k === 'iron_ore'
+          ? 1 + (rnd() < 0.2 * (lvl - 1) ? 1 : 0)
+          : k === 'gold_ore'
+            ? 1 + (rnd() < 0.08 * (lvl - 1) ? 1 : 0)
+            : drop[k];
+        v.addCarry(k, minerOreYield(k, raw));
       }
       if (id === B.STONE || id === B.DARK_STONE) {
-        // even a shallow mine turns up the valuable ores now and then: gold, mana crystals and (once nuclear
-        // physics is known) uranium — more of them as the mine is upgraded
-        const r = rnd(), lucky = game.state.researchDone.has('mining') ? 1.5 : 1;
-        const pC = 0.08 * lucky, pI = pC + 0.03 * lvl * lucky, pG = pI + 0.015 * lvl * lucky, pX = pG + 0.008 * lvl * lucky;
-        if (r < pC) v.addCarry('coal', 1); else if (r < pI) v.addCarry('iron_ore', 1); else if (r < pG) v.addCarry('gold_ore', 1); else if (r < pX) v.addCarry('crystal', 1);
-        if (game.state.researchDone.has('nuclear') && rnd() < 0.025 * lvl) v.addCarry('uranium', 1);
+        // strict rarity order: coal > iron_ore > gold_ore > crystal > uranium
+        const chances = quarryOreChances({
+          deep: false,
+          mineLevel: mine.level || 1,
+          hasMiningTech: game.state.researchDone.has('mining'),
+          hasNuclearTech: game.state.researchDone.has('nuclear'),
+        });
+        const found = pickQuarryOre(rnd(), chances);
+        if (found) v.addCarry(found, minerOreYield(found, 1));
+        if (chances.uranium > 0 && rnd() < chances.uranium) v.addCarry('uranium', 1);
       }
     }
     v.release(rel);
@@ -409,26 +484,29 @@ function* blacksmithBrain(v) {
     yield* v.walkTo(spot, 0.8, { maxTime: 30 });
     const anvil = vil.findBlockNear(spot, B.IRON_BLOCK, 2) || f.center;
     v.face({ x: anvil.x + 0.5, z: anvil.z + 0.5 });
-    const has = (st.resources.iron || 0) >= 2 && (st.resources.coal || 0) >= 1;
+    const armorCost = BLACKSMITH_GUARD_ARMOR_COST;
+    const hasArmorMats = (st.resources.iron || 0) >= armorCost.iron && (st.resources.coal || 0) >= armorCost.coal;
+    const hasSurplusForCoins = (st.resources.iron || 0) >= 60 && (st.resources.coal || 0) >= 20;
     const A = { x: anvil.x + 0.5, y: anvil.y + 1.05, z: anvil.z + 0.5 };
     const oreKind = (st.resources.coal || 0) >= 1 ? ((st.resources.iron_ore || 0) >= 2 ? 'iron' : (st.resources.gold_ore || 0) >= 2 ? 'gold' : null) : null;
     if (oreKind) {
-      // smelt raw ore in the forge furnace first
+      // smelt raw ore in the forge furnace first (gold smelting is slower than iron)
       const furnace = vil.findBlockNear(spot, B.FURNACE, 4) || anvil;
       v.face({ x: furnace.x + 0.5, z: furnace.z + 0.5 });
-      v.task = oreKind === 'iron' ? 'Плавит железную руду' : 'Плавит золотую руду';
+      v.task = oreKind === 'iron' ? 'Плавит железную руду' : 'Плавит золотую руду (медленно)';
       const F = { x: furnace.x + 0.5, y: furnace.y + 1, z: furnace.z + 0.5 };
-      yield* v.work('hammer', 6 / v.workSpeed, 0.9, () => game.particles?.emit({ pos: F, count: 5, colors: [0xff6a10, 0xffb040, 0x5a5a5a], additive: true, speed: 1.2, dir: { x: 0, y: 2, z: 0 }, gravity: -1, life: 0.8, size: 0.14 }));
-      if (st.spend({ [oreKind + '_ore']: 2, coal: 1 })) st.add(oreKind, 2);
+      const smeltSec = (SMELT_TIME.blacksmith[oreKind] || 6) / v.workSpeed;
+      yield* v.work('hammer', smeltSec, 0.9, () => game.particles?.emit({ pos: F, count: 5, colors: [0xff6a10, 0xffb040, 0x5a5a5a], additive: true, speed: 1.2, dir: { x: 0, y: 2, z: 0 }, gravity: -1, life: 0.8, size: 0.14 }));
+      if (st.spend({ [oreKind + '_ore']: 2, coal: 1 })) st.add(oreKind, oreKind === 'gold' ? 1 : 2);
       continue;
     }
-    if (has && vil.armory.level < 5) {
+    if (hasArmorMats && vil.armory.level < 5) {
       v.task = pick(['Куёт оружие', 'Куёт доспехи для стражи', 'Раздувает горн']);
       yield* v.work('hammer', 8 / v.workSpeed, 0.45, () => {
         game.audio?.play('hammer', { pos: A, volume: 0.6, pitch: 1.1 + rnd() * 0.2 });
         game.particles?.emit({ pos: A, count: 6, colors: [0xffd060, 0xff8a20, 0xffffa0], additive: true, speed: 3, dir: { x: 0, y: 2, z: 0 }, gravity: 10, life: 0.5, size: 0.08 });
       });
-      if (st.spend({ iron: 2, coal: 1 })) {
+      if (st.spend(armorCost)) {
         cycle++;
         vil.armory.progress++;
         if (vil.armory.progress >= 3 + vil.armory.level) {
@@ -438,12 +516,12 @@ function* blacksmithBrain(v) {
         }
         if (cycle % 3 === 0) st.add('gold', 1);
       }
-    } else if (has) {
-      v.task = 'Куёт монеты';
-      yield* v.work('hammer', 8, 0.45, () => game.audio?.play('hammer', { pos: A, volume: 0.5 }));
-      if (st.spend({ iron: 2, coal: 1 })) st.add('gold', 1);
+    } else if (hasSurplusForCoins) {
+      v.task = 'Куёт монеты из излишков';
+      yield* v.work('hammer', 11 / v.workSpeed, 0.45, () => game.audio?.play('hammer', { pos: A, volume: 0.5 }));
+      if (st.spend(armorCost)) st.add('gold', 1);
     } else {
-      v.task = 'Ждёт железо и уголь';
+      v.task = vil.armory.level < 5 ? 'Ждёт железо и уголь' : 'Следит за горном';
       yield* v.work('hammer', 3, 1.2, () => game.audio?.play('hammer', { pos: A, volume: 0.3, pitch: 0.8 }));
       yield* v.wait(3);
     }
@@ -469,10 +547,11 @@ function* smelterBrain(v) {
       if (rnd() < 0.3) game.audio?.play('fire_impact', { pos: F, volume: 0.25, pitch: 0.8 });
     };
     if (ore) {
-      v.task = ore === 'iron' ? 'Выплавляет железо' : 'Выплавляет золото';
-      yield* v.work('hammer', 7 / v.workSpeed, 0.8, sparks);
+      v.task = ore === 'iron' ? 'Выплавляет железо' : 'Выплавляет золото (медленно)';
+      const smeltSec = (SMELT_TIME.smelter[ore] || 7) / v.workSpeed;
+      yield* v.work('hammer', smeltSec, 0.8, sparks);
       if (st.spend({ [ore + '_ore']: 3, coal: 1 })) {
-        const n = 4 + ((f.level || 1) >= 3 ? 1 : 0);
+        const n = (ore === 'gold' ? 3 : 4) + ((f.level || 1) >= 3 ? 1 : 0);
         st.add(ore, n);
         vil.bus.emit('village:gain', { pos: F, text: '+' + n, res: ore });
       }
@@ -548,6 +627,7 @@ function* guardBrain(v) {
       v.model.blocking = false;
       continue;
     }
+    if (vil.isInQuarryPit?.(v.position.x, v.position.y, v.position.z)) v.climbOutOfPit?.();
     const z = vil.guardTarget(v);
     if (z) { yield* meleeFight(v, z); continue; }
     // patrol
@@ -555,9 +635,12 @@ function* guardBrain(v) {
     v.task = night ? (game.waves?.spawnDirections?.length ? 'Держит рубеж против волны' : 'Стоит на страже') : 'Патрулирует';
     const p = night ? vil.guardPost(v) : vil.patrolPoint(v);
     if (p) {
-      const walk = v.walkTo(p, 1.5, { maxTime: 25, teleport: false, speed: v.walkSpeed * 0.9 });
+      const walk = v.walkTo(p, 1.5, { maxTime: 22, teleport: true, speed: v.walkSpeed * 0.95 });
       let r;
-      while (!(r = walk.next(yield)).done) { if (vil.guardTarget(v)) break; }
+      while (!(r = walk.next(yield)).done) {
+        if (vil.isInQuarryPit?.(v.position.x, v.position.y, v.position.z)) v.climbOutOfPit?.();
+        if (vil.guardTarget(v)) break;
+      }
       v.stopMove();
     }
     // look around
@@ -574,6 +657,7 @@ function* guardBrain(v) {
 function* meleeFight(v, z) {
   const game = v.game, vil = v.village;
   let repath = 0, cd = 0.2, req = null, path = null, pi = 0, retarget = 0.8, shootCd = 0, bashCd = 2 + rnd() * 2, lastClose = 0;
+  let chaseX = v.position.x, chaseZ = v.position.z, chaseT = 0;
   const defR = vil.defenseRadius;       // guards hold the base and don't chase the dead out of it
   const hasBow = () => game.state.researchDone.has('archery');
   const setBow = (on) => { const want = on ? 'bow' : null; if (v.heldOverride !== want) { v.heldOverride = want; v.updateTool(); } };
@@ -581,6 +665,7 @@ function* meleeFight(v, z) {
   while (!z.dead) {
     const dt = yield;
     if (z.dead || v.dead) break;
+    if (vil.isInQuarryPit?.(v.position.x, v.position.y, v.position.z)) v.climbOutOfPit?.();
     if (v.hp < v.maxHp * (lastClose >= 2 ? 0.45 : 0.3)) break;   // retreat (earlier when outnumbered; guardBrain handles healing)
     cd -= dt; repath -= dt; retarget -= dt; shootCd -= dt; bashCd -= dt;
     // switch to a more urgent target now and then
@@ -592,9 +677,9 @@ function* meleeFight(v, z) {
     const px = v.position.x, pz = v.position.z;
     const d = Math.hypot(z.position.x - px, z.position.z - pz);
     const zIn = vil.baseDist(z.position), meIn = vil.baseDist(v.position);
-    if (meIn > defR + 4) break;                                   // too far out: back to the post
-    if (zIn > defR + (hasBow() ? 14 : 4)) break;                  // it left the base: let it go
-    if (d > vil.guardVision + 6) break;
+    if (meIn > defR + 6) break;                                   // too far out: back to the post
+    if (zIn > defR + (hasBow() ? 16 : 6)) break;                  // it left the base: let it go
+    if (d > vil.guardVision + 8) break;
     // situational awareness
     let close = 0, cx = 0, cz = 0, exploder = null;
     for (const o of vil.zombies) {
@@ -615,7 +700,9 @@ function* meleeFight(v, z) {
         setBow(false);
         v.task = 'Отходит от подрывника';
         const ax = px - exploder.z.position.x, az = pz - exploder.z.position.z, al = Math.hypot(ax, az) || 1;
-        v.steerTo(px + ax / al * 3, pz + az / al * 3, 3.6, true);
+        const rx = px + ax / al * 3, rz = pz + az / al * 3;
+        if (!vil.isInQuarryPit?.(rx, v.position.y, rz)) v.steerTo(rx, rz, 3.6, false);
+        else v.unstick?.(vil.townHall?.door || v.position);
       }
       continue;
     }
@@ -629,8 +716,9 @@ function* meleeFight(v, z) {
       if (th) { const tx = th.center.x - px, tz = th.center.z - pz, tl = Math.hypot(tx, tz) || 1; bx += tx / tl * 0.8; bz += tz / tl * 0.8; }
       const bl = Math.hypot(bx, bz) || 1;
       v.face(z.position);
-      v.steerTo(px + bx / bl * 2.5, pz + bz / bl * 2.5, 2.2, true);
-      if (d < 1.9 && cd <= 0) { cd = 0.9; yield* swing(v, z, false); }
+      const rx = px + bx / bl * 2.5, rz = pz + bz / bl * 2.5;
+      if (!vil.isInQuarryPit?.(rx, v.position.y, rz)) v.steerTo(rx, rz, 2.2, false);
+      if (d < 2.2 && cd <= 0) { cd = 0.9; yield* swing(v, z, false); }
       v.model.blocking = cd > 0.05 && cd < 0.6;
       continue;
     }
@@ -648,16 +736,17 @@ function* meleeFight(v, z) {
     if (high || zIn > defR) {
       v.task = high ? 'Ждёт, когда тварь спикирует' : 'Держит оборону на границе';
       v.model.blocking = true;
-      if (meIn > defR - 2 && vil.townHall) { const c = vil.townHall.center; v.steerTo(c.x, c.z, 2.5, true); }
+      if (meIn > defR - 2 && vil.townHall) { const c = vil.townHall.center; v.steerTo(c.x, c.z, 2.5, false); }
       else v.stopMove();
       v.face(z.position);
       continue;
     }
     // 4) melee with sword & shield
-    if (d < 1.9 && Math.abs(z.position.y - v.position.y) < 2) {
+    if (d < 2.15 && Math.abs(z.position.y - v.position.y) < 2.3) {
       v.task = 'Сражается мечом и щитом';
       v.stopMove();
       v.face(z.position);
+      chaseT = 0; chaseX = px; chaseZ = pz;
       if (cd <= 0) {
         cd = 0.8;
         const bash = bashCd <= 0 && z.type !== 'brute' && z.type !== 'necromancer';
@@ -668,18 +757,29 @@ function* meleeFight(v, z) {
       v.model.blocking = cd > 0.08 && cd < 0.55;
       continue;
     }
-    // chase: raise the shield when getting close
+    // chase: raise the shield when getting close, and repath / unstick if blocked on the way to the zombie
     v.task = 'Бежит на врага';
     v.model.blocking = d < 3.2;
-    const spd = v.model.blocking ? 3.0 : 3.9;
-    if (d < 5 && game.world.lineOfSight(v.eye, z.center)) { v.steerTo(z.position.x, z.position.z, spd, true); continue; }
-    if (repath <= 0 && !req) { req = vil.requestPath(v, z.position, 1); repath = 1.0; }
+    const spd = v.model.blocking ? 3.2 : 4.1;
+    chaseT += dt;
+    if (chaseT >= 1.8) {
+      if (Math.hypot(px - chaseX, pz - chaseZ) < 0.35) {
+        if (path) { path = null; req = null; repath = 0; }
+        else { v.unstick?.(z.position); path = null; req = null; repath = 0; }
+      }
+      chaseX = v.position.x; chaseZ = v.position.z; chaseT = 0;
+    }
+    if (d < 4.5 && game.world.lineOfSight(v.eye, z.center) && Math.abs(z.position.y - v.position.y) < 1.5) {
+      v.steerTo(z.position.x, z.position.z, spd, false);
+      continue;
+    }
+    if (repath <= 0 && !req) { req = vil.requestPath(v, z.position, 1); repath = 0.85; }
     if (req && req.done) { path = req.path; pi = 1; req = null; }
     if (path && pi < path.length) {
       const wpt = path[pi];
       if (Math.hypot(wpt.x + 0.5 - v.position.x, wpt.z + 0.5 - v.position.z) < 0.5) pi++;
       else v.steerTo(wpt.x + 0.5, wpt.z + 0.5, spd, wpt.y > v.position.y + 0.4);
-    } else v.steerTo(z.position.x, z.position.z, spd, true);
+    } else v.steerTo(z.position.x, z.position.z, spd, false);
   }
   v.model.blocking = false;
   v.fightTarget = null;

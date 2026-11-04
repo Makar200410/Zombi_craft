@@ -1,6 +1,7 @@
 // Command mode (Clash-of-Clans style) UI: tab bar, build menu, villagers & jobs, placement bar, inspectors.
 import { TECHS } from '../systems/research.js';
 import { AGES, ageOf, checkNextAge, advanceAge } from '../systems/ages.js';
+import { woodcutterEffectiveLevel, woodcutterLevelMultiplier, farmHarvestMultiplier, buildingStorageCapacity } from '../systems/resourceBalance.js';
 import { MARKET_VALUE } from '../village/Village.js';
 import { RESOURCE_LABELS } from '../core/items.js';
 import {
@@ -95,6 +96,8 @@ export class CommandPanel {
     bus.on('placement:changed', (p) => this.onPlacement(p || {}));
     bus.on('research:done', () => { if (this.tab === 'build') this.renderBuild(); });
     bus.on('building:completed', () => { if (this.tab === 'build') this.renderBuild(); });
+    bus.on('building:upgraded', () => { if (this.tab === 'build') this.renderBuild(); });
+    bus.on('age:changed', () => { if (this.tab === 'build') this.renderBuild(); });
     bus.on('mode:changed', ({ mode }) => { if (mode !== 'command') { this.closeTab(true); this.cancelPlacement(true); this.deselect(true); } });
   }
 
@@ -145,8 +148,9 @@ export class CommandPanel {
     const lockedBy = ageLock == null && t?.research && !st.researchDone.has(t.research) ? t.research : null;
     const limited = t?.maxCount != null && isFinite(t.maxCount);
     const maxed = limited && count >= t.maxCount;
-    const afford = st.canAfford(t?.cost || {});
-    return { t, count, lockedBy, ageLock, maxed, afford, limited };
+    const cost = v?.buildCost ? v.buildCost(id) : (t?.cost || {});
+    const afford = st.canAfford(cost);
+    return { t, cost, count, lockedBy, ageLock, maxed, afford, limited };
   }
   renderBuild() {
     for (const b of this.catBar.children) toggle(b, 'sel', b.dataset.cat === this.cat);
@@ -154,7 +158,7 @@ export class CommandPanel {
     const ids = BUILDING_ORDER.filter(id => BUILDING_TYPES[id] && !BUILDING_TYPES[id].auto && id !== 'town_hall' && (this.cat === 'all' || BUILDING_TYPES[id].category === this.cat));
     if (!ids.length) { this.cards.append(h('div.zc-empty', Object.keys(BUILDING_TYPES).length ? 'Нет зданий в этой категории' : 'Список зданий загружается…')); return; }
     for (const id of ids) {
-      const { t, count, lockedBy, ageLock, maxed, afford, limited } = this.buildable(id);
+      const { t, cost, count, lockedBy, ageLock, maxed, afford, limited } = this.buildable(id);
       const card = h('button.zc-bcard.ui-i' + (lockedBy || ageLock != null ? '.locked' : '') + (!afford ? '.poor' : '') + (maxed ? '.maxed' : ''), {
         'data-cat': t.category || 'economy', title: t.desc || '', onclick: () => this.chooseBuilding(id),
       },
@@ -162,7 +166,7 @@ export class CommandPanel {
       h('div.zc-bcard-name', t.name || id),
       (count || limited) ? h('div.zc-bcard-count', limited ? `${count}/${t.maxCount}` : '×' + count) : null,
       ageLock != null ? h('div.zc-bcard-lock', img(glyph('lock')), AGES[ageLock].name)
-        : lockedBy ? h('div.zc-bcard-lock', img(glyph('lock')), TECHS[lockedBy]?.name || lockedBy) : costRow(this.game.state, t.cost),
+        : lockedBy ? h('div.zc-bcard-lock', img(glyph('lock')), TECHS[lockedBy]?.name || lockedBy) : costRow(this.game.state, cost),
       t.popBonus ? h('div.zc-bcard-tag', '+' + t.popBonus + ' жит.') : null);
       this.cards.append(card);
     }
@@ -183,12 +187,13 @@ export class CommandPanel {
   }
   startPlacement(id) {
     const t = BUILDING_TYPES[id];
+    const cost = this.game.village?.buildCost ? this.game.village.buildCost(id) : (t?.cost || {});
     this.placing = id;
     this.closeTab(true);
     this.deselect();
     this.placeIcon.src = buildingIcon(id);
     this.placeName.textContent = t?.name || id;
-    clear(this.placeCost).append(costRow(this.game.state, t?.cost || {}));
+    clear(this.placeCost).append(costRow(this.game.state, cost));
     toggle(this.rotBtn, 'hidden', !!t?.line);
     toggle(this.root, 'placing', true);
     this.onPlacement({ active: true, typeId: id, valid: true, line: !!t?.line, lineStarted: false });
@@ -378,9 +383,12 @@ export class CommandPanel {
   villagerRow(v) {
     const hp = bar('hp', ''), hu = bar('hunger', '');
     hp.set(v.hp, v.maxHp, ''); const hunger = this.hungerFrac(v); hu.set(hunger, 1, '');
+    const title = v.job === 'woodcutter'
+      ? `${v.name || 'Житель'} · Ур. ${woodcutterEffectiveLevel(v)}`
+      : (v.name || 'Житель');
     return h('div.zc-vrow',
       h('button.zc-vrow-main.ui-i', { onclick: () => this.focusEntity(v) },
-        h('div.zc-vrow-name', v.name || 'Житель'), h('div.zc-vrow-task', v.task || '…'),
+        h('div.zc-vrow-name', title), h('div.zc-vrow-task', v.task || '…'),
         h('div.zc-vrow-bars', hp.el, hu.el)),
       this.jobSelect(v));
   }
@@ -480,12 +488,12 @@ export class CommandPanel {
       else if (b.state === 'complete' && !b.upgrade) el.append(h('div.zc-note', why));
       this._ins.upSig = this._upSig(b);
     }
-    if (b.type === 'town_hall') el.append(this._ageBox());
     if (b.type !== 'town_hall' && vil?.demolish) {
       btns.append(h('button.zc-btn.danger.small.ui-i', { onclick: () => this.ui.confirm('Снести «' + (t.name || b.type) + '»?', b.state === 'complete' ? 'Вернётся половина ресурсов.' : 'Ресурсы вернутся полностью.', 'Снести', () => { if (vil.demolish(b)) this.deselect(true); }) },
         img(glyph('close'), 'zc-ico zc-btn-ico'), h('span.zc-btn-lbl', 'Снести')));
     }
     if (btns.children.length) el.append(btns);
+    if (b.type === 'town_hall') el.append(this._ageBox());
     this._updateBuilding(b);
   }
   _renderBuildingJobs(b) {
@@ -514,7 +522,10 @@ export class CommandPanel {
   _jobsSig(b) { return b.state + '|' + workersOf(b).map(w => w.id + ':' + w.job).join(','); }
   _upSig(b) {
     const vil = this.game.village;
-    return [b.state, b.level, !!b.upgrade, vil?.upgradeBlocker?.(b), this.game.state.age, b.type === 'town_hall' ? checkNextAge(this.game).ok : ''].join('|');
+    const ageSig = b.type === 'town_hall'
+      ? (() => { const c = checkNextAge(this.game); return c.ok + ':' + (c.afford ? 1 : 0) + ':' + c.items.map(i => (i.text || i.tech) + '=' + (i.ok ? 1 : 0)).join(','); })()
+      : '';
+    return [b.state, b.level, !!b.upgrade, vil?.upgradeBlocker?.(b), this.game.state.age, ageSig].join('|');
   }
   /** Town hall: current age and what the next one needs. */
   _ageBox() {
@@ -542,6 +553,23 @@ export class CommandPanel {
       if (b.type === 'town_hall') bits.push('Строителей до ' + (this.game.village?.builderCap ?? '—'));
       if (b.popBonus) bits.push('Население +' + b.popBonus);
       if ((b.level || 1) > 1 && b.jobSlots) bits.push('Работа +' + Math.round(((b.levelWorkBonus || 1) - 1) * 100) + '%');
+      if (b.type === 'farm') {
+        bits.push('Грядок: ' + (b.plots?.length || 0));
+        if ((b.level || 1) > 1) bits.push('Урожай +' + Math.round((farmHarvestMultiplier(b.level || 1, b.plots?.length || 36) - 1) * 100) + '%');
+      }
+      if (b.type === 'lumber_camp' && (b.level || 1) > 1) bits.push('Добыча дерева +' + Math.round((woodcutterLevelMultiplier(b.level || 1) - 1) * 100) + '%');
+      if (b.type === 'granary' || b.type === 'storehouse' || b.type === 'town_hall') {
+        const add = buildingStorageCapacity(b.type, b.level || 1);
+        const st = this.game.state;
+        const cur = (r) => Math.floor(st.resources[r] || 0) + '/' + (st.getCap ? st.getCap(r) : '∞');
+        if (b.type === 'granary') {
+          bits.push(`Запас в амбаре: Еда ${cur('food')} (+${add.food || 0}), Дерево ${cur('wood')} (+${add.wood || 0})`);
+        } else if (b.type === 'storehouse') {
+          bits.push(`Запас на складе: Дерево ${cur('wood')} (+${add.wood || 0}), Камень ${cur('stone')} (+${add.stone || 0}), Еда ${cur('food')} (+${add.food || 0}), Железо ${cur('iron')} (+${add.iron || 0})`);
+        } else if (b.type === 'town_hall') {
+          bits.push(`Лимит хранения: Еда ${cur('food')}, Дерево ${cur('wood')}, Камень ${cur('stone')}, Железо ${cur('iron')}`);
+        }
+      }
       const ind = this.game.village?.industry;
       if (ind && (b.def.power || b.def.powerOut)) bits.push('Энергия в сети ' + ind.supply + '/' + ind.demand + (b.def.power ? (ind.powered >= 1 ? ' ✓' : ind.powered > 0 ? ' — не хватает' : ' — нет питания') : ''));
       setText(I.lvl, bits.join(' · '));
@@ -578,7 +606,10 @@ export class CommandPanel {
     I.hp.set(v.hp, v.maxHp);
     const f = this.hungerFrac(v); I.hunger.set(f, 1, Math.round(f * 100) + '%');
     const t = v.workplace ? (BUILDING_TYPES[v.workplace.type]?.name || v.workplace.type) : null;
-    setText(I.wp, t ? 'Место работы: ' + t : (v.mood != null ? 'Настроение: ' + Math.round((v.mood > 1 ? v.mood : v.mood * 100)) + '%' : ''));
+    const wcInfo = v.job === 'woodcutter'
+      ? ` · Уровень лесоруба: ${woodcutterEffectiveLevel(v)} (+${Math.round((woodcutterLevelMultiplier(woodcutterEffectiveLevel(v)) - 1) * 100)}% дерева)`
+      : '';
+    setText(I.wp, (t ? 'Место работы: ' + t : (v.mood != null ? 'Настроение: ' + Math.round((v.mood > 1 ? v.mood : v.mood * 100)) + '%' : '')) + wcInfo);
     if ((I.job !== v.job || I.wpRef !== v.workplace) && document.activeElement !== I.sel) this.renderInspector();
   }
   _inspectOther(el, e) {

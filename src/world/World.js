@@ -333,12 +333,16 @@ export class World {
     if (x < 0 || z < 0 || x >= this.size || z >= this.size || y >= this.height) return B.AIR;
     return this.rawGet(x, y, z);
   }
-  isSolid(x, y, z) { return SOLID[this.getBlock(x, y, z)] === 1; }
+  isSolid(x, y, z) {
+    const id = this.getBlock(x, y, z);
+    return SOLID[id] === 1 && !LEAF_BLOCKS.has(id);
+  }
   /** Outside the map counts as solid wall for collision (invisible border). */
   isSolidForCollision(x, y, z) {
     x = Math.floor(x); z = Math.floor(z);
     if (x < 0 || z < 0 || x >= this.size || z >= this.size) return true;
-    return SOLID[this.getBlock(x, y, z)] === 1;
+    const id = this.getBlock(x, y, z);
+    return SOLID[id] === 1 && !LEAF_BLOCKS.has(id);
   }
   getLight(x, y, z) {
     if (!this.inBounds(x, y, z)) return 0xF0;

@@ -5,9 +5,11 @@ import { oak, birch, spruce } from '../world/trees.js';
 import { mulberry32 } from '../core/rng.js';
 import { BUILDING_TYPES, BUILDING_ORDER, RESEARCH_LABELS, setEraTier } from './buildings.js';
 import { Building } from './Building.js';
-import { AGES } from '../systems/ages.js';
+import { AGES, checkBuildingsForLevel, buildingUpgradeCostToLevel, buildingBuildCostForTownHall } from '../systems/ages.js';
+import { computeResourceCaps, buildingStorageCapacity } from '../systems/resourceBalance.js';
 import { Industry } from './industry.js';
 import { Villager } from './Villager.js';
+import { collides } from '../world/physics.js';
 import { Placement } from './placement.js';
 import { GhostLayer, Scaffold, makeRing, makeRect, disposeObj, jobLabelTexture } from './visuals.js';
 import { pickName, JOBS, JOB_ORDER } from './names.js';
@@ -73,6 +75,18 @@ export class Village {
     this.scaffolds = new Map();
     this.radius = 20;
     this.rng = mulberry32((Math.random() * 1e9) | 0);
+    if (this.game?.state) this.game.state.capProvider = (res) => this.resourceCap(res);
+  }
+
+  /** Total resource storage capacities across completed Town Hall, Granaries (Амбар), and Storehouses (Склад). */
+  resourceCaps() {
+    const thLv = Math.max(1, this.townHall?.level || 1, (this.game?.state?.age | 0) + 1);
+    return computeResourceCaps(this.buildings, thLv);
+  }
+  /** Maximum storage capacity for a single resource `res`. */
+  resourceCap(res) {
+    const caps = this.resourceCaps();
+    return caps[res] ?? buildingStorageCapacity('town_hall', Math.max(1, (this.game?.state?.age | 0) + 1))[res] ?? Infinity;
   }
 
   // ================================================================ lifecycle
@@ -235,13 +249,20 @@ export class Village {
     if (e && e.b.state !== 'destroyed') e.b.onBlockEdited(e.i, id);
   }
 
-  /** Terrain height at a column ignoring trees (top solid non-tree block). */
+  /** Terrain height at a column ignoring trees and building superstructures (top solid ground block). */
   groundY(x, z) {
     const w = this.game.world;
+    x = Math.floor(x); z = Math.floor(z);
+    const fid = this.foot?.get(x, z) || 0;
+    if (fid) {
+      const b = this.byId.get(fid);
+      if (b && b.state === 'complete' && w.isSolid(x, b.y, z) && !w.isSolid(x, b.y + 1, z)) return b.y;
+    }
     let y = w.surfaceY(x, z);
     while (y > 0) {
       const id = w.getBlock(x, y, z);
-      if (BLOCKS[id].solid && !NON_TERRAIN.has(id)) break;
+      const cell = this.cellIndex?.get(w.index(x, y, z));
+      if (BLOCKS[id]?.solid && !NON_TERRAIN.has(id) && !(cell && cell.b.blocks[cell.i]?.dy >= 1)) break;
       y--;
     }
     return y;
@@ -264,6 +285,13 @@ export class Village {
   }
   hasWonder(typeId) { return this.hasBuilding(typeId); }
   countOf(typeId) { let n = 0; for (const b of this.buildings) if (b.type === typeId) n++; return n; }
+  /** Cost to construct a new building of `typeId` at the current Town Hall level. */
+  buildCost(typeId) {
+    const def = typeof typeId === 'string' ? BUILDING_TYPES[typeId] : typeId;
+    if (!def) return {};
+    const thLv = Math.max(1, this.townHall?.level || 1, (this.game?.state?.age | 0) + 1);
+    return buildingBuildCostForTownHall(def, thLv);
+  }
   /** Can this type be built at all right now? {ok, reason, hard} (hard = research/limit, not just cost) */
   canPlace(typeId) {
     const def = BUILDING_TYPES[typeId];
@@ -273,7 +301,7 @@ export class Village {
     if (def.research && !this.game.state.researchDone.has(def.research)) return { ok: false, reason: 'Нужно исследование: ' + (RESEARCH_LABELS[def.research] || def.research), hard: true, research: def.research };
     if (this.countOf(typeId) >= def.maxCount) return { ok: false, reason: 'Достигнут предел построек этого типа', hard: true };
     if (!this.townHall) return { ok: false, reason: 'Нет ратуши', hard: true };
-    if (!this.game.state.canAfford(def.cost)) return { ok: false, reason: 'Не хватает ресурсов', hard: false };
+    if (!this.game.state.canAfford(this.buildCost(typeId))) return { ok: false, reason: 'Не хватает ресурсов', hard: false };
     return { ok: true, reason: '' };
   }
   variantFor(typeId, x, z) {
@@ -327,19 +355,38 @@ export class Village {
     if (this._remote()) return this._remotePlace(def, typeId, x, z, rot);
     const site = this.checkSite(typeId, x, z, rot);
     if (!site.ok && !opts.force) { if (!opts.silent && !opts.free) this.toast(site.reason, 'bad'); return null; }
+    let paidCost = null;
     if (!opts.free) {
       const chk = this.canPlace(typeId);
       if (!chk.ok) { this.toast(chk.reason, 'bad'); return null; }
-      if (!this.game.state.spend(def.cost)) { this.toast('Не хватает ресурсов', 'bad'); return null; }
+      paidCost = this.buildCost(typeId);
+      if (!this.game.state.spend(paidCost)) { this.toast('Не хватает ресурсов', 'bad'); return null; }
     }
     const variant = opts.variant ?? this.variantFor(typeId, x, z);
     const b = new Building(this, typeId, x, opts.y ?? site.y, z, rot, variant, opts.id);
+    if (paidCost) b.paidCost = paidCost;
     this.addBuilding(b);
     b.computeOps();
     if (opts.instant) this.stamp(b);
     else {
       b.hp = Math.round(b.maxHp * 0.1);
       this.scaffolds.set(b.id, new Scaffold(this.game, b));
+      // Clear any cached trees/saplings inside or right next to the new site so woodcutters don't walk back in
+      for (const c of this.treeCache.values()) {
+        c.list = c.list.filter(t => !b.contains(t.x, t.z, 2));
+      }
+      this.replantSpots = this.replantSpots.filter(s => !b.contains(s.x, s.z, 2));
+      this.saplings = this.saplings.filter(s => !b.contains(s.x, s.z, 2));
+      // Evacuate ALL villagers standing inside the new footprint out to a verified safe perimeter spot
+      for (const v of this.villagers) {
+        if (v.dead || v.hidden) continue;
+        if (v.job === 'woodcutter' && b.contains(v.position.x, v.position.z, 4)) {
+          v.interrupt();
+        }
+        if (b.contains(v.position.x, v.position.z, 0.8)) {
+          this.smartRescueVillager(v, b.door);
+        }
+      }
       if (!def.line) this.toast(`Заложено: ${def.name}. Строители уже идут!`, 'info');
       if (!def.line && def.tiered && (this.game.state.age | 0) < 3 && !this._roomTip) {
         this._roomTip = true;
@@ -364,6 +411,7 @@ export class Village {
     const i = this.buildings.indexOf(b);
     if (i >= 0) this.buildings.splice(i, 1);
     this.byId.delete(b.id);
+    if (this.morphs?.length) this.morphs = this.morphs.filter(m => m.b !== b);
     const w = this.game.world;
     for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) if (this.foot.get(x, z) === b.id) this.foot.set(x, z, 0);
     for (const bl of b.blocks) { const k = w.index(bl.x, bl.y, bl.z); if (this.cellIndex.get(k)?.b === b) this.cellIndex.delete(k); }
@@ -386,16 +434,63 @@ export class Village {
     b.opCursor = b.ops.length;
     this.recalcPop();
   }
-  /** Demolish (player action): removes the building record and its blocks, refunds half the cost. */
+  /** Demolish (player action): removes the building record and its blocks, restores natural ground at the foundation, and refunds half the cost. */
   demolish(b) {
     if (!b || b === this.townHall) return false;
     if (this._remote()) return this._send('demolish', { id: b.id });
+    const w = this.game.world;
     const edits = [];
-    for (let i = 0; i < b.blocks.length; i++) { const bl = b.blocks[i]; if (bl.dy >= 1 && this.game.world.getBlock(bl.x, bl.y, bl.z) === bl.id) edits.push([bl.x, bl.y, bl.z, B.AIR]); }
+    const seen = new Set();
+    const pushEdit = (x, y, z, id) => {
+      if (!w.inBounds(x, y, z)) return;
+      const k = w.index(x, y, z);
+      if (seen.has(k)) return;
+      seen.add(k);
+      if (w.getBlock(x, y, z) !== id) edits.push([x, y, z, id]);
+    };
+    // 1. Clear all blueprint blocks above ground
+    for (let i = 0; i < b.blocks.length; i++) {
+      const bl = b.blocks[i];
+      if (bl.dy >= 1) pushEdit(bl.x, bl.y, bl.z, B.AIR);
+    }
+    // 2. Across the entire footprint: clear any remaining superstructure/crops above b.y, fill quarry pits below b.y with dirt, and replace the old foundation at b.y with natural ground
+    const topY = Math.min(w.height - 2, b.y + Math.max(b.height || 1, 14));
+    const minY = b.quarry ? Math.max(1, b.y - b.quarry.depth - 1) : Math.max(1, b.y - 3);
+    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) {
+      for (let y = topY; y >= b.y + 1; y--) {
+        const cur = w.getBlock(x, y, z);
+        if (cur !== B.AIR && !WATER_IDS[cur]) pushEdit(x, y, z, B.AIR);
+      }
+      for (let y = minY; y < b.y; y++) {
+        const cur = w.getBlock(x, y, z);
+        if (!BLOCKS[cur]?.solid && !WATER_IDS[cur]) pushEdit(x, y, z, B.DIRT);
+      }
+      const curGround = w.getBlock(x, b.y, z);
+      if (!WATER_IDS[curGround]) {
+        pushEdit(x, b.y, z, B.GRASS);
+      }
+    }
+    // Ensure any villagers or player inside an excavated pit or on the building are placed safely on the restored surface
+    for (const v of this.villagers) {
+      if (!v.dead && b.contains(v.position.x, v.position.z, 0.5) && (v.position.y < b.y + 0.95 || v.position.y > b.y + 1.45)) {
+        v.position.y = b.y + 1.02;
+        v.velocity?.set(0, 0, 0);
+      }
+    }
+    const p = this.game.player;
+    if (p && b.contains(p.position.x, p.position.z, 0.5) && p.position.y < b.y + 0.95) {
+      p.position.y = b.y + 1.02;
+      p.velocity?.set(0, 0, 0);
+    }
     this.removeBuilding(b);
     this.bulkEdit(edits);
     for (const [x, y, z] of edits.slice(0, 30)) this.game.particles?.emit({ pos: { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, count: 3, colors: [0xbbaa88, 0x887766], speed: 1, life: 0.8, size: 0.25, alpha: 0.6, gravity: 1 });
-    if (b.state !== 'destroyed') { const refund = {}; for (const k in b.def.cost) refund[k] = Math.floor(b.def.cost[k] * (b.state === 'complete' ? 0.5 : 1)); this.game.state.refund(refund); }
+    if (b.state !== 'destroyed') {
+      const baseCost = b.paidCost || this.buildCost(b.type) || b.def.cost;
+      const refund = {};
+      for (const k in baseCost) refund[k] = Math.floor(baseCost[k] * (b.state === 'complete' ? 0.5 : 1));
+      this.game.state.refund(refund);
+    }
     this.game.audio?.play('break_block', { pos: b.center, volume: 0.8 });
     this.bus.emit('building:removed', { building: b });
     return true;
@@ -412,26 +507,51 @@ export class Village {
       if (L >= 8) c.uranium = 10 * (L - 7);
       return c;
     }
-    const c = {};
-    for (const k in b.def.cost) c[k] = Math.ceil(b.def.cost[k] * 1.5 * L);
-    if (L >= 2) c.iron = (c.iron || 0) + 3 * (L - 1);
-    if (L >= 3) c.gold = (c.gold || 0) + 2 * (L - 2);
-    if (L >= 5) c.crystal = (c.crystal || 0) + 3 * (L - 4);
-    if (L >= 6) c.steel = (c.steel || 0) + 5 * (L - 5);
-    return c;
+    return buildingUpgradeCostToLevel(b.def, L + 1);
   }
   upgradeTime(b) { return (b.type === 'town_hall' ? 40 : 20) + 20 * (b.level || 1); }
   /** How many upgrades may run at once: one per two builders (at least one). */
   get upgradeSlots() { return Math.max(1, Math.ceil(this.villagersByJob('builder').length / 2)); }
   get activeUpgrades() { return this.buildings.filter(b => b.upgrade).length; }
+  /** Status of upgrading all non-TH buildings to `targetLevel`. */
+  buildingsUpgradeStatus(targetLevel = (this.townHall?.level || 1) + 1) {
+    return checkBuildingsForLevel(this.buildings, targetLevel, this.townHall);
+  }
   /** null if building b can be upgraded now, otherwise the reason. */
   upgradeBlocker(b) {
     if (!b || b.state !== 'complete') return 'Здание не достроено';
     if (b.upgrade) return 'Уже улучшается';
     if (b.def.line) return 'Стены не улучшаются';
     if (b.def.wonder) return 'Чудо света уже совершенно';
-    if ((b.level || 1) >= b.maxLevel) return (b.level || 1) >= 10 ? 'Высший уровень' : `Уровень ${b.level} — максимум этой эпохи. Перейдите в следующую эпоху, чтобы улучшать дальше`;
-    if (b.type !== 'town_hall' && this.townHall && (b.level || 1) >= this.townHall.level + 1) return 'Сначала улучшите ратушу';
+    const lv = b.level || 1;
+    if (lv >= b.maxLevel) {
+      if (lv >= 10) return 'Высший уровень';
+      if (b.type === 'town_hall') return 'Ратуша максимального уровня этой эпохи. Перейдите в следующую эпоху!';
+      const thLv = this.townHall?.level || 1;
+      if (thLv < b.maxLevel) {
+        const st = this.buildingsUpgradeStatus(b.maxLevel);
+        return st.ok
+          ? `Уровень ${lv} — максимум этой эпохи. Теперь улучшите ратушу до ${b.maxLevel} уровня`
+          : `Уровень ${lv} — максимум этой эпохи. Прокачайте остальные здания (${st.ready}/${st.total}), затем ратушу`;
+      }
+      return `Уровень ${lv} — максимум этой эпохи. Перейдите в следующую эпоху в ратуше, чтобы улучшать дальше`;
+    }
+    if (b.type === 'town_hall') {
+      const st = this.buildingsUpgradeStatus(lv + 1);
+      if (!st.ok) return st.reason;
+    } else if (this.townHall && lv >= (this.townHall.level || 1) + 1) {
+      return 'Сначала улучшите ратушу';
+    }
+    if (b.def.tiered) {
+      const nextStyle = Math.max(lv + 1, Math.min(10, (this.game.state.age | 0) + 1));
+      const wantGrow = b.def.growAt(nextStyle);
+      if (wantGrow > b.grow) {
+        const chk = this.canGrow(b, nextStyle, wantGrow);
+        if (!chk.ok) {
+          return `Нельзя улучшить: площадь здания увеличится (${chk.w}×${chk.d}), но ${chk.reason}`;
+        }
+      }
+    }
     if (this.activeUpgrades >= this.upgradeSlots) return 'Все строители заняты улучшениями — наймите ещё';
     return null;
   }
@@ -463,7 +583,10 @@ export class Village {
       b.computeOps();
     }
     if (edits.length) this.bulkEdit(edits);
-    for (const b of this.buildings) if (!b.def.tiered) b.refreshBuilt?.();
+    for (const b of this.buildings) {
+      if (!b.def.tiered) b.refreshBuilt?.();
+      this.unstickAround(b);
+    }
     if (blocked) setTimeout(() => this.toast(`Здания новой эпохи шире: ${blocked} ${blocked === 1 ? 'зданию' : 'зданиям'} не хватает места. Расчистите землю вокруг (уберите соседние постройки) — они расширятся сами.`, 'warn'), 2500);
     return edits.length + n;
   }
@@ -476,23 +599,43 @@ export class Village {
   retier(b, force = false, silent = false) {
     if (!b.def.tiered || b.state === 'destroyed') return false;
     const t = b.style;
-    // after the iron age buildings also grow wider — as far as the space around them allows
     const want = b.def.growAt(t);
     let g = b.grow;
+    let nextX = b.x, nextZ = b.z, shift = true;
     if (want > b.grow) {
-      g = want;
-      while (g > b.grow && !this.canGrow(b, t, g).ok) g--;
-      if (g < want) {
-        const why = this.canGrow(b, t, want).reason;
-        if (b.wantGrow !== want && !silent) this.toast(`«${b.def.name}» хочет стать шире, но ${why}. Расчистите место вокруг — здание расширится само.`, 'warn');
+      const chk = this.canGrow(b, t, want);
+      if (chk.ok) {
+        g = want;
+        nextX = chk.x;
+        nextZ = chk.z;
+        shift = false;
+        b.wantGrow = 0;
+      } else {
+        if (b.wantGrow !== want && !silent) this.toast(`«${b.def.name}» хочет стать шире, но ${chk.reason}. Расчистите место вокруг — здание расширится само.`, 'warn');
         b.wantGrow = want;
-      } else b.wantGrow = 0;
-    } else if (want <= b.grow) b.wantGrow = 0;
+        if (t === b.tier && !force) return false;
+      }
+    } else if (want < b.grow) {
+      g = want;
+      b.wantGrow = 0;
+    } else {
+      b.wantGrow = 0;
+    }
     if (t === b.tier && g === b.grow && !force) return false;
     const w = this.game.world;
-    for (const bl of b.blocks) { const k = w.index(bl.x, bl.y, bl.z); if (this.cellIndex.get(k)?.b === b) this.cellIndex.delete(k); }
+    const prevBlocks = b.blocks.slice();
+    for (const bl of prevBlocks) { const k = w.index(bl.x, bl.y, bl.z); if (this.cellIndex.get(k)?.b === b) this.cellIndex.delete(k); }
     this._footprint(b, false);
-    const oldH = b.relayout(t, g);
+    if (!shift) { b.x = nextX; b.z = nextZ; }
+    const oldH = b.relayout(t, g, shift);
+    // If the footprint shrank or shifted, clear any old blocks (dy >= 1) outside the new footprint
+    const clearEdits = [];
+    for (const bl of prevBlocks) {
+      if (bl.dy >= 1 && !b.contains(bl.x, bl.z) && w.getBlock(bl.x, bl.y, bl.z) === bl.id) {
+        clearEdits.push([bl.x, bl.y, bl.z, B.AIR]);
+      }
+    }
+    if (clearEdits.length) this.bulkEdit(clearEdits);
     this._footprint(b, true);
     b.blocks.forEach((bl, i) => this.cellIndex.set(w.index(bl.x, bl.y, bl.z), { b, i }));
     b.computeOps(oldH);
@@ -514,34 +657,59 @@ export class Village {
     }
   }
   /**
-   * Can building b grow to `grow` blocks per side (at tier t)? The new ground must be inside the world, dry, and free
-   * of other buildings (with the usual 1-block gap; walls may touch). Trees, grass and small hills are cleared by
-   * the rebuild itself. Returns {ok, reason}.
+   * Can building b grow to `grow` blocks per side (at tier t)? Checks centered placement first, then shifted origins
+   * that still contain the building's current footprint, ensuring at least a 2-block gap to other buildings.
    */
   canGrow(b, t, grow) {
     const w = this.game.world;
     const L = b.def.layout(b.rot, b.variant, t, grow);
-    const x0 = b.x + Math.round((b.w - L.w) / 2), z0 = b.z + Math.round((b.d - L.d) / 2);
+    if (L.w <= b.w && L.d <= b.d) return { ok: true, x: b.x, z: b.z, w: L.w, d: L.d, reason: '' };
+    const cx = b.x + Math.round((b.w - L.w) / 2), cz = b.z + Math.round((b.d - L.d) / 2);
     const m = 3;
-    if (x0 < m || z0 < m || x0 + L.w > w.size - m || z0 + L.d > w.size - m) return { ok: false, reason: 'рядом край мира' };
-    const blockers = new Set();
-    for (let z = z0 - 1; z < z0 + L.d + 1; z++) for (let x = x0 - 1; x < x0 + L.w + 1; x++) {
-      const id = this.foot.get(x, z);
-      const inside = x >= x0 && z >= z0 && x < x0 + L.w && z < z0 + L.d;
-      if (inside && !b.contains(x, z)) {
-        const gy = this.groundY(x, z);
-        if (WATER_IDS[w.getBlock(x, gy + 1, z)] || gy < w.sea - 1) return { ok: false, reason: 'вокруг вода' };
+    const dw = Math.max(0, L.w - b.w), dd = Math.max(0, L.d - b.d);
+    const cands = [];
+    for (let oz = -dd; oz <= 0; oz++) for (let ox = -dw; ox <= 0; ox++) {
+      const x0 = b.x + ox, z0 = b.z + oz;
+      cands.push({ x0, z0, d: Math.hypot(x0 - cx, z0 - cz) });
+    }
+    cands.sort((a, c) => a.d - c.d);
+
+    let firstFail = null;
+    for (const { x0, z0 } of cands) {
+      if (x0 < m || z0 < m || x0 + L.w > w.size - m || z0 + L.d > w.size - m) {
+        if (!firstFail) firstFail = { ok: false, x: x0, z: z0, w: L.w, d: L.d, reason: 'рядом край мира' };
+        continue;
       }
-      if (!id || id === b.id) continue;
-      const other = this.byId.get(id);
-      if (!other) continue;
-      if (inside || !other.def.line) blockers.add(other);
+      let water = false;
+      const blockers = new Set();
+      const gap = 2;
+      for (let z = z0 - gap; z < z0 + L.d + gap; z++) for (let x = x0 - gap; x < x0 + L.w + gap; x++) {
+        const inside = x >= x0 && z >= z0 && x < x0 + L.w && z < z0 + L.d;
+        if (inside && !b.contains(x, z)) {
+          const gy = this.groundY(x, z);
+          if (WATER_IDS[w.getBlock(x, gy + 1, z)] || gy < w.sea - 1) { water = true; break; }
+        }
+        const id = this.foot.get(x, z);
+        if (!id || id === b.id) continue;
+        const other = this.byId.get(id);
+        if (!other || other.state === 'destroyed') continue;
+        const distEdge = Math.max(x0 - x, x - (x0 + L.w - 1), z0 - z, z - (z0 + L.d - 1));
+        if (inside || distEdge <= (other.def.line ? 1 : gap)) blockers.add(other);
+      }
+      if (water) {
+        if (!firstFail) firstFail = { ok: false, x: x0, z: z0, w: L.w, d: L.d, reason: 'вокруг вода' };
+        continue;
+      }
+      if (blockers.size) {
+        if (!firstFail) {
+          const names = [...new Set([...blockers].map(o => o.def.line ? 'стена' : '«' + o.def.name + '»'))].slice(0, 2).join(' и ');
+          firstFail = { ok: false, x: x0, z: z0, w: L.w, d: L.d, reason: 'рядом мешает ' + names, blockers: [...blockers] };
+        }
+        continue;
+      }
+      return { ok: true, x: x0, z: z0, w: L.w, d: L.d, reason: '' };
     }
-    if (blockers.size) {
-      const names = [...new Set([...blockers].map(o => o.def.line ? 'стена' : '«' + o.def.name + '»'))].slice(0, 2).join(' и ');
-      return { ok: false, reason: 'рядом мешает ' + names, blockers: [...blockers] };
-    }
-    return { ok: true, reason: '' };
+    return firstFail || { ok: false, x: cx, z: cz, w: L.w, d: L.d, reason: 'нет свободного места' };
   }
   /** Buildings waiting for room to grow try again now and then. */
   retryGrowth() {
@@ -571,6 +739,7 @@ export class Village {
       while (n > 0 && mo.i < b.ops.length) {
         const op = b.ops[mo.i++];
         if (w.getBlock(op.x, op.y, op.z) === op.id) continue;
+        if (BLOCKS[op.id]?.solid) this.nudgeEntitiesOutOfCell(op.x, op.y, op.z, op.id, b);
         this.editBlock(op.x, op.y, op.z, op.id);
         n--; budget--;
         if (++mo.fx % 6 === 0) P?.emit({ pos: { x: op.x + 0.5, y: op.y + 0.5, z: op.z + 0.5 }, count: 3, colors: [0xd8cfc0, 0xa89c88, 0xfff2c0], speed: 1.2, life: 0.7, size: 0.22, alpha: 0.6, gravity: 1 });
@@ -588,12 +757,17 @@ export class Village {
       if (budget <= 0) break;
     }
   }
-  /** After a rebuild: nobody may end up inside the new walls. */
+  /** After a rebuild: nobody may end up inside the new walls or perched on fences/roofs. */
   unstickAround(b) {
     const w = this.game.world;
-    const inside = (e) => w.isSolid(e.position.x, e.position.y + 0.1, e.position.z) || w.isSolid(e.position.x, e.position.y + 1.1, e.position.z);
-    // anyone at all (villagers wander in and out while the town rebuilds)
-    for (const v of this.villagers) if (!v.dead && inside(v)) v.teleportNear?.(b.contains(v.position.x, v.position.z, 1) ? b.door : v.position);
+    const inside = (e) => {
+      const bx = Math.floor(e.position.x), by = Math.floor(e.position.y + 0.15), bz = Math.floor(e.position.z);
+      if (w.isSolid(bx, by, bz) || w.isSolid(bx, Math.floor(e.position.y + 1.05), bz)) return true;
+      if (collides(w, e.position.x, e.position.y + 0.05, e.position.z, (e.radius || 0.3) * 0.95, (e.height || 1.8) - 0.1, true)) return true;
+      if (b && b.contains(e.position.x, e.position.z, 1) && !e.onPost && b.type !== 'watchtower' && b.type !== 'town_hall' && (e.position.y > b.y + 1.2 || e.position.y < b.y + 0.85)) return true;
+      return false;
+    };
+    for (const v of this.villagers) if (!v.dead && inside(v)) this.smartRescueVillager(v, b?.door);
     const p = this.game.player;
     if (p && b.contains(p.position.x, p.position.z, 1) && inside(p)) { let y = Math.floor(p.position.y); while (y < w.height - 2 && (w.isSolid(p.position.x, y, p.position.z) || w.isSolid(p.position.x, y + 1, p.position.z))) y++; p.position.y = y; }
   }
@@ -932,6 +1106,173 @@ export class Village {
     }
     return false;
   }
+  /** True if cell (x, y, z) (feet at y, floor at y-1) is a verified safe, non-trapped standing cell for villager v. */
+  isSafeStandCell(x, y, z, v = null, allowInsideComplete = true) {
+    const w = this.game.world;
+    if (!w || x < 2 || z < 2 || x >= w.size - 2 || z >= w.size - 2 || y < 2 || y >= w.height - 2) return false;
+    if (!w.isWalkable(x, y, z)) return false;
+    const floorId = w.getBlock(x, y - 1, z);
+    if (LOG_BLOCKS.has(floorId) || floorId === B.FENCE || floorId === B.ELECTRIC_FENCE || floorId === B.PALISADE || floorId === B.HAY_BALE || floorId === B.WORKBENCH || floorId === B.FURNACE || floorId === B.ARCANE_TABLE) return false;
+    const fid = this.foot?.get(x, z) || 0;
+    if (fid) {
+      const bld = this.byId?.get(fid);
+      if (bld && bld.state !== 'destroyed') {
+        if (bld.state === 'planned' || bld.state === 'constructing' || !allowInsideComplete) return false;
+        if (bld.type !== 'watchtower' && bld.type !== 'town_hall' && y !== bld.y + 1) return false;
+        if (v?.job !== 'miner' && bld.quarry && (this.isInQuarryPit(x, y, z) || this.quarryAt(x, z))) return false;
+      }
+    }
+    if (this.cellIndex && w.index) {
+      const floorCell = this.cellIndex.get(w.index(x, y - 1, z));
+      if (floorCell && floorCell.b.blocks[floorCell.i]?.dy >= 1) return false;
+      const e0 = this.cellIndex.get(w.index(x, y, z));
+      const e1 = this.cellIndex.get(w.index(x, y + 1, z));
+      if ((e0 && BLOCKS[e0.b.blocks[e0.i]?.id]?.solid) || (e1 && BLOCKS[e1.b.blocks[e1.i]?.id]?.solid)) return false;
+    }
+    // Require at least 1 walkable cardinal exit within +-1 height so we never place a villager in a sealed 1x1 hole
+    if (
+      !w.isWalkable(x + 1, y, z) && !w.isWalkable(x + 1, y + 1, z) && !w.isWalkable(x + 1, y - 1, z) &&
+      !w.isWalkable(x - 1, y, z) && !w.isWalkable(x - 1, y + 1, z) && !w.isWalkable(x - 1, y - 1, z) &&
+      !w.isWalkable(x, y, z + 1) && !w.isWalkable(x, y + 1, z + 1) && !w.isWalkable(x, y - 1, z + 1) &&
+      !w.isWalkable(x, y, z - 1) && !w.isWalkable(x, y + 1, z - 1) && !w.isWalkable(x, y - 1, z - 1)
+    ) return false;
+    return true;
+  }
+
+  /**
+   * Smart anti-bug guardian: rescues any villager embedded in blocks, buried under a newly laid foundation,
+   * perched on a fence/wall/tree, or wedged in a narrow gap between buildings, placing them on a verified safe cell.
+   */
+  smartRescueVillager(v, targetPos = null) {
+    const w = this.game.world;
+    if (!w || !v || v.dead || v.hidden) return false;
+    const p = v.position;
+    const px = Math.floor(p.x), pz = Math.floor(p.z);
+    // 1) If simply 1 block below a newly laid floor at the same (px, pz), lift straight up if the top is safe
+    const fidHere = this.foot?.get(px, pz) || 0;
+    const bldHere = fidHere ? this.byId?.get(fidHere) : null;
+    const liftY = bldHere && bldHere.state === 'complete' ? bldHere.y + 1 : Math.floor(p.y) + 1;
+    if (liftY > p.y && liftY - p.y <= 1.6 && this.isSafeStandCell(px, liftY, pz, v, true)) {
+      p.set(px + 0.5, liftY + 0.02, pz + 0.5);
+      v.velocity?.set(0, 0, 0);
+      v._progX = p.x; v._progZ = p.z; v._progT = 0;
+      return true;
+    }
+    // 2) Fast radial search (r = 1..6) for the nearest verified safe cell outside active construction sites
+    const goal = targetPos || v._steer || v.fightTarget?.position || this.townHall?.door || p;
+    let best = null, bestScore = Infinity;
+    for (let r = 1; r <= 6; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = px + dx, z = pz + dz;
+        const gy = this.groundY(x, z) + 1;
+        const py0 = Math.floor(p.y);
+        for (let yi = 0; yi < 2; yi++) {
+          const y = yi === 0 ? gy : py0;
+          if (yi === 1 && y === gy) continue;
+          if (Math.abs(y - gy) > 2.5) continue;
+          if (!this.isSafeStandCell(x, y, z, v, true)) continue;
+          const fid = this.foot?.get(x, z) || 0;
+          const inFoot = fid && fid !== v.workplace?.id ? 4.0 : 0;
+          const distGoal = Math.hypot(x + 0.5 - goal.x, z + 0.5 - goal.z);
+          const score = r * 0.9 + distGoal * 0.35 + Math.abs(y - gy) * 0.6 + inFoot;
+          if (score < bestScore) {
+            bestScore = score;
+            best = { x: x + 0.5, y, z: z + 0.5 };
+          }
+        }
+      }
+      if (best && r >= 2) break;
+    }
+    if (!best) best = this.findSafeGroundNear(p, 12) || this.townHall?.door;
+    if (!best) return false;
+    p.set(best.x, best.y + 0.02, best.z);
+    v.velocity?.set(0, 0, 0);
+    v._progX = best.x; v._progZ = best.z; v._progT = 0;
+    return true;
+  }
+
+  /** Periodic village-wide check (once per second) that rescues any villager stuck in blocks or foundations. */
+  rescueStuckVillagers() {
+    const w = this.game.world;
+    if (!w) return;
+    for (const v of this.villagers) {
+      if (!v || v.dead || v.hidden || v._climbing || v.onPost) continue;
+      const p = v.position;
+      const bx = Math.floor(p.x), by = Math.floor(p.y + 0.15), bz = Math.floor(p.z);
+      const fid = this.foot?.get(bx, bz) || 0;
+      const bld = fid ? this.byId?.get(fid) : null;
+      const under = w.getBlock(bx, Math.floor(p.y - 0.1), bz);
+      const buriedInBld = bld && bld.state !== 'destroyed' && p.y < bld.y + 0.85 && w.isSolid(bx, bld.y, bz) && !(v.job === 'miner' && this.isInQuarryPit(p.x, p.y, p.z));
+      const perchedOnBld = v.onGround && (LOG_BLOCKS.has(under) || (bld && bld.state !== 'destroyed' && bld.type !== 'watchtower' && bld.type !== 'town_hall' && p.y > bld.y + 1.2));
+      const inSolid = w.isSolid(bx, by, bz) || w.isSolid(bx, Math.floor(p.y + 1.05), bz) ||
+        (w.isSolidForCollision && collides(w, p.x, p.y + 0.05, p.z, (v.radius || 0.3) * 0.92, (v.height || 1.8) - 0.1, true));
+      if (inSolid || buriedInBld || perchedOnBld) {
+        this.smartRescueVillager(v);
+      }
+    }
+  }
+
+  /** Gently steps any entity occupying cell (x, y, z) onto an adjacent walkable cell so construction never deadlocks. */
+  nudgeEntitiesOutOfCell(x, y, z, id, b = null) {
+    if (id === B.AIR || (BLOCKS[id] && !BLOCKS[id].solid)) return;
+    const w = this.game.world;
+    if (!w) return;
+    for (const e of this.game.entities.list) {
+      if (e.dead || e.kind === 'projectile' || e.hidden) continue;
+      const p = e.position, r = e.radius || 0.3;
+      if (!(p.x + r > x && p.x - r < x + 1 && p.z + r > z && p.z - r < z + 1 && p.y < y + 1 && p.y + (e.height || 1.8) > y)) continue;
+      if (e.kind === 'player') {
+        if (w.isWalkable(x, y + 1, z)) p.y = y + 1.02;
+        continue;
+      }
+      // If laying a floor/fill block (y <= b.y) and the space above it is open, lift the entity onto the floor
+      if (b && y <= b.y && !w.isSolid(x, b.y + 1, z) && !w.isSolid(x, b.y + 2, z)) {
+        const upEntry = this.cellIndex?.get(w.index(x, b.y + 1, z));
+        if (!(upEntry && BLOCKS[upEntry.b.blocks[upEntry.i]?.id]?.solid)) {
+          p.y = b.y + 1.02;
+          e.velocity?.set(0, 0, 0);
+          continue;
+        }
+      }
+      if (e.kind === 'villager') {
+        this.smartRescueVillager(e, b?.door);
+        continue;
+      }
+      const best = this.findSafeGroundNear(p, 10) || b?.door;
+      if (best) {
+        p.set(best.x, best.y + 0.02, best.z);
+        e.velocity?.set(0, 0, 0);
+      }
+    }
+  }
+  /** Best walkable spot around an op for a builder to stand while placing/clearing the block. */
+  builderStandSpot(b, op, v) {
+    const w = this.game.world;
+    const baseY = b.y + 1;
+    const ox = op.x, oz = op.z;
+    const vx = Math.floor(v.position.x), vz = Math.floor(v.position.z);
+    if (b.distanceTo(v.position) <= 3.5 && Math.abs(v.position.y - baseY) <= 3.5 && !(vx === ox && vz === oz) && !b.contains(vx, vz)) {
+      return { x: v.position.x, y: v.position.y, z: v.position.z };
+    }
+    let best = null, bestScore = Infinity;
+    for (let r = 1; r <= 4; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = ox + dx, z = oz + dz;
+        if (x < 2 || z < 2 || x >= w.size - 2 || z >= w.size - 2) continue;
+        if (b.contains(x, z)) continue;
+        const gy = this.groundY(x, z) + 1;
+        if (Math.abs(gy - baseY) > 2.5) continue;
+        if (!this.isSafeStandCell(x, gy, z, v, false)) continue;
+        const distV = Math.hypot(x + 0.5 - v.position.x, z + 0.5 - v.position.z);
+        const sc = distV * 0.5 + r * 0.7;
+        if (sc < bestScore) { bestScore = sc; best = { x: x + 0.5, y: gy, z: z + 0.5 }; }
+      }
+      if (best) break;
+    }
+    return best || b.door || this.findSafeGroundNear(b.center, Math.max(b.w, b.d) + 3) || { x: ox + 0.5, y: baseY, z: oz + 0.5 };
+  }
 
   // ================================================================ path requests (staggered A*)
   requestPath(v, to, range = 1) {
@@ -950,7 +1291,34 @@ export class Village {
     while (n < 2 && this.pathQueue.length) {
       const r = this.pathQueue.shift();
       if (r.cancelled) { r.done = true; continue; }
-      try { r.path = w.findPath(r.from, r.to, { maxNodes: 2500, range: r.range, partial: true }); } catch (e) { r.path = null; }
+      const v = r.v;
+      const isMiner = v?.job === 'miner';
+      const isBuilder = v?.job === 'builder';
+      const startFid = this.foot?.get(r.from.x, r.from.z) || 0;
+      const goalFid = this.foot?.get(r.to.x, r.to.z) || 0;
+      const avoid = (x, y, z) => {
+        if (!isMiner && this.isInQuarryPit(x, y, z)) return true;
+        // Never path on top of building walls, fences, or furniture (dy >= 1)
+        const floorCell = this.cellIndex.get(w.index(x, y - 1, z));
+        if (floorCell && floorCell.b.blocks[floorCell.i]?.dy >= 1 && floorCell.b.type !== 'watchtower' && floorCell.b.type !== 'town_hall') {
+          return true;
+        }
+        // Avoid stepping onto unbuilt blueprint wall cells so guards & builders walk around ghost walls
+        const e0 = this.cellIndex.get(w.index(x, y, z));
+        const e1 = this.cellIndex.get(w.index(x, y + 1, z));
+        if ((e0 && BLOCKS[e0.b.blocks[e0.i]?.id]?.solid) || (e1 && BLOCKS[e1.b.blocks[e1.i]?.id]?.solid)) {
+          return 14;
+        }
+        if (!isBuilder) {
+          const fid = this.foot?.get(x, z) || 0;
+          if (fid && fid !== startFid && fid !== goalFid) {
+            const b = this.byId.get(fid);
+            if (b && (b.state === 'planned' || b.state === 'constructing')) return 8;
+          }
+        }
+        return 0;
+      };
+      try { r.path = w.findPath(r.from, r.to, { maxNodes: 2500, range: r.range, partial: true, avoid }); } catch (e) { r.path = null; }
       r.done = true;
       n++;
     }
@@ -1058,16 +1426,36 @@ export class Village {
   }
   randomWalkable(c, r) {
     const w = this.game.world;
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 20; i++) {
       const a = this.rng() * Math.PI * 2, rr = Math.sqrt(this.rng()) * r;
       const x = Math.floor(c.x + Math.cos(a) * rr), z = Math.floor(c.z + Math.sin(a) * rr);
       if (x < 2 || z < 2 || x >= w.size - 2 || z >= w.size - 2) continue;
+      if (this.quarryAt(x, z)) continue;
       const fid = this.foot.get(x, z);
-      if (fid) { const b = this.byId.get(fid); if (b && b.state === 'complete' && !b.def.line) continue; }
+      if (fid) { const b = this.byId.get(fid); if (b && b.state !== 'destroyed' && !b.def.line) continue; }
       const gy = this.groundY(x, z);
       if (w.isWalkable(x, gy + 1, z)) return { x: x + 0.5, y: gy + 1, z: z + 0.5 };
     }
-    return null;
+    return this.findSafeGroundNear(c, Math.max(6, Math.ceil(r + 4)));
+  }
+  /** Nearest walkable surface spot outside all quarry pits and building footprints. */
+  findSafeGroundNear(pos, maxR = 12) {
+    const w = this.game.world;
+    if (!w || !pos) return null;
+    const px = Math.floor(pos.x), pz = Math.floor(pos.z);
+    for (let r = 0; r <= maxR; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = px + dx, z = pz + dz;
+        if (x < 2 || z < 2 || x >= w.size - 2 || z >= w.size - 2) continue;
+        if (this.quarryAt(x, z)) continue;
+        const fid = this.foot?.get(x, z);
+        if (fid) { const b = this.byId.get(fid); if (b && b.state !== 'destroyed' && !b.def.line) continue; }
+        const gy = this.groundY(x, z);
+        if (w.isWalkable(x, gy + 1, z)) return { x: x + 0.5, y: gy + 1, z: z + 0.5 };
+      }
+    }
+    return this.townHall?.door || null;
   }
   findBlockNear(p, id, r) {
     const w = this.game.world;
@@ -1089,6 +1477,7 @@ export class Village {
     const z0 = Math.max(1, Math.floor(cz - R)), z1 = Math.min(w.size - 2, Math.floor(cz + R));
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       if ((x - cx) * (x - cx) + (z - cz) * (z - cz) > R * R) continue;
+      if (this.foot?.get(x, z)) continue;
       const top = w.surfaceY(x, z);
       if (!LEAF_BLOCKS.has(w.getBlock(x, top, z)) && !LOG_BLOCKS.has(w.getBlock(x, top, z))) continue;
       for (let y = top; y > w.sea - 3; y--) {
@@ -1111,7 +1500,7 @@ export class Village {
     for (const t of c.list) {
       if (t.bad || this.treeReserved.has(t.x + ',' + t.z)) continue;
       if (w.getBlock(t.x, t.y, t.z) !== t.id) { t.bad = true; continue; }
-      if (this.buildingAt(t.x, t.y, t.z)) continue;
+      if (this.buildingAt(t.x, t.y, t.z) || this.foot?.get(t.x, t.z)) { t.bad = true; continue; }
       const d = Math.hypot(t.x - center.x, t.z - center.z) + Math.hypot(t.x - v.position.x, t.z - v.position.z) * 0.5;
       if (d < bd) { bd = d; best = t; }
     }
@@ -1142,7 +1531,7 @@ export class Village {
     const leafId = LEAF_OF[tree.id];
     const leaves = [];
     const topY = logs.length ? logs[logs.length - 1].y : tree.y;
-    for (let y = tree.y + 1; y <= topY + 3; y++) for (let z = tree.z - 3; z <= tree.z + 3; z++) for (let x = tree.x - 3; x <= tree.x + 3; x++) {
+    for (let y = Math.max(1, tree.y - 1); y <= topY + 3; y++) for (let z = tree.z - 3; z <= tree.z + 3; z++) for (let x = tree.x - 3; x <= tree.x + 3; x++) {
       const id = w.getBlock(x, y, z);
       if (!LEAF_BLOCKS.has(id) || (leafId && id !== leafId)) continue;
       // skip leaves that belong to a neighbouring trunk
@@ -1157,6 +1546,7 @@ export class Village {
   }
   onTreeFelled(tree, o = {}) {
     for (const c of this.treeCache.values()) c.list = c.list.filter(t => t !== tree);
+    if (this.foot?.get(tree.x, tree.z)) return;
     // every tree felled near the village gets replanted by the woodcutters
     const th = this.townHall;
     if (o.byPlayer && (!th || Math.hypot(tree.x - th.center.x, tree.z - th.center.z) > this.radius + 70)) return;
@@ -1206,8 +1596,14 @@ export class Village {
   }
   takeReplantSpot(base, v) {
     const now = this.game.time;
-    for (const s of this.replantSpots) {
+    for (let idx = this.replantSpots.length - 1; idx >= 0; idx--) {
+      const s = this.replantSpots[idx];
       if (s.taken || now - s.t < 4) continue;
+      let nearBuilding = false;
+      for (let dz = -2; dz <= 2 && !nearBuilding; dz++) for (let dx = -2; dx <= 2 && !nearBuilding; dx++) {
+        if (this.foot?.get(s.x + dx, s.z + dz)) nearBuilding = true;
+      }
+      if (nearBuilding) { this.replantSpots.splice(idx, 1); continue; }
       if (Math.hypot(s.x - base.center.x, s.z - base.center.z) > 45) continue;
       s.taken = true;
       return s;
@@ -1218,6 +1614,9 @@ export class Village {
     const i = this.replantSpots.indexOf(s);
     if (i >= 0) this.replantSpots.splice(i, 1);
     const w = this.game.world;
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (this.foot?.get(s.x + dx, s.z + dz)) return;
+    }
     const below = w.getBlock(s.x, s.y - 1, s.z);
     if (below !== B.GRASS && below !== B.DIRT) return;
     const a = w.getBlock(s.x, s.y, s.z);
@@ -1242,6 +1641,9 @@ export class Village {
   }
   growTree(x, y, z, log) {
     const w = this.game.world;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (this.foot?.get(x + dx, z + dz)) return;
+    }
     const writes = [];
     const fake = {
       size: w.size, height: w.height, index: (a, b, c) => w.index(a, b, c),
@@ -1253,7 +1655,8 @@ export class Village {
     const edits = [];
     for (const [i, id] of writes) {
       const bx = i % S, bz = Math.floor(i / S) % S, by = Math.floor(i / (S * S));
-      if (this.buildingAt(bx, by, bz) || this.cellOccupied(bx, by, bz, id)) continue;
+      if (this.buildingAt(bx, by, bz) || this.foot?.get(bx, bz)) continue;
+      if (LOG_BLOCKS.has(id)) this.nudgeEntitiesOutOfCell(bx, by, bz, id);
       edits.push([bx, by, bz, id]);
     }
     edits.sort((a, b) => a[1] - b[1]);
@@ -1274,6 +1677,19 @@ export class Village {
     }
     return null;
   }
+  /** True only when (x, y, z) is inside an actually excavated mine pit below the mine's ground level. */
+  isInQuarryPit(x, y, z) {
+    const mine = this.quarryAt(x, z);
+    if (!mine || mine.state === 'planned' || mine.state === 'constructing') return null;
+    const surfY = mine.y;
+    if (y !== undefined && y !== null && y < surfY + 0.15) return mine;
+    const w = this.game.world;
+    if (w) {
+      const gy = w.surfaceY(Math.floor(x), Math.floor(z));
+      if (gy < surfY && (y === undefined || y === null || y <= gy + 1.25)) return mine;
+    }
+    return null;
+  }
   nextQuarryBlock(mine) {
     const q = mine.quarry;
     if (!q || mine.quarryDone) return null;
@@ -1287,7 +1703,9 @@ export class Village {
       for (const c of cells) {
         const id = w.getBlock(c.x, y, c.z);
         if (!BLOCKS[id].solid || id === B.BEDROCK) {
-          if (id !== B.AIR && !WATER_IDS[id] && id !== B.TORCH && BLOCKS[id].shape === 'cross') { found = { x: c.x, y, z: c.z }; break; }
+          if (id !== B.AIR && id !== B.BEDROCK && !WATER_IDS[id] && id !== B.TORCH) {
+            this.editBlock(c.x, y, c.z, B.AIR);
+          }
           continue;
         }
         if (this.quarryReserved.has(c.x + ',' + y + ',' + c.z)) { pendingReserved = true; continue; }
@@ -1460,6 +1878,7 @@ export class Village {
   /** once per second */
   tick1(dt) {
     const st = this.game.state;
+    this.rescueStuckVillagers();
     this.tickUpgrades(dt);
     this.industry.tick(dt);
     // crops grow (≈4 min from seed to ripe, ≈2.6 min with agriculture): one farm feeds ~25 villagers (~60 later)
@@ -1550,7 +1969,7 @@ export class Village {
     if (!site.ok) { this.toast(site.reason, 'bad'); return null; }
     const chk = this.canPlace(typeId);
     if (!chk.ok) { this.toast(chk.reason, 'bad'); return null; }
-    if (!this.game.state.canAfford(def.cost)) { this.toast('Не хватает ресурсов', 'bad'); return null; }
+    if (!this.game.state.canAfford(this.buildCost(typeId))) { this.toast('Не хватает ресурсов', 'bad'); return null; }
     this._send('place', { type: typeId, x, z, rot });
     return { pending: true, typeId, x, z };
   }
@@ -1696,7 +2115,18 @@ export class Village {
       if (b.state === 'complete') b.needsRepair = b.builtCount < b.blocks.length;
       if (b.state === 'planned' || b.state === 'constructing') this.scaffolds.set(b.id, new Scaffold(this.game, b));
       if (morph && b.state === 'complete') this.startMorph(b);
-      else if (b.def.tiered && b.state === 'complete' && b.tier !== b.style) this.retier(b, false, true);
+    }
+    // First shrink any buildings that had legacy outer yard bloat (grow > growAt(style)) so they free up space
+    for (const b of this.buildings) {
+      if (b.def.tiered && b.state === 'complete' && b.grow > b.def.growAt(b.style)) {
+        this.retier(b, true, true);
+      }
+    }
+    // Now retier any building whose tier or footprint doesn't match its level/style (or farms needing clean layout)
+    for (const b of this.buildings) {
+      if (b.def.tiered && b.state === 'complete' && (b.tier !== b.style || b.grow !== b.def.growAt(b.style) || b.type === 'farm')) {
+        this.retier(b, true, true);
+      }
     }
     this.nextBuildingId = Math.max(this.nextBuildingId, o.nextBuildingId || 1);
     for (const s of o.villagers || []) {
@@ -1713,6 +2143,7 @@ export class Village {
     for (const s of o.saplings || []) this.saplings.push({ ...s, growAt: this.game.time + (s.growAt || 60) });
     // older saves: buildings below their age's base level catch up (their looks already did)
     if (this.raiseLevelsForAge((this.game.state.age | 0), true)) for (const b of this.buildings) b.refreshMaxHp();
+    for (const b of this.buildings) this.unstickAround(b);
     this.recalcPop();
     this.recalcRadius();
     this.ghostsDirty = true;

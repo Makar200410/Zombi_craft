@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { Entity } from '../entities/Entity.js';
 import { B, WATER_IDS } from '../core/blocks.js';
+import { FOOD_GATHER_MULTIPLIER } from './resourceBalance.js';
 
 // size in pixels (1/16 block): body [w, h, d], leg length, head [w, h, d]
 export const SPECIES = {
@@ -155,7 +156,7 @@ export class Animal extends Entity {
     g.audio?.play(S.death, { pos: this.eye, pitch: S.pitch, volume: 0.8 });
     const killer = source?.user || source?.owner || source;
     if (killer && (killer === g.player || killer.kind === 'player')) {
-      const n = S.food[0] + Math.floor(Math.random() * (S.food[1] - S.food[0] + 1));
+      const n = (S.food[0] + Math.floor(Math.random() * (S.food[1] - S.food[0] + 1))) * FOOD_GATHER_MULTIPLIER;
       if (g.net?.isClient && !g.net.ownVillage) g.net.send({ t: 'loot', res: { food: n } });       // the stores of this player's side are on the host
       else g.state.add('food', n);
       g.bus.emit('village:gain', { pos: this.eye.clone(), text: `+${n} Еда`, res: 'food' });

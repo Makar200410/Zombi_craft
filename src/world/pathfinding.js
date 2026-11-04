@@ -1,7 +1,17 @@
 // A* over walkable voxel cells. Moves: 4 horizontal neighbours (+ diagonals when both sides free),
 // step up 1, drop down up to 3. Returns list of cell positions {x,y,z} (feet cells) or null.
 import { SOLID } from './World.js';
-import { B, LEAF_BLOCKS, WATER_IDS } from '../core/blocks.js';
+import { B, LEAF_BLOCKS, LOG_BLOCKS, WATER_IDS } from '../core/blocks.js';
+
+const NO_STAND_ON = new Uint8Array(256);
+for (const id of LOG_BLOCKS) NO_STAND_ON[id] = 1;
+NO_STAND_ON[B.FENCE] = 1;
+NO_STAND_ON[B.ELECTRIC_FENCE] = 1;
+NO_STAND_ON[B.PALISADE] = 1;
+NO_STAND_ON[B.HAY_BALE] = 1;
+NO_STAND_ON[B.WORKBENCH] = 1;
+NO_STAND_ON[B.FURNACE] = 1;
+NO_STAND_ON[B.ARCANE_TABLE] = 1;
 
 class Heap {
   constructor() { this.a = []; }
@@ -32,6 +42,7 @@ export function findPath(world, from, to, opts = {}) {
   const maxNodes = opts.maxNodes || 3000;
   const range = opts.range || 0;           // accept arriving within this horizontal distance of goal
   const allowWater = opts.allowWater !== false;
+  const avoid = opts.avoid || null;        // (x, y, z) => number (extra cost) or true (blocked)
   const size = world.size;
   const solid = (x, y, z) => {
     if (x < 0 || z < 0 || x >= size || z >= size) return true;
@@ -39,7 +50,12 @@ export function findPath(world, from, to, opts = {}) {
     return SOLID[id] === 1 && !LEAF_BLOCKS.has(id);     // leaves can be walked through
   };
   const passable = (x, y, z) => !solid(x, y, z) && !solid(x, y + 1, z) && world.getBlock(x, y, z) !== B.LAVA;
-  const standable = (x, y, z) => passable(x, y, z) && (solid(x, y - 1, z) || (allowWater && WATER_IDS[world.getBlock(x, y - 1, z)] === 1));
+  const standable = (x, y, z) => {
+    if (!passable(x, y, z)) return false;
+    const below = world.getBlock(x, y - 1, z);
+    if (NO_STAND_ON[below]) return false;
+    return solid(x, y - 1, z) || (allowWater && WATER_IDS[below] === 1);
+  };
   const fx = Math.floor(from.x), fz = Math.floor(from.z);
   let fy = Math.floor(from.y);
   if (!standable(fx, fy, fz)) { if (standable(fx, fy + 1, fz)) fy++; else if (standable(fx, fy - 1, fz)) fy--; }
@@ -57,7 +73,7 @@ export function findPath(world, from, to, opts = {}) {
     if (cur.closed) continue;
     cur.closed = true;
     const dxg = cur.x - tx, dzg = cur.z - tz;
-    if ((cur.x === tx && cur.z === tz && Math.abs(cur.y - ty) <= 1) || (range && dxg * dxg + dzg * dzg <= range * range && Math.abs(cur.y - ty) <= 2)) return build(cur);
+    if ((cur.x === tx && cur.z === tz && Math.abs(cur.y - ty) <= 1) || (range && dxg * dxg + dzg * dzg <= range * range && Math.abs(cur.y - ty) <= 2)) return build(cur, false);
     if (cur.f - cur.g < best.f - best.g) best = cur;
     if (++expanded > maxNodes) break;
     for (let d = 0; d < 8; d++) {
@@ -71,22 +87,29 @@ export function findPath(world, from, to, opts = {}) {
         for (let k = 1; k <= 3; k++) if (standable(nx, cur.y - k, nz)) { ny = cur.y - k; break; } else if (!passable(nx, cur.y - k, nz)) break;
       }
       if (ny === -999) continue;
+      let avoidCost = 0;
+      if (avoid && !(nx === fx && nz === fz)) {
+        const av = avoid(nx, ny, nz);
+        if (av === true) continue;
+        if (typeof av === 'number' && av > 0) avoidCost = av;
+      }
       const k2 = key(nx, ny, nz);
       let n = nodes.get(k2);
       const inWater = WATER_IDS[world.getBlock(nx, ny, nz)] === 1;
-      const g = cur.g + (d >= 4 ? 1.414 : 1) + (ny > cur.y ? 0.6 : 0) + (inWater ? 3 : 0);
+      const g = cur.g + (d >= 4 ? 1.414 : 1) + (ny > cur.y ? 0.6 : 0) + (inWater ? 3 : 0) + avoidCost;
       if (n && (n.closed || n.g <= g)) continue;
       if (!n) { n = { x: nx, y: ny, z: nz, g, f: 0, parent: cur, closed: false }; nodes.set(k2, n); }
       n.g = g; n.parent = cur; n.f = g + h(nx, ny, nz) * 1.1;
       open.push(n);
     }
   }
-  return opts.partial ? build(best) : null;
+  return opts.partial ? build(best, true) : null;
 }
 
-function build(n) {
+function build(n, partial = false) {
   const path = [];
   while (n) { path.push({ x: n.x, y: n.y, z: n.z }); n = n.parent; }
   path.reverse();
+  path.partial = partial;
   return path;
 }

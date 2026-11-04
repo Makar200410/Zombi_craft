@@ -275,15 +275,15 @@ export class TerrainGen extends TerrainGenV2 {
       }
     };
     ore(B.COAL_ORE, 1300, 190, SEA + 30, 9);
-    ore(B.IRON_ORE, 700, 110, SEA - 4, 5);
-    ore(B.GOLD_ORE, 450, 60, 240, 5);
-    ore(B.CRYSTAL_ORE, 330, 20, 170, 4);
-    // a few shallow veins of the valuable ores, in reach of the first mines
-    ore(B.GOLD_ORE, 160, SEA - 40, SEA + 6, 4);
-    ore(B.CRYSTAL_ORE, 70, SEA - 45, SEA, 3);
+    ore(B.IRON_ORE, 750, 110, SEA - 4, 6);
+    ore(B.GOLD_ORE, 300, 60, 240, 4);
+    ore(B.CRYSTAL_ORE, 150, 20, 170, 3);
+    // a few shallow veins of the valuable ores, in reach of the first mines (gold rarer than iron, crystal rarer than gold)
+    ore(B.GOLD_ORE, 85, SEA - 40, SEA + 6, 3);
+    ore(B.CRYSTAL_ORE, 32, SEA - 45, SEA, 2);
     ore(B.MAGMA, 500, 3, L.hellTop + 4, 8, [B.ASH, B.DARK_STONE]);
     ore(B.OBSIDIAN, 120, 3, L.hellTop, 6, [B.ASH, B.DARK_STONE]);
-    if (cols[0].zone === Z_GEM) ore(B.CRYSTAL_ORE, 400, L.cavBot, L.cavTop, 5);
+    if (cols[0].zone === Z_GEM) ore(B.CRYSTAL_ORE, 200, L.cavBot, L.cavTop, 3);
     // surface outcrops in the hills so early iron/coal is visible
     if (rnd() < 40 * this.perChunk * 1.5) {
       const x = x0 + Math.floor(rnd() * CH), z = z0 + Math.floor(rnd() * CH);

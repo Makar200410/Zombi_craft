@@ -42,18 +42,111 @@ export function nextAge(game) { return AGES[(game.state.age | 0) + 1] || null; }
 export function ageWorkBonus(game) { return 1 + 0.05 * (game.state.age | 0); }
 export function ageHpBonus(game) { return 1 + 0.1 * (game.state.age | 0); }
 
+/** True if building `b` is a regular upgradable village building (not Town Hall, walls, or wonders). */
+export function isUpgradableVillageBuilding(b, townHall = null) {
+  if (!b) return false;
+  if (b === townHall || b.type === 'town_hall') return false;
+  if (b.def?.line || b.def?.wonder) return false;
+  return true;
+}
+
+/**
+ * Cost of upgrading a building definition `def` from `fromLevel` to `fromLevel + 1` (i.e. reaching `targetLevel = fromLevel + 1`).
+ */
+export function buildingUpgradeCostToLevel(def, targetLevel = 2) {
+  if (!def) return {};
+  const lv = Math.max(2, targetLevel | 0);
+  const L = lv - 1;
+  const c = {};
+  for (const k in (def.cost || {})) c[k] = Math.ceil(def.cost[k] * 1.5 * L);
+  if (L >= 2) c.iron = (c.iron || 0) + 3 * (L - 1);
+  if (L >= 3) c.gold = (c.gold || 0) + 2 * (L - 2);
+  if (L >= 5) c.crystal = (c.crystal || 0) + 3 * (L - 4);
+  if (L >= 6) c.steel = (c.steel || 0) + 5 * (L - 5);
+  return c;
+}
+
+/**
+ * Cost of constructing a new building of definition `def` when the Town Hall is at `thLevel`.
+ * At Town Hall level 1, buildings cost their base `def.cost`.
+ * At Town Hall level >= 2, upgradable buildings cost the same as upgrading that building to `thLevel`.
+ */
+export function buildingBuildCostForTownHall(def, thLevel = 1) {
+  if (!def) return {};
+  const lv = Math.max(1, thLevel | 0);
+  if (lv <= 1 || def.line || def.wonder) return { ...(def.cost || {}) };
+  return buildingUpgradeCostToLevel(def, lv);
+}
+
+/**
+ * Checks whether all upgradable buildings in the village have been built and upgraded to at least `targetLevel`.
+ * Returns { ok, ready, total, targetLevel, missing, reason }.
+ */
+export function checkBuildingsForLevel(buildings, targetLevel, townHall = null) {
+  const list = (buildings || []).filter(b => isUpgradableVillageBuilding(b, townHall));
+  if (list.length === 0) {
+    return {
+      ok: false,
+      ready: 0,
+      total: 0,
+      targetLevel,
+      missing: [],
+      reason: `Сначала постройте и улучшите здания до ${targetLevel} уровня`,
+    };
+  }
+  const isReady = (b) => b.state === 'complete' && !b.upgrade && (b.level || 1) >= targetLevel;
+  const missing = list.filter(b => !isReady(b));
+  const ready = list.length - missing.length;
+  if (missing.length > 0) {
+    const names = [...new Set(missing.map(b => b.def?.name || b.name || b.type))].slice(0, 3).join(', ');
+    return {
+      ok: false,
+      ready,
+      total: list.length,
+      targetLevel,
+      missing,
+      reason: `Сначала прокачайте все здания до ${targetLevel} ур. (${ready}/${list.length}: осталось — ${names})`,
+    };
+  }
+  return {
+    ok: true,
+    ready: list.length,
+    total: list.length,
+    targetLevel,
+    missing: [],
+    reason: '',
+  };
+}
+
 /** What is still missing for the next age: [{text, ok}] plus ok flag. */
 export function checkNextAge(game) {
   const a = nextAge(game);
   if (!a) return { ok: false, age: null, items: [], reason: 'Это последняя эпоха' };
   if (a.soon) return { ok: false, age: a, items: [], reason: 'Эта эпоха ещё в разработке' };
   const items = [];
-  const th = game.village?.townHall;
-  items.push({ text: `Ратуша ${a.req.th} уровня`, ok: !!th && th.state === 'complete' && th.level >= a.req.th });
+  const v = game.village;
+  const th = v?.townHall;
+  const reqLv = a.req.th;
+  const bst = checkBuildingsForLevel(v?.buildings || [], reqLv, th);
+  items.push({
+    text: bst.total > 0
+      ? `Все здания ${reqLv} уровня (${bst.ready}/${bst.total})`
+      : `Построить и улучшить здания до ${reqLv} уровня`,
+    ok: bst.ok,
+  });
+  const thOk = !!th && th.state === 'complete' && !th.upgrade && (th.level || 1) >= reqLv;
+  items.push({ text: `Ратуша ${reqLv} уровня`, ok: thOk });
   for (const t of a.req.techs) items.push({ tech: t, ok: game.state.researchDone.has(t) });
   const afford = game.state.canAfford(a.cost);
   const ok = items.every(i => i.ok) && afford;
-  return { ok, age: a, items, afford };
+  let reason = '';
+  if (!ok) {
+    if (!bst.ok) reason = bst.reason;
+    else if (!thOk) reason = `Сначала улучшите ратушу до ${reqLv} уровня`;
+    else if (!a.req.techs.every(t => game.state.researchDone.has(t))) reason = 'Не изучены нужные технологии эпохи';
+    else if (!afford) reason = 'Не хватает ресурсов для перехода в новую эпоху';
+  }
+  return { ok, age: a, items, afford, reason };
 }
 
 export function advanceAge(game) {
@@ -69,7 +162,6 @@ export function advanceAge(game) {
   game.state.siegePending = game.state.age;
   const v = game.village;
   if (v) {
-    v.raiseLevelsForAge?.(game.state.age);
     for (const b of v.buildings) b.refreshMaxHp?.();
     const n = v.restyleAll?.() || 0;
     if (n) game.bus.emit('toast', { text: 'Город перестраивается в стиле новой эпохи', kind: 'info' });

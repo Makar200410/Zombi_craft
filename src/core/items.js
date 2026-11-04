@@ -38,7 +38,7 @@ item('blunderbuss', { name: 'Мушкетон', kind: 'gun', damage: 9, pellets:
 item('grenade', { name: 'Пороховая бомба', kind: 'ranged', damage: 35, cooldown: 1.5, range: 30, projectile: 'bomb', splash: 4, research: 'gunpowder' });
 
 // --- spells (staves), consume player mana
-item('staff_fire', { name: 'Посох углей', kind: 'spell', damage: 14, cooldown: 0.6, manaCost: 8, range: 50, projectile: 'fireball', splash: 2.5, element: 'fire', research: 'arcana' });
+item('staff_fire', { name: 'Посох углей', kind: 'spell', damage: +(14 / 1.5).toFixed(2), cooldown: 0.6, manaCost: 8, range: 50, projectile: 'fireball', splash: 2.5, element: 'fire', research: 'arcana' });
 item('staff_frost', { name: 'Посох стужи', kind: 'spell', damage: 8, cooldown: 0.4, manaCost: 6, range: 45, projectile: 'ice_shard', slow: 0.5, element: 'frost', research: 'frost_magic' });
 item('staff_storm', { name: 'Посох бури', kind: 'spell', damage: 18, cooldown: 1.0, manaCost: 14, range: 40, projectile: 'lightning', chain: 4, element: 'storm', research: 'storm_magic' });
 item('staff_life', { name: 'Посох жизни', kind: 'spell', damage: 0, heal: 25, cooldown: 2.0, manaCost: 20, range: 8, projectile: 'heal_nova', element: 'life', research: 'restoration' });

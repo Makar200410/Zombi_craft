@@ -147,7 +147,8 @@ export class Placement {
       const variant = V.variantFor(this.typeId, x0, z0);
       const site = V.checkSite(this.typeId, x0, z0, this.rot);
       let ok = site.ok, reason = site.reason;
-      if (ok && !V.game.state.canAfford(def.cost)) { ok = false; reason = 'Не хватает ресурсов'; }
+      const cost = V.buildCost ? V.buildCost(this.typeId) : def.cost;
+      if (ok && !V.game.state.canAfford(cost)) { ok = false; reason = 'Не хватает ресурсов'; }
       this.valid = ok; this.reason = reason || '';
       this.y = site.y;
       const blocks = def.blueprint(this.rot, variant).map(b => ({ x: x0 + b.dx, y: site.y + b.dy, z: z0 + b.dz, id: b.id }));

@@ -7,7 +7,7 @@ export const PROJECTILES = {
   arrow:     { speed: 48, gravity: 14, life: 5, damage: 8, stick: true, knock: 2.5, kind: 'phys', sound: 'arrow_hit' },
   bolt:      { speed: 72, gravity: 6, life: 4, damage: 14, stick: true, knock: 4, kind: 'phys', sound: 'arrow_hit' },
   bullet:    { speed: 170, gravity: 2, life: 0.9, damage: 30, knock: 5, kind: 'phys', sound: 'arrow_hit' },
-  fireball:  { speed: 28, gravity: 1.2, life: 3.5, damage: 14, splash: 2.5, knock: 3, kind: 'fire', sound: 'fire_impact', light: 0xff7a2a },
+  fireball:  { speed: 28, gravity: 1.2, life: 3.5, damage: +(14 / 1.5).toFixed(2), splash: 2.5, knock: 3, kind: 'fire', sound: 'fire_impact', light: 0xff7a2a },
   ice_shard: { speed: 44, gravity: 0.5, life: 2.5, damage: 8, knock: 1.5, kind: 'frost', sound: 'frost_impact', light: 0x7ad0ff },
   acid:      { speed: 17, gravity: 18, life: 4, damage: 7, splash: 1.3, knock: 1, kind: 'acid', sound: 'splash' },
   bomb:      { speed: 17, gravity: 20, life: 4, damage: 35, splash: 4, knock: 8, kind: 'explosion', sound: 'explosion' },
@@ -171,7 +171,7 @@ export class Projectiles {
       if (len > 1e-6) {
         _dir.copy(step).divideScalar(len);
         const faction = p.faction;
-        const hitE = g.entities.raycast(p.prev, _dir, len + 0.05, e => e !== p.user && e.faction !== faction && e.kind !== 'projectile' && !e.dead && !(p.user?.rivalId != null && e.rivalId === p.user.rivalId));
+        const hitE = g.entities.raycast(p.prev, _dir, len + 0.05, e => e !== p.user && e.kind !== 'projectile' && !e.dead && (p.user ? this.combat.isEnemy(p.user, e) : e.faction !== faction));
         const hitB = w ? w.raycast(p.prev, _dir, len, { solidOnly: true, throughLeaves: true }) : null;   // arrows fly through foliage
         if (hitE && (!hitB || hitE.dist <= hitB.dist)) {
           p.pos.copy(p.prev).addScaledVector(_dir, hitE.dist);

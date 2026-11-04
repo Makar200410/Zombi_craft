@@ -7,6 +7,7 @@ import { ZOMBIE_TYPES } from './zombieTypes.js';
 import { CONSTRUCTION } from './flowfield.js';
 import { getZombieSkin, getHumanSkin } from './skinFallback.js';
 import { groundBurst, coinBurst, fallbackExplode } from './fx.js';
+import { computeZombieLoot } from '../systems/resourceBalance.js';
 
 const SOLID = new Uint8Array(256);
 for (const b of BLOCKS) if (b) SOLID[b.id] = b.solid ? 1 : 0;
@@ -505,34 +506,47 @@ export class Zombie extends Entity {
     if (this.bTarget && this.bTarget.state === 'destroyed') this.bTarget = null;
 
     this.targetT -= this.far ? 0.6 : 0.2;
-    if (this.peaceful) { this.target = null; return; }
+    if (this.peaceful && !this.caravan) { this.target = null; return; }
     if (this.targetT <= 0) {
-      this.targetT = 1 + Math.random() * 0.5;
-      const range = T.aggro * (game.state.isNight ? 1 : 0.8);
-      // a rival village's soldiers fight whoever their village is at war with: the player's people and other villages
+      this.targetT = this.caravan ? 0.45 + Math.random() * 0.25 : 1 + Math.random() * 0.5;
+      const range = this.caravan ? Math.max(T.aggro || 18, 24) : T.aggro * (game.state.isNight ? 1 : 0.8);
+      // a rival village's soldiers & caravans fight off undead/predators, and whoever their village is at war with
       const rv = this.rivalId !== null ? game.rivals : null;
       const foe = rv
-        ? (e) => !e.dead && e.kind !== 'projectile' && (e.faction === 'village' ? rv.atWarWithPlayer(this.rivalId) && !e.hidden && !e.invisible
-          : e.rivalId != null ? e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId)
-          : (!!this.caravan || rv.fightsDead(this.rivalId)) && e.faction === 'undead')            // caravan guards (and commanded towns) fight off the dead
-        : (e) => (e.faction === 'village' || e.caravan || (e.rivalId != null && game.rivals?.fightsDead(e.rivalId))) && e.kind !== 'projectile' && !e.hidden && !e.invisible;     // the dead go for caravans and commanded towns too
-      const ign = this._ignore && game.time < this._ignoreUntil ? this._ignore : null;
-      const cand = game.entities.nearest(pos, ign ? (e) => e !== ign && foe(e) : foe, range);
+        ? (e) => !e.dead && e.kind !== 'projectile' && (
+          e.faction === 'village'
+            ? !this.peaceful && rv.atWarWithPlayer(this.rivalId) && !e.hidden && !e.invisible
+            : e.rivalId != null
+              ? !this.peaceful && e.rivalId !== this.rivalId && rv.atWar(this.rivalId, e.rivalId)
+              : (!!this.caravan || !this.peaceful || rv.fightsDead(this.rivalId)) && ((e.faction === 'undead' && !e.human) || e.predator)
+        )
+        : (e) => (e.faction === 'village' || e.caravan || e.human || (e.rivalId != null && game.rivals?.fightsDead(e.rivalId))) && e.kind !== 'projectile' && !e.hidden && !e.invisible;
+      const ign = !this.caravan && this._ignore && game.time < this._ignoreUntil ? this._ignore : null;
+      let cand = game.entities.nearest(pos, ign ? (e) => e !== ign && foe(e) : foe, range);
+      // Caravan cohesion: if any teammate in this caravan is fighting an enemy nearby, join in immediately
+      if (!cand && this.caravan?.units) {
+        for (const ally of this.caravan.units) {
+          if (ally && !ally.dead && ally.target && !ally.target.dead && foe(ally.target) && ally.target.position.distanceTo(pos) < 28) {
+            cand = ally.target;
+            break;
+          }
+        }
+      }
       if (cand) {
         const d = cand.position.distanceTo(pos);
-        let ok = d < 5;
+        let ok = d < (this.caravan || this.human ? 12 : 5);
         if (!ok) ok = this._los(cand);
         if (ok) {
           if (this.target !== cand) {
-            if (!this.target && !this.far && game.time - lastRoar > 2.5 && Math.random() < 0.35) { lastRoar = game.time; game.audio?.play('zombie_roar', { pos: this.eye, pitch: voice(T.groanPitch), volume: 0.8 }); }
+            if (!this.target && !this.far && !this.human && game.time - lastRoar > 2.5 && Math.random() < 0.35) { lastRoar = game.time; game.audio?.play('zombie_roar', { pos: this.eye, pitch: voice(T.groanPitch), volume: 0.8 }); }
             this.target = cand; this.path = null; this._closeSince = null;
           }
         }
-        else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.4) this.target = null;
-      } else if (this.target && this.target.position.distanceTo(pos) > T.aggro * 1.5) this.target = null;
+        else if (this.target && this.target.position.distanceTo(pos) > range * 1.4) this.target = null;
+      } else if (this.target && this.target.position.distanceTo(pos) > range * 1.5) this.target = null;
       // a target it can't get at (up on a tower, behind a wall it can't see over): after a while it gives up on
       // it for some time and goes back to smashing the village instead of standing there
-      const tg = this.target, close = tg && Math.hypot(tg.position.x - pos.x, tg.position.z - pos.z) < 7;
+      const tg = this.target, close = !this.caravan && tg && Math.hypot(tg.position.x - pos.x, tg.position.z - pos.z) < 7;
       if (!close) this._closeSince = null;
       else if (this._closeSince == null) this._closeSince = game.time;
       if (close && game.time - this._closeSince > 7 && game.time - (this._strikeT ?? -1e9) > 7) {
@@ -595,8 +609,28 @@ export class Zombie extends Entity {
     } else if (this.lead) {
       // a caravan's people keep to their place in the column (src/systems/caravans.js)
       const L = this.lead;
-      if (Math.hypot(L.x - pos.x, L.z - pos.z) > 0.9) { gx = L.x; gz = L.z; }
-      else speed = 0;
+      const ld = Math.hypot(L.x - pos.x, L.z - pos.z);
+      if (ld > 0.9) {
+        this.pathT -= dt;
+        const needPath = this.blockedT > 0.2 || (this.path && this.pathI < this.path.length);
+        if (needPath) {
+          if ((!this.path || this.pathT <= 0) && game.waves?.takePathBudget?.()) {
+            this.pathT = 1.2 + Math.random() * 0.4;
+            this.path = game.world.findPath(pos, { x: L.x, y: pos.y, z: L.z }, { maxNodes: 300, range: 1.2, partial: true });
+            this.pathI = 1;
+          }
+          if (this.path && this.pathI < this.path.length) {
+            const p = this.path[this.pathI];
+            gx = p.x + 0.5; gz = p.z + 0.5;
+            if (Math.hypot(gx - pos.x, gz - pos.z) < 0.45) this.pathI++;
+          } else { gx = L.x; gz = L.z; }
+        } else {
+          gx = L.x; gz = L.z;
+        }
+      } else {
+        speed = 0;
+        this.path = null;
+      }
     } else if (this.wanderer) {
       this.wanderT -= dt;
       if (!this.home) this.home = pos.clone();
@@ -661,7 +695,7 @@ export class Zombie extends Entity {
       const n = waves.near(pos.x, pos.z, 1.6, _nb);
       for (let i = 0; i < n; i++) {
         const o = _nb[i];
-        if (o === this || o.dead) continue;
+        if (o === this || o.dead || o === tgt) continue;
         const ox = pos.x - o.position.x, oz = pos.z - o.position.z;
         const dd = Math.hypot(ox, oz);
         const min = this.radius + o.radius + 0.25;
@@ -778,9 +812,20 @@ export class Zombie extends Entity {
     return v.townHall || null;
   }
 
+  /** True if this entity is allowed to smash blocks (never caravans or peaceful/non-hostile humans). */
+  get canBreakBlocks() {
+    if (this.caravan || this.peaceful || this.trader) return false;
+    if (this.human && !this.raider && this.attacking === undefined && !this.game?.rivals?.atWarWithPlayer?.(this.rivalId)) return false;
+    return (this.T?.blockDps || 0) > 0;
+  }
+
   /** Detect being stuck against blocks; choose a block to smash. */
   _blocked(dt, wantMove) {
     const pos = this.position;
+    if (!this.canBreakBlocks) {
+      this.breakCell = null;
+      this.bTarget = null;
+    }
     if (wantMove && this.hitWall) this.blockedT += dt; else this.blockedT = Math.max(0, this.blockedT - dt * 2);
     // progress watchdog
     this.progT += dt;
@@ -789,22 +834,28 @@ export class Zombie extends Entity {
       if (wantMove && moved < 0.35 && !this.breakCell) {
         this.stallN = (this.stallN || 0) + 1;
         const cell = this._findBlocking();
-        // walls & buildings get smashed right away; natural blocks (trees, rock) only when truly stuck
         const inPit = this.game.village?.quarryAt?.(pos.x, pos.z);
-        if ((this.stallN >= 4 || (inPit && this.stallN >= 1)) && this._unstick(!!inPit)) this.stallN = 0;   // failsafe: ~8 s without progress (2 s in a pit)
-        else if (cell && (this._isBuilt(cell) || this.stallN >= 2 || this.base === 'brute')) this.breakCell = cell;
-        else { this.sideT = 0.9; this.sideSign = Math.random() < 0.5 ? -1 : 1; if (this.onGround) this.velocity.y = 7; }
-        this.path = null;
+        if (!this.canBreakBlocks) {
+          if ((this.stallN >= 2 || inPit) && this._unstick(!!inPit)) this.stallN = 0;
+          else { this.sideT = 0.9; this.sideSign = this._freeSide(); if (this.onGround) this.velocity.y = 7; }
+          this.path = null;
+        } else {
+          // walls & buildings get smashed right away; natural blocks (trees, rock) only when truly stuck
+          if ((this.stallN >= 4 || (inPit && this.stallN >= 1)) && this._unstick(!!inPit)) this.stallN = 0;   // failsafe: ~8 s without progress (2 s in a pit)
+          else if (cell && (this._isBuilt(cell) || this.stallN >= 2 || this.base === 'brute')) this.breakCell = cell;
+          else { this.sideT = 0.9; this.sideSign = Math.random() < 0.5 ? -1 : 1; if (this.onGround) this.velocity.y = 7; }
+          this.path = null;
+        }
       } else if (moved > 0.8) this.stallN = 0;
       this.progT = 0; this.progPos.copy(pos);
     }
-    if (this.blockedT > 0.25 && !this.breakCell && this.T.blockDps > 0) {
+    if (this.blockedT > 0.25 && !this.breakCell) {
       const cell = this._findBlocking();
-      if (cell && (this._isBuilt(cell) || this.base === 'brute')) this.breakCell = cell;
-      else if (this.blockedT > 0.5) {
-        // scraping a corner / tree / step: hop and slide sideways instead of chopping through it
-        this.sideT = 0.6; this.sideSign = this._freeSide(); this.blockedT = 0;
-        if (this.onGround && cell && !this.game.world.isSolid(cell.x, cell.y + 1, cell.z)) this.velocity.y = 7;
+      if (this.canBreakBlocks && cell && (this._isBuilt(cell) || this.base === 'brute')) this.breakCell = cell;
+      else if (this.blockedT > (this.canBreakBlocks ? 0.5 : 0.25)) {
+        // scraping a corner / tree / step / building: hop and slide sideways instead of chopping through it
+        this.sideT = 0.65; this.sideSign = this._freeSide(); this.blockedT = 0;
+        if (this.onGround && (!cell || !this.game.world.isSolid(cell.x, cell.y + 1, cell.z))) this.velocity.y = 7;
       }
     }
   }
@@ -972,7 +1023,8 @@ export class Zombie extends Entity {
     }
 
     // --- melee vs. entities
-    if (tgt && tgtDist < this.radius + tgt.radius + T.reach && Math.abs(tgt.position.y - pos.y) < 1.8) {
+    const meleeReach = T.reach + (this.human ? 0.4 : 0);
+    if (tgt && tgtDist < this.radius + tgt.radius + meleeReach && Math.abs(tgt.position.y - pos.y) < 2.1) {
       this.breakCell = null;
       if (this.attackT <= 0) {
         this.attackT = T.cd;
@@ -1001,6 +1053,7 @@ export class Zombie extends Entity {
 
     // --- smashing blocks
     if (this.breakCell) {
+      if (!this.canBreakBlocks) { this.breakCell = null; return; }
       const c = this.breakCell, w = game.world;
       const cx = c.x + 0.5, cz = c.z + 0.5;
       const d = Math.hypot(cx - pos.x, cz - pos.z);
@@ -1014,7 +1067,7 @@ export class Zombie extends Entity {
     }
 
     // --- attacking a building we've reached
-    if (this.bTarget && this.marching) {
+    if (this.bTarget && this.marching && this.canBreakBlocks) {
       const b = this.bTarget;
       if (this.attackT <= 0) {
         const cell = this._buildingBlockNear(b);
@@ -1032,6 +1085,7 @@ export class Zombie extends Entity {
   }
 
   _hitBlock(x, y, z) {
+    if (!this.canBreakBlocks) { this.breakCell = null; return; }
     const game = this.game, w = game.world, T = this.T;
     const id = w.getBlock(x, y, z);
     const b = BLOCKS[id];
@@ -1174,8 +1228,10 @@ export class Zombie extends Entity {
         game.audio?.play(this.human ? 'villager_hurt' : 'zombie_hurt', { pos: this.eye, pitch: voice(this.T.groanPitch) * (0.94 + Math.random() * 0.12) });
       }
       if (!this.far) game.particles?.emit({ pos: this.center, box: 0.2, count: 6, colors: [0x5a1a10, 0x3a6a20, 0x2a1008], speed: 2.5, life: 0.5, size: 0.12, gravity: 12 });
-      // retaliate against whoever hurt us
-      const src = source && source.faction === 'village' ? source : source?.owner?.faction === 'village' ? source.owner : null;
+      // retaliate against whoever hurt us (villager, player, caravan guard, or undead)
+      const rawSrc = source?.owner || source?.user || source;
+      const isFoe = rawSrc && (game.combat ? game.combat.isEnemy(this, rawSrc) : (rawSrc.faction !== this.faction || !!rawSrc.human !== !!this.human));
+      const src = isFoe ? rawSrc : null;
       if (src && !src.dead && src.position && src.position.distanceTo(this.position) < 30 && this.type !== 'exploder') { this.target = src; this.targetT = 3; this.path = null; }
     }
   }
@@ -1225,13 +1281,14 @@ export class Zombie extends Entity {
 
   _dropLoot() {
     const game = this.game, T = this.T;
-    let gold = 0, crystal = 0;
-    if (this.boss) { gold = 15 + ((Math.random() * 10) | 0); crystal = 3; }
-    else {
-      if (Math.random() < T.loot) gold = 1 + ((Math.random() * 3) | 0) + (this.base === 'brute' ? 2 : 0);
-      if (Math.random() < (this.base === 'brute' ? 0.12 : 0.04)) crystal = 1;
-    }
-    if (this.raisedByNecro) { gold = Math.min(gold, 1); crystal = 0; }
+    if (this.human && !this.raider) return;
+    const { gold, crystal } = computeZombieLoot({
+      base: this.base,
+      boss: this.boss,
+      lootChance: T.loot,
+      raisedByNecro: this.raisedByNecro,
+      wave: this.wave || game.waves?.currentWave || 1,
+    });
     if (!gold && !crystal) return;
     if (gold) game.state.add('gold', gold);
     if (crystal) game.state.add('crystal', crystal);

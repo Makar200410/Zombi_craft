@@ -1,4 +1,5 @@
 import { RESOURCES } from './items.js';
+import { buildingStorageCapacity } from '../systems/resourceBalance.js';
 
 export class GameState {
   constructor(bus) {
@@ -6,6 +7,7 @@ export class GameState {
     this.resources = {};
     for (const r of RESOURCES) this.resources[r] = 0;
     Object.assign(this.resources, { wood: 80, stone: 60, food: 60, iron: 0, coal: 0, gold: 10, crystal: 0 });
+    this.capProvider = null;       // (res) => max storage cap from Town Hall + Granaries + Storehouses
     this.day = 1;
     this.dayDuration = 600;        // seconds of daylight (0.22 → 0.78 of the cycle): 10 minutes
     this.nightDuration = 240;      // seconds of night (0.78 → 0.22): 4 minutes
@@ -58,15 +60,36 @@ export class GameState {
     if (prev < 0.25 && this.timeOfDay >= 0.25) { this.day++; this.bus.emit('time:dawn', { day: this.day }); }
     if (prev < 0.78 && this.timeOfDay >= 0.78) this.bus.emit('time:dusk', { day: this.day });
   }
+  /** Maximum stockpile capacity for resource `res` (determined by Town Hall, Granaries, and Storehouses). */
+  getCap(res) {
+    if (this.capProvider) {
+      const c = this.capProvider(res);
+      if (Number.isFinite(c) && c > 0) return c;
+    }
+    return buildingStorageCapacity('town_hall', Math.max(1, (this.age | 0) + 1))[res] ?? Infinity;
+  }
+  isFull(res) {
+    return (this.resources[res] || 0) >= this.getCap(res);
+  }
   add(res, n) {
     if (!n) return;
     if (!(res in this.resources)) this.resources[res] = 0;
-    this.resources[res] = Math.max(0, this.resources[res] + n);
+    const cur = this.resources[res] || 0;
+    const next = cur + n;
+    const cap = n > 0 ? this.getCap(res) : Infinity;
+    this.resources[res] = Math.max(0, n > 0 ? Math.min(Math.max(cur, cap), next) : next);
     this.bus.emit('resources:changed', { resources: this.resources });
   }
   addAll(obj, mult = 1) {
     let any = false;
-    for (const k in obj) if (obj[k]) { this.resources[k] = Math.max(0, (this.resources[k] || 0) + obj[k] * mult); any = true; }
+    for (const k in obj) if (obj[k]) {
+      const delta = obj[k] * mult;
+      const cur = this.resources[k] || 0;
+      const next = cur + delta;
+      const cap = delta > 0 ? this.getCap(k) : Infinity;
+      this.resources[k] = Math.max(0, delta > 0 ? Math.min(Math.max(cur, cap), next) : next);
+      any = true;
+    }
     if (any) this.bus.emit('resources:changed', { resources: this.resources });
   }
   canAfford(cost) {
@@ -86,8 +109,16 @@ export class GameState {
       difficulty: this.difficulty, seed: this.seed, age: this.age, siegePending: this.siegePending, finale: this.finale, ngPlus: this.ngPlus, questsDone: [...this.questsDone], weather: this.weather, bossesSlain: [...(this.bossesSlain || [])],
     };
   }
-  deserialize(o) {
-    Object.assign(this.resources, o.resources || {});
+  deserialize(o = {}) {
+    for (const r of RESOURCES) this.resources[r] = 0;
+    if (o && o.resources && typeof o.resources === 'object') {
+      for (const k of Object.keys(o.resources)) {
+        const v = Number(o.resources[k]);
+        if (Number.isFinite(v)) this.resources[k] = Math.max(0, v);
+      }
+    } else {
+      Object.assign(this.resources, { wood: 80, stone: 60, food: 60, iron: 0, coal: 0, gold: 10, crystal: 0 });
+    }
     this.day = o.day || 1; this.timeOfDay = o.timeOfDay ?? 0.3;
     this.researchDone = new Set(o.researchDone || []); this.unlockedItems = new Set(o.unlockedItems || []);
     Object.assign(this.stats, o.stats || {});

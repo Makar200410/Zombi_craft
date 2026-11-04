@@ -3,6 +3,7 @@ import { B, BLOCKS, LOG_BLOCKS, LEAF_BLOCKS } from '../core/blocks.js';
 import { BUILDING_TYPES } from './buildings.js';
 import { levelId } from './architecture.js';
 import { ageOf, ageHpBonus } from '../systems/ages.js';
+import { buildingLevelWorkBonus } from '../systems/resourceBalance.js';
 
 const CLEAR = 0, FILL = 1, BP = 2;
 
@@ -30,12 +31,13 @@ export class Building {
     this.w = L.w; this.d = L.d; this.height = L.height;
     this.state = 'planned';
     this.progress = 0;
-    this.level = 1;
+    const baseLv = Math.max(1, Math.min(10, this.village?.townHall?.level || 1, (this.game.state.age | 0) + 1));
+    this.level = this.def.line || this.def.wonder ? 1 : (typeId === 'town_hall' ? Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)) : baseLv);
     this.workers = [];
     this.createdAt = this.game.time;
     this.blocks = L.blocks.map(b => ({ x: x + b.dx, y: y + b.dy, z: z + b.dz, id: b.id, base: b.id, dy: b.dy }));
     this.upgrade = null;         // {left, total} while an upgrade is under way
-    if (!this.def.wonder && !this.def.tiered) for (const bl of this.blocks) bl.id = levelId(bl.base, Math.max(1, Math.min(10, (this.game.state.age | 0) + 1)));
+    if (!this.def.wonder && !this.def.tiered) for (const bl of this.blocks) bl.id = levelId(bl.base, this.level);
     this.built = new Uint8Array(this.blocks.length);
     this.builtCount = 0;
     this.points = {};
@@ -65,8 +67,8 @@ export class Building {
   get builderSlots() { return this.def.builderSlots ? this.def.builderSlots + Math.floor(((this.level || 1) - 1) / 2) : 0; }
   /** Highest level this building can reach in the current age (walls and fences don't level up). */
   get maxLevel() { return this.def.line || this.def.wonder ? 1 : ageOf(this.game).maxLevel; }
-  /** Workers of a higher-level building work faster. */
-  get levelWorkBonus() { return 1 + 0.15 * ((this.level || 1) - 1); }
+  /** Workers of a higher-level building work faster (+30%/lvl on farms, +12%/lvl on mines, +15%/lvl on lumber camps). */
+  get levelWorkBonus() { return buildingLevelWorkBonus(this.type, this.level || 1); }
   get job() { for (const k in this.def.jobs) return k; return null; }
   get freeSlots() { return Math.max(0, this.jobSlots - this.workers.length); }
   get isComplete() { return this.state === 'complete'; }
@@ -228,6 +230,7 @@ export class Building {
     const v = this.village, w = this.game.world;
     const prev = w.getBlock(op.x, op.y, op.z);
     if (prev === op.id) return false;
+    if (BLOCKS[op.id]?.solid) v.nudgeEntitiesOutOfCell?.(op.x, op.y, op.z, op.id, this);
     v.editBlock(op.x, op.y, op.z, op.id);
     if (op.kind === BP) {
       if (!this.built[op.bi]) { this.built[op.bi] = 1; this.builtCount++; }

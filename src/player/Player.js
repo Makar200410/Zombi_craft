@@ -711,7 +711,8 @@ export class Player extends Entity {
     g.audio?.play('dig_wood', { pos: { x: hit.x + 0.5, y: hit.y + 0.5, z: hit.z + 0.5 }, volume: 0.9, pitch: 0.8 });
     g.audio?.play('break_block', { pos: { x: hit.x + 0.5, y: hit.y + 1.5, z: hit.z + 0.5 }, volume: 1, pitch: 0.7 });
     g.bus.emit('block:broken', { x: hit.x, y: hit.y, z: hit.z, id: hit.id, by: 'player', tree: true });
-    this._hint('Дерево срублено: +' + (drop.wood || 0) + ' дерева');
+    const woodGot = +((drop.wood || 0).toFixed(1));
+    this._hint('Дерево срублено: +' + woodGot + ' дерева');
     this.model?.play('mine'); this.viewmodel?.play?.('swing');
     g.cameraRig?.shake?.(0.05);
     this._mineKey = '';
