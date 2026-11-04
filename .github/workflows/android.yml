@@ -46,13 +46,27 @@ jobs:
             fi
           done
           rm -rf android/app/src/main/res/mipmap-anydpi-v26 || true
-      - name: Build debug APK
+      - name: Build & Sign Release APK (RuStore Ready)
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-      - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ZombiCraft.apk
+          keytool -genkeypair -v \
+            -keystore release-key.jks \
+            -alias zombicraft \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass zombicraft2026 -keypass zombicraft2026 \
+            -dname "CN=Makar200410, OU=GameDev, O=ZombiCraft, L=Moscow, S=Moscow, C=RU"
+          ./gradlew assembleRelease --no-daemon
+          UNSIGNED_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          "$BUILD_TOOLS_DIR/zipalign" -v -p 4 "$UNSIGNED_APK" app-release-aligned.apk
+          "$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks release-key.jks \
+            --ks-key-alias zombicraft \
+            --ks-pass pass:zombicraft2026 \
+            --key-pass pass:zombicraft2026 \
+            --out ../ZombiCraft.apk \
+            app-release-aligned.apk
       - uses: actions/upload-artifact@v4
         with:
           name: ZombiCraft-apk
