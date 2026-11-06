@@ -201,7 +201,7 @@ export class VkAdsManager {
         p.mana = p.maxMana || 100;
         p.stamina = p.maxStamina || 100;
       }
-      g?. state?.addAll?.({ gold: 100, crystal: 40 });
+      g?.state?.addAll?.({ gold: 100, crystal: 40 });
       g?.bus?.emit?.('player:respawn');
       this.ui.menus?.hide?.();
       this.ui.root?.classList.remove('st-dead');
@@ -211,59 +211,151 @@ export class VkAdsManager {
     this.lastRewardedAt = prevCd;
   }
 
+  /**
+   * Fullscreen 16:9 video preview for Web/PC & fallback before VK moderation activates live fill.
+   * Note: On Android APK, com.my.target.ads.RewardedAd / InterstitialAd opens its own native
+   * fullscreen Android Activity across 100% of the phone screen automatically.
+   */
   _showSimulatedAd(kind, onComplete, subtitle = '') {
     this._pauseGameForAd();
     const isRewarded = kind === 'rewarded';
     const slotId = isRewarded ? VK_ADS_CONFIG.rewardedSlotId : VK_ADS_CONFIG.fullscreenSlotId;
-    let secondsLeft = isRewarded ? 5 : 3;
+    const totalSec = isRewarded ? 5 : 3;
+    let secondsLeft = totalSec;
 
     const overlay = document.createElement('div');
     overlay.className = 'ui-i';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(4,7,14,0.94);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif;color:#f8fafc;';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#020617;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#f8fafc;';
 
-    const card = document.createElement('div');
-    card.style.cssText = 'max-width:480px;width:100%;background:linear-gradient(160deg,#0f172a 0%,#1e1b4b 100%);border:2px solid #3b82f6;border-radius:18px;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.75);text-align:center;position:relative;';
+    const frame = document.createElement('div');
+    frame.style.cssText = 'width:min(92vw,860px);background:#0f172a;border:2px solid #3b82f6;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,0.85);display:flex;flex-direction:column;';
+
+    // Top bar (like native myTarget Fullscreen / Rewarded header)
+    const topBar = document.createElement('div');
+    topBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(15,23,42,0.95);border-bottom:1px solid rgba(59,130,246,0.3);gap:10px;flex-wrap:wrap;';
 
     const badge = document.createElement('div');
-    badge.style.cssText = 'display:inline-flex;align-items:center;gap:8px;background:rgba(37,99,235,0.25);border:1px solid rgba(96,165,250,0.45);color:#93c5fd;font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;margin-bottom:14px;';
+    badge.style.cssText = 'display:inline-flex;align-items:center;gap:8px;background:rgba(37,99,235,0.25);border:1px solid rgba(96,165,250,0.45);color:#93c5fd;font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;';
     badge.textContent = `VK Реклама (myTarget SDK) · Блок #${slotId}`;
 
+    const timerPill = document.createElement('div');
+    timerPill.style.cssText = 'font-size:13px;font-weight:700;color:#fbbf24;background:rgba(251,191,36,0.14);border:1px solid rgba(251,191,36,0.35);padding:4px 12px;border-radius:999px;';
+    timerPill.textContent = `⏳ Награда через ${secondsLeft} сек`;
+
+    topBar.append(badge, timerPill);
+
+    // 16:9 Video Viewport (demonstrates full-size video placement)
+    const videoWrap = document.createElement('div');
+    videoWrap.style.cssText = 'position:relative;width:100%;aspect-ratio:16/9;max-height:58vh;background:#090d16;overflow:hidden;display:flex;align-items:center;justify-content:center;';
+
+    const vCanvas = document.createElement('canvas');
+    vCanvas.width = 960;
+    vCanvas.height = 540;
+    vCanvas.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+    videoWrap.appendChild(vCanvas);
+
+    // Progress bar at bottom of video
+    const progTrack = document.createElement('div');
+    progTrack.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:6px;background:rgba(255,255,255,0.18);';
+    const progFill = document.createElement('div');
+    progFill.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#22c55e);transition:width 0.25s linear;';
+    progTrack.appendChild(progFill);
+    videoWrap.appendChild(progTrack);
+
+    // Bottom info + action bar
+    const bottomBar = document.createElement('div');
+    bottomBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;background:#0f172a;flex-wrap:wrap;';
+
+    const infoCol = document.createElement('div');
+    infoCol.style.cssText = 'flex:1;min-width:200px;';
     const title = document.createElement('div');
-    title.style.cssText = 'font-size:21px;font-weight:800;margin-bottom:8px;color:#ffffff;';
-    title.textContent = isRewarded ? '🎬 Видео с вознаграждением' : '📱 Полноэкранная реклама VK';
-
+    title.style.cssText = 'font-size:16px;font-weight:800;color:#ffffff;margin-bottom:3px;';
+    title.textContent = isRewarded ? '🎬 Видео с вознаграждением (16:9 Fullscreen)' : '📱 Полноэкранная реклама VK (Interstitial)';
     const desc = document.createElement('div');
-    desc.style.cssText = 'font-size:14px;color:#cbd5e1;line-height:1.45;margin-bottom:18px;';
-    desc.textContent = subtitle || (isRewarded
-      ? 'Досмотрите короткое видео до конца, чтобы получить бонусный сундук ресурсов!'
-      : 'Рекламная пауза Zombi Crafter (App ID: 3579274)');
-
-    const timerBox = document.createElement('div');
-    timerBox.style.cssText = 'margin:16px auto;padding:16px;border-radius:12px;background:rgba(15,23,42,0.75);border:1px solid rgba(148,163,184,0.2);font-size:15px;font-weight:700;color:#fbbf24;';
-    timerBox.textContent = `⏳ До получения награды: ${secondsLeft} сек...`;
+    desc.style.cssText = 'font-size:13px;color:#94a3b8;';
+    desc.textContent = subtitle || 'На телефоне (в APK) видео открывается нативно во весь экран через SDK VK Рекламы.';
+    infoCol.append(title, desc);
 
     const closeBtn = document.createElement('button');
-    closeBtn.style.cssText = 'width:100%;padding:12px 18px;border-radius:10px;border:none;font-size:15px;font-weight:800;cursor:not-allowed;background:#334155;color:#94a3b8;transition:all 0.2s;';
+    closeBtn.style.cssText = 'padding:11px 22px;border-radius:10px;border:none;font-size:14px;font-weight:800;cursor:not-allowed;background:#334155;color:#94a3b8;transition:all 0.2s;white-space:nowrap;';
     closeBtn.disabled = true;
     closeBtn.textContent = `Подождите ${secondsLeft} с...`;
 
-    card.append(badge, title, desc, timerBox, closeBtn);
-    overlay.appendChild(card);
+    bottomBar.append(infoCol, closeBtn);
+    frame.append(topBar, videoWrap, bottomBar);
+    overlay.appendChild(frame);
     document.body.appendChild(overlay);
+
+    // Animate the 16:9 video preview canvas
+    const ctx = vCanvas.getContext('2d');
+    let animId = 0;
+    const startMs = performance.now();
+    const renderFrame = (now) => {
+      const t = (now - startMs) * 0.001;
+      const pct = Math.min(1, t / totalSec);
+      progFill.style.width = `${(pct * 100).toFixed(1)}%`;
+
+      const grad = ctx.createLinearGradient(0, 0, 960, 540);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(0.5, '#1e1b4b');
+      grad.addColorStop(1, '#090d16');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 960, 540);
+
+      // Animated glowing orbs in 16:9 video player
+      for (let i = 0; i < 6; i++) {
+        const x = 160 + i * 135 + Math.sin(t * 1.7 + i) * 55;
+        const y = 270 + Math.cos(t * 1.3 + i * 1.2) * 110;
+        const r = 70 + Math.sin(t * 2 + i) * 18;
+        const rg = ctx.createRadialGradient(x, y, 4, x, y, r);
+        rg.addColorStop(0, i % 2 === 0 ? 'rgba(59,130,246,0.42)' : 'rgba(34,197,94,0.38)');
+        rg.addColorStop(1, 'rgba(15,23,42,0)');
+        ctx.fillStyle = rg;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Play icon & VK Video frame text
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.beginPath();
+      ctx.arc(480, 235, 54, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#60a5fa';
+      ctx.beginPath();
+      ctx.moveTo(465, 208);
+      ctx.lineTo(510, 235);
+      ctx.lineTo(465, 262);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 26px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('VK AdNetwork · Видеоплеер 16:9 (Полный экран)', 480, 335);
+
+      ctx.fillStyle = '#93c5fd';
+      ctx.font = '600 17px system-ui, sans-serif';
+      ctx.fillText(`App ID: 3579274 · Slot ID: #${slotId} · В APK открывается на весь экран телефона`, 480, 372);
+
+      animId = requestAnimationFrame(renderFrame);
+    };
+    animId = requestAnimationFrame(renderFrame);
 
     const interval = setInterval(() => {
       secondsLeft--;
       if (secondsLeft > 0) {
-        timerBox.textContent = isRewarded
-          ? `⏳ До получения награды: ${secondsLeft} сек...`
-          : `⏳ Можно закрыть через ${secondsLeft} сек...`;
+        timerPill.textContent = isRewarded
+          ? `⏳ Награда через ${secondsLeft} сек`
+          : `⏳ Закрытие через ${secondsLeft} сек`;
         closeBtn.textContent = `Подождите ${secondsLeft} с...`;
       } else {
         clearInterval(interval);
-        timerBox.style.color = '#4ade80';
-        timerBox.textContent = isRewarded
-          ? '✅ Видео просмотрено! Награда готова к выдаче.'
-          : '✅ Показ завершён (Slot ID: ' + slotId + ')';
+        timerPill.style.color = '#4ade80';
+        timerPill.style.borderColor = 'rgba(74,222,128,0.45)';
+        timerPill.style.background = 'rgba(34,197,94,0.18)';
+        timerPill.textContent = isRewarded ? '✅ Видео просмотрено!' : '✅ Показ завершён';
         closeBtn.disabled = false;
         closeBtn.style.cursor = 'pointer';
         closeBtn.style.background = isRewarded ? 'linear-gradient(135deg,#16a34a,#22c55e)' : 'linear-gradient(135deg,#2563eb,#3b82f6)';
@@ -275,6 +367,7 @@ export class VkAdsManager {
     closeBtn.onclick = (e) => {
       e.stopPropagation();
       clearInterval(interval);
+      cancelAnimationFrame(animId);
       overlay.remove();
       this._resumeGameAfterAd();
       if (typeof onComplete === 'function') onComplete();
