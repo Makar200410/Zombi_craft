@@ -19,6 +19,7 @@ import { MechBook } from './mechBook.js';
 import { WorkshopPanel } from './workshop.js';
 import { RuStorePanel, getGameIconDataUrl } from './rustorePanel.js';
 import { Tutorial } from './tutorial.js';
+import { VkAdsManager } from '../ads/vkAds.js';
 
 const SETTINGS_KEY = 'zc_settings';
 const STOP_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'dblclick', 'wheel', 'contextmenu'];
@@ -48,6 +49,7 @@ export class UI {
 
     this.vignette = h('div.zc-vignette');
     this.hitflash = h('div.zc-hitflash');
+    this.vkAds = new VkAdsManager(this);
     this.minimap = new Minimap(this);
     this.questTracker = new QuestTracker(this);
     this.hud = new Hud(this);
@@ -107,6 +109,9 @@ export class UI {
     bus.on('wave:end', ({ wave, reward } = {}) => {
       const r = reward ? Object.entries(reward).filter(([, v]) => v > 0).map(([k, v]) => '+' + v + ' ' + ({ gold: 'золота', crystal: 'кристаллов' }[k] || k)).join(', ') : '';
       this.banner.show('Волна отбита!', r || (wave ? `Волна ${wave} уничтожена` : ''), 'good', 2800);
+      if (wave && wave >= 2 && wave % 2 === 0) {
+        setTimeout(() => this.vkAds?.showFullscreen({ reason: `Волна ${wave} отбита` }), 1800);
+      }
     });
     bus.on('time:dawn', ({ day } = {}) => { if (!g.waves?.activeCount) this.banner.show('День ' + (day ?? g.state.day), 'Солнце встаёт — нежить отступает', 'day', 2600); });
     bus.on('time:dusk', () => { if (g.running) this.toast('Сгущаются сумерки… Готовьтесь к обороне!', 'wave'); });
@@ -214,6 +219,7 @@ export class UI {
     this.command.closeTab(true); this.command.deselect(); this.command.endPlacement();
     this.toasts.clear(); this.dmg.clear(); this.banner.hide();
     this.showMainMenu();
+    this.vkAds?.showFullscreen({ reason: 'Выход в главное меню' });
   }
   onNewGame() {
     this.research.close();

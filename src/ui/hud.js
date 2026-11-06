@@ -83,6 +83,12 @@ export class Hud {
     this.powN = h('span.zc-chip-n', '0');
     this.powChip = h('div.zc-chip.pow', { title: 'Энергия: выработка / потребление', style: 'display:none' }, img(glyph('bolt')), this.powN);
     this.resbar.appendChild(this.powChip);
+    this.adBonusBtn = h('button.zc-chip.ui-i', {
+      title: 'Бонус за видео VK (+Золото, +Кристаллы, +Ресурсы и HP)',
+      style: 'cursor:pointer;background:linear-gradient(135deg,rgba(234,179,8,0.28),rgba(245,158,11,0.16));border:1px solid rgba(250,204,21,0.55);color:#fde047;padding:2px 8px;border-radius:8px;',
+      onclick: (e) => { e.stopPropagation(); ui.click(); ui.vkAds?.claimSupplyDropBonus(); }
+    }, img(glyph('star')), h('span.zc-chip-n', '+Бонус'));
+    this.resbar.appendChild(this.adBonusBtn);
 
     // --- top-right: minimap + clock
     this.dial = h('canvas.zc-dial', { width: 64, height: 64 });

@@ -319,6 +319,7 @@ export class Menus {
         h('span', img(glyph('flag')), 'Волн ', h('b', st.stats.wavesSurvived || 0))),
       h('div.zc-mm-buttons',
         this.btn('Продолжить', () => this.ui.resume(), 'primary big', glyph('play')),
+        this.btn('🎁 Бонус за видео', () => this.ui.vkAds?.claimSupplyDropBonus(), 'big', glyph('star'), '+Золото, +Кристаллы, +Ресурсы и HP'),
         this.game.net?.isClient ? null : this.btn('Сохранить игру', () => { if (this.game.save?.save?.({ toast: true })) this._pausePage('home'); }, '', glyph('book')),
         this._netButton(),
         this.btn('Витрина RuStore', () => this.ui.rustore?.toggle(true), '', glyph('star'), 'иконка и 5 HD-скриншотов'),
@@ -358,7 +359,10 @@ export class Menus {
     s.append(h('div.zc-death-inner',
       h('div.zc-death-title', 'ВЫ ПОГИБЛИ'),
       h('div.zc-death-sub', src ? 'Вас одолела нежить' : 'Деревня ждёт своего героя'),
-      h('div.zc-death-timer', 'Возрождение в ратуше через ', this.deathCount)));
+      h('div.zc-death-timer', 'Возрождение в ратуше через ', this.deathCount),
+      h('div', { style: 'margin-top:16px;display:flex;justify-content:center; pointer-events:auto;' },
+        this.btn('⚡ Воскреснуть сейчас + 100 золота (Видео)', () => this.ui.vkAds?.claimInstantRevive(), 'primary', glyph('bolt'))
+      )));
   }
   updateDeath(dt) {
     if (this.current !== 'death') return;
@@ -372,6 +376,7 @@ export class Menus {
   // =============================================================== game over
   showGameOver(reason) {
     this.current = 'over';
+    setTimeout(() => this.ui.vkAds?.showFullscreen({ reason: 'Окончание игры' }), 900);
     const st = this.game.state, s = this._screen('zc-gameover');
     const stat = (icon, label, v) => h('div.zc-stat', img(icon), h('span', label), h('b', String(v ?? 0)));
     const card = h('div.zc-mm-card.zc-panel.ornate.over-card',

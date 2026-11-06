@@ -46,6 +46,200 @@ jobs:
             fi
           done
           rm -rf android/app/src/main/res/mipmap-anydpi-v26 || true
+          # Integrate official VK AdNetwork (myTarget) SDK for Fullscreen (2104985) & Rewarded (2104988)
+          sed -i '/dependencies {/a \    implementation "com.my.target:mytarget-sdk:5.27.4"' android/app/build.gradle
+          cat << 'EOF' > android/app/src/main/java/com/zombicraft/game/VkAdsBridge.java
+          package com.zombicraft.game;
+
+          import android.app.Activity;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebView;
+          import androidx.annotation.NonNull;
+          import com.my.target.ads.InterstitialAd;
+          import com.my.target.ads.Reward;
+          import com.my.target.ads.RewardedAd;
+          import com.my.target.common.models.IAdLoadingError;
+
+          public class VkAdsBridge {
+              private final Activity activity;
+              private final WebView webView;
+              private InterstitialAd interstitialAd;
+              private RewardedAd rewardedAd;
+              private boolean interstitialReady = false;
+              private boolean rewardedReady = false;
+
+              public VkAdsBridge(Activity activity, WebView webView) {
+                  this.activity = activity;
+                  this.webView = webView;
+              }
+
+              private void emit(final String event, final String detail) {
+                  activity.runOnUiThread(() -> {
+                      if (webView != null) {
+                          String safeDetail = detail == null ? "" : detail.replace("'", "\\'");
+                          webView.evaluateJavascript(
+                              "window.onVkAdEvent && window.onVkAdEvent('" + event + "', '" + safeDetail + "');",
+                              null
+                          );
+                      }
+                  });
+              }
+
+              @JavascriptInterface
+              public void preloadAds(final int fullscreenSlotId, final int rewardedSlotId) {
+                  activity.runOnUiThread(() -> {
+                      loadFullscreenInternal(fullscreenSlotId, false);
+                      loadRewardedInternal(rewardedSlotId, false);
+                  });
+              }
+
+              private void loadFullscreenInternal(final int slotId, final boolean showWhenLoaded) {
+                  if (interstitialAd != null) {
+                      interstitialAd.destroy();
+                  }
+                  interstitialReady = false;
+                  interstitialAd = new InterstitialAd(slotId, activity);
+                  interstitialAd.setListener(new InterstitialAd.InterstitialAdListener() {
+                      @Override
+                      public void onLoad(@NonNull InterstitialAd ad) {
+                          interstitialReady = true;
+                          emit("fullscreen_loaded", "");
+                          if (showWhenLoaded) {
+                              interstitialReady = false;
+                              ad.show();
+                          }
+                      }
+
+                      @Override
+                      public void onNoAd(@NonNull IAdLoadingError error, @NonNull InterstitialAd ad) {
+                          interstitialReady = false;
+                          emit("fullscreen_failed", error.getMessage());
+                      }
+
+                      @Override
+                      public void onClick(@NonNull InterstitialAd ad) {}
+
+                      @Override
+                      public void onDisplay(@NonNull InterstitialAd ad) {
+                          emit("ad_display", "fullscreen");
+                      }
+
+                      @Override
+                      public void onDismiss(@NonNull InterstitialAd ad) {
+                          interstitialReady = false;
+                          emit("fullscreen_dismissed", "");
+                          loadFullscreenInternal(slotId, false);
+                      }
+
+                      @Override
+                      public void onFailedToShow(@NonNull InterstitialAd ad) {
+                          interstitialReady = false;
+                          emit("fullscreen_failed", "failed_to_show");
+                      }
+
+                      @Override
+                      public void onVideoCompleted(@NonNull InterstitialAd ad) {}
+                  });
+                  interstitialAd.load();
+              }
+
+              private void loadRewardedInternal(final int slotId, final boolean showWhenLoaded) {
+                  if (rewardedAd != null) {
+                      rewardedAd.destroy();
+                  }
+                  rewardedReady = false;
+                  rewardedAd = new RewardedAd(slotId, activity);
+                  rewardedAd.setListener(new RewardedAd.RewardedAdListener() {
+                      @Override
+                      public void onLoad(@NonNull RewardedAd ad) {
+                          rewardedReady = true;
+                          emit("rewarded_loaded", "");
+                          if (showWhenLoaded) {
+                              rewardedReady = false;
+                              ad.show();
+                          }
+                      }
+
+                      @Override
+                      public void onNoAd(@NonNull IAdLoadingError error, @NonNull RewardedAd ad) {
+                          rewardedReady = false;
+                          if (showWhenLoaded) {
+                              emit("rewarded_failed", error.getMessage());
+                          }
+                      }
+
+                      @Override
+                      public void onClick(@NonNull RewardedAd ad) {}
+
+                      @Override
+                      public void onDisplay(@NonNull RewardedAd ad) {
+                          emit("ad_display", "rewarded");
+                      }
+
+                      @Override
+                      public void onDismiss(@NonNull RewardedAd ad) {
+                          rewardedReady = false;
+                          emit("rewarded_dismissed", "");
+                          loadRewardedInternal(slotId, false);
+                      }
+
+                      @Override
+                      public void onFailedToShow(@NonNull RewardedAd ad) {
+                          rewardedReady = false;
+                          emit("rewarded_failed", "failed_to_show");
+                      }
+
+                      @Override
+                      public void onReward(@NonNull Reward reward, @NonNull RewardedAd ad) {
+                          emit("rewarded_earned", reward.type);
+                      }
+                  });
+                  rewardedAd.load();
+              }
+
+              @JavascriptInterface
+              public void showFullscreenAd(final int slotId) {
+                  activity.runOnUiThread(() -> {
+                      if (interstitialAd != null && interstitialReady) {
+                          interstitialReady = false;
+                          interstitialAd.show();
+                      } else {
+                          loadFullscreenInternal(slotId, true);
+                      }
+                  });
+              }
+
+              @JavascriptInterface
+              public void showRewardedAd(final int slotId) {
+                  activity.runOnUiThread(() -> {
+                      if (rewardedAd != null && rewardedReady) {
+                          rewardedReady = false;
+                          rewardedAd.show();
+                      } else {
+                          loadRewardedInternal(slotId, true);
+                      }
+                  });
+              }
+          }
+          EOF
+          cat << 'EOF' > android/app/src/main/java/com/zombicraft/game/MainActivity.java
+          package com.zombicraft.game;
+
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  if (getBridge() != null && getBridge().getWebView() != null) {
+                      VkAdsBridge vkAdsBridge = new VkAdsBridge(this, getBridge().getWebView());
+                      getBridge().getWebView().addJavascriptInterface(vkAdsBridge, "VkAdsBridge");
+                      vkAdsBridge.preloadAds(2104985, 2104988);
+                  }
+              }
+          }
+          EOF
       - name: Build & Sign Release APK (RuStore Ready)
         working-directory: android
         run: |
