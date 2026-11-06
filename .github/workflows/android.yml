@@ -46,6 +46,11 @@ jobs:
             fi
           done
           rm -rf android/app/src/main/res/mipmap-anydpi-v26 || true
+          # Auto-increment versionCode & versionName on every build so RuStore always accepts new APK versions
+          VER_CODE=$((100 + ${GITHUB_RUN_NUMBER:-1}))
+          VER_NAME="1.${GITHUB_RUN_NUMBER:-1}"
+          sed -i "s/versionCode [0-9]\+/versionCode ${VER_CODE}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${VER_NAME}\"/" android/app/build.gradle
           # Integrate official VK AdNetwork (myTarget) SDK for Fullscreen (2104985) & Rewarded (2104988)
           sed -i '/dependencies {/a \    implementation "com.my.target:mytarget-sdk:5.27.4"' android/app/build.gradle
           cat << 'EOF' > android/app/src/main/java/com/zombicraft/game/VkAdsBridge.java
@@ -244,18 +249,13 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          keytool -genkeypair -v \
-            -keystore release-key.jks \
-            -alias zombicraft \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass zombicraft2026 -keypass zombicraft2026 \
-            -dname "CN=Makar200410, OU=GameDev, O=ZombiCraft, L=Moscow, S=Moscow, C=RU"
+          echo "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" | base64 -d > release-key.p12
           ./gradlew assembleRelease --no-daemon
           UNSIGNED_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
           "$BUILD_TOOLS_DIR/zipalign" -v -p 4 "$UNSIGNED_APK" app-release-aligned.apk
           "$BUILD_TOOLS_DIR/apksigner" sign \
-            --ks release-key.jks \
+            --ks release-key.p12 \
             --ks-key-alias zombicraft \
             --ks-pass pass:zombicraft2026 \
             --key-pass pass:zombicraft2026 \
