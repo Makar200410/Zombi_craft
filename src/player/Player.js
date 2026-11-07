@@ -15,7 +15,7 @@ const WALK = 4.4, SPRINT_MUL = 1.45, CROUCH_MUL = 0.33, SWIM_MUL = 0.6;
 const JUMP_V = 8.7, COYOTE = 0.12, JUMP_BUFFER = 0.16;
 const REACH = 6;
 const STAMINA_MAX = 100, SPRINT_COST = 14, STAMINA_REGEN = 22;
-const RESPAWN_TIME = 5;
+const RESPAWN_TIME = 12;
 
 export const RESEARCH_NAMES = {
   masonry: 'Каменная кладка', agriculture: 'Земледелие', mining: 'Горное дело', smithing: 'Кузнечное дело',

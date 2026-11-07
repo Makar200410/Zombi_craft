@@ -359,9 +359,10 @@ export class Menus {
     s.append(h('div.zc-death-inner',
       h('div.zc-death-title', 'ВЫ ПОГИБЛИ'),
       h('div.zc-death-sub', src ? 'Вас одолела нежить' : 'Деревня ждёт своего героя'),
-      h('div.zc-death-timer', 'Возрождение в ратуше через ', this.deathCount),
-      h('div', { style: 'margin-top:16px;display:flex;justify-content:center; pointer-events:auto;' },
-        this.btn('⚡ Воскреснуть сейчас + 100 золота (Видео)', () => this.ui.vkAds?.claimInstantRevive(), 'primary', glyph('bolt'))
+      h('div.zc-death-timer', 'Автовозрождение у ратуши через ', this.deathCount, ' сек'),
+      h('div', { style: 'margin-top:20px;display:flex;flex-wrap:wrap;gap:12px;justify-content:center;pointer-events:auto;' },
+        this.btn('⚡ Воскреснуть на месте + 100 золота (Видео)', () => this.ui.vkAds?.claimInstantRevive({ atVillage: false }), 'primary big', glyph('bolt')),
+        this.btn('🏰 Воскреснуть у деревни (в ратуше)', () => this.ui.vkAds?.respawnAtVillageFree(), 'big', glyph('home'))
       )));
   }
   updateDeath(dt) {
@@ -371,12 +372,14 @@ export class Menus {
     this._deathT = typeof t === 'number' ? t : Math.max(0, this._deathT - dt);
     const n = String(Math.max(0, Math.ceil(this._deathT)));
     if (this.deathCount.textContent !== n) this.deathCount.textContent = n;
+    if (this._deathT <= 0 && p?.dead && !this.game.paused) {
+      this.ui.vkAds?.respawnAtVillageFree();
+    }
   }
 
   // =============================================================== game over
   showGameOver(reason) {
     this.current = 'over';
-    setTimeout(() => this.ui.vkAds?.showFullscreen({ reason: 'Окончание игры' }), 900);
     const st = this.game.state, s = this._screen('zc-gameover');
     const stat = (icon, label, v) => h('div.zc-stat', img(icon), h('span', label), h('b', String(v ?? 0)));
     const card = h('div.zc-mm-card.zc-panel.ornate.over-card',
@@ -389,8 +392,11 @@ export class Menus {
         stat(itemIcon('pickaxe_stone'), 'Добыто блоков', st.stats.blocksMined),
         stat(glyph('hammer'), 'Поставлено блоков', st.stats.blocksPlaced),
         stat(resourceIcon('population'), 'Погибло жителей', st.stats.villagersLost)),
+      h('div', { style: 'margin:14px 0 8px;display:flex;justify-content:center;' },
+        this.btn('⚡ Восстановить ратушу и деревню (Видео)', () => this.ui.vkAds?.claimVillageRevive(), 'primary big', glyph('bolt'), '+150 золота и полное HP ратуши')
+      ),
       h('div.zc-row.center',
-        this.btn('Новая игра', () => { this.showMain('new'); }, 'primary big', glyph('sword')),
+        this.btn('Новая игра', () => { this.showMain('new'); }, 'big', glyph('sword')),
         this.btn('Главное меню', () => this.ui.quitToMenu(true), 'ghost', glyph('home'))));
     s.append(card);
   }

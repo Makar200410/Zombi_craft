@@ -57,12 +57,17 @@ export class VkAdsManager {
 
   _resumeGameAfterAd() {
     const g = this.game;
-    if (g && g.running && !this._wasPausedBeforeAd && !this.ui.menus?.current) {
+    // Unpause unless the player was explicitly on the Pause screen before the ad
+    if (g && g.running && !this._wasPausedBeforeAd && this.ui.menus?.current !== 'pause') {
       g.setPaused(false);
     }
   }
 
   _handleNativeEvent(event, detail) {
+    if (this._nativeFallbackTimer) {
+      clearTimeout(this._nativeFallbackTimer);
+      this._nativeFallbackTimer = null;
+    }
     switch (event) {
       case 'fullscreen_loaded':
         this.fullscreenLoaded = true;
@@ -81,15 +86,15 @@ export class VkAdsManager {
         this._pendingRewardGranted = true;
         break;
       case 'rewarded_dismissed': {
-        this._resumeGameAfterAd();
         const cb = this._pendingRewardCb;
         const granted = this._pendingRewardGranted;
         this._pendingRewardCb = null;
         this._pendingRewardGranted = false;
         if (granted && typeof cb === 'function') {
           this.lastRewardedAt = Date.now();
-          cb();
+          try { cb(); } catch (err) { console.error(err); }
         }
+        this._resumeGameAfterAd();
         break;
       }
       case 'rewarded_failed': {
@@ -97,8 +102,9 @@ export class VkAdsManager {
         const cb = this._pendingRewardCb;
         this._pendingRewardCb = null;
         this._pendingRewardGranted = false;
-        // Fallback to in-app preview ad if fill is still warming up on new VK AdNetwork slot
-        this._showSimulatedAd('rewarded', cb, detail || 'Загрузка рекламного видео VK...');
+        if (cb) {
+          this._showSimulatedAd('rewarded', cb, detail || 'Загрузка рекламного видео VK...');
+        }
         break;
       }
     }
@@ -132,28 +138,42 @@ export class VkAdsManager {
   /**
    * Show Rewarded Video ad (Slot ID: 2104988) and grant reward on completion
    */
-  showRewarded(onReward, rewardLabel = '+120 золота, +60 кристаллов и +80 дерева') {
-    const cd = this.rewardCooldownLeftSec;
-    if (cd > 0) {
-      this.ui.toast(`Следующий бонус за видео будет доступен через ${cd} сек.`, 'info');
-      return;
+  showRewarded(onReward, rewardLabel = '+120 золота, +60 кристаллов и +80 дерева', { ignoreCooldown = false } = {}) {
+    if (!ignoreCooldown) {
+      const cd = this.rewardCooldownLeftSec;
+      if (cd > 0) {
+        this.ui.toast(`Следующий бонус за видео будет доступен через ${cd} сек.`, 'info');
+        return;
+      }
     }
 
-    this._pendingRewardCb = onReward;
+    const wrappedReward = () => {
+      if (!ignoreCooldown) this.lastRewardedAt = Date.now();
+      if (typeof onReward === 'function') onReward();
+    };
+
+    this._pendingRewardCb = wrappedReward;
     this._pendingRewardGranted = false;
 
     if (this.hasNativeBridge) {
       try {
         this._pauseGameForAd();
+        if (this._nativeFallbackTimer) clearTimeout(this._nativeFallbackTimer);
+        this._nativeFallbackTimer = setTimeout(() => {
+          this._nativeFallbackTimer = null;
+          if (this._pendingRewardCb) {
+            const cb = this._pendingRewardCb;
+            this._pendingRewardCb = null;
+            this._showSimulatedAd('rewarded', cb, rewardLabel);
+          }
+        }, 3200);
         window.VkAdsBridge.showRewardedAd(VK_ADS_CONFIG.rewardedSlotId);
         return;
       } catch (e) { /* fall back */ }
     }
 
-    this._showSimulatedAd('rewarded', () => {
-      this.lastRewardedAt = Date.now();
-      if (typeof onReward === 'function') onReward();
-    }, rewardLabel);
+    this._pendingRewardCb = null;
+    this._showSimulatedAd('rewarded', wrappedReward, rewardLabel);
   }
 
   /**
@@ -185,36 +205,111 @@ export class VkAdsManager {
   }
 
   /**
-   * Instant hero resurrection via Rewarded Video (Slot 2104988)
+   * Free immediate respawn at the village Town Hall (no video needed)
    */
-  claimInstantRevive() {
-    const prevCd = this.lastRewardedAt;
-    this.lastRewardedAt = 0; // Always allow revive on death
+  respawnAtVillageFree() {
+    const g = this.game;
+    const p = g?.player;
+    if (!p) return;
+    p.deadT = 0;
+    if (typeof p.respawn === 'function') {
+      p.respawn();
+    } else {
+      if (typeof p.revive === 'function') p.revive();
+      p.dead = false;
+      p.hp = p.maxHp || 100;
+      g?.bus?.emit?.('player:respawn', { amount: 0, source: null });
+    }
+    this.ui.menus?.hide?.();
+    this.ui.root?.classList.remove('st-dead');
+    if (g) g.setPaused(false);
+    if (!g?.isTouch && g?.mode === 'explore') this.ui._lockPointer?.();
+  }
+
+  /**
+   * Instant hero resurrection via Rewarded Video (Slot 2104988)
+   * Revives the hero right where they died (or at village if atVillage=true) with full HP + 4s invulnerability + 100 Gold + 40 Crystals
+   */
+  claimInstantRevive({ atVillage = false } = {}) {
     this.showRewarded(() => {
       const g = this.game;
       const p = g?.player;
       if (p) {
-        p.dead = false;
-        p.respawnTimer = 0;
-        p.respawnIn = 0;
-        p.hp = p.maxHp || 100;
-        p.mana = p.maxMana || 100;
-        p.stamina = p.maxStamina || 100;
+        p.deadT = 0;
+        if (atVillage && typeof p.respawn === 'function') {
+          p.respawn();
+        } else {
+          if (typeof p.revive === 'function') p.revive();
+          p.dead = false;
+          p.hp = p.maxHp || 100;
+          p.mana = p.maxMana || 100;
+          p.stamina = p.maxStamina || 100;
+          p.velocity?.set?.(0, 0, 0);
+          g?.bus?.emit?.('player:respawn', { amount: 0, source: null });
+        }
+        p.invuln = 4.0;
       }
       g?.state?.addAll?.({ gold: 100, crystal: 40 });
-      g?.bus?.emit?.('player:respawn');
       this.ui.menus?.hide?.();
       this.ui.root?.classList.remove('st-dead');
+      if (g) g.setPaused(false);
+      if (!g?.isTouch && g?.mode === 'explore') this.ui._lockPointer?.();
       g?.audio?.play?.('level_up', { volume: 1 });
-      this.ui.toast('⚡ Мгновенное возрождение + 100 золота и 40 кристаллов!', 'good');
-    }, 'Мгновенное возрождение героя + 100 золота');
-    this.lastRewardedAt = prevCd;
+      this.ui.toast('⚡ Вы воскресли с полным здоровьем, 4 сек неуязвимости + 100 золота и 40 кристаллов!', 'good');
+    }, 'Мгновенное возрождение героя + 100 золота и 40 кристаллов', { ignoreCooldown: true });
+  }
+
+  /**
+   * Restore fallen Town Hall & Village on Game Over via Rewarded Video (Slot 2104988)
+   */
+  claimVillageRevive() {
+    this.showRewarded(() => {
+      const g = this.game;
+      if (!g) return;
+      g.gameOver = false;
+      const vil = g.village;
+      const th = vil?.townHall;
+      if (th) {
+        th.state = 'complete';
+        th.maxHp = th.computeMaxHp ? th.computeMaxHp() : (th.maxHp || 500);
+        th.hp = th.maxHp;
+        th.needsRepair = false;
+        if (Array.isArray(th.blocks) && vil.bulkEdit) {
+          vil.bulkEdit(th.blocks.map(b => [b.x, b.y, b.z, b.id]));
+        }
+        th.refreshBuilt?.();
+        vil.recalcPop?.();
+        vil.ghostsDirty = true;
+      }
+      // Push back / clear enemies right on top of Town Hall so it doesn't immediately die again
+      const enemies = g.entities?.enemies || g.entities?.list || [];
+      if (th && Array.isArray(enemies)) {
+        for (const e of [...enemies]) {
+          if (e && e !== g.player && e.isEnemy && th.distanceTo && th.distanceTo(e.position) < 16) {
+            e.hp = 0;
+            e.dead = true;
+          }
+        }
+      }
+      if (g.player) {
+        g.player.deadT = 0;
+        if (typeof g.player.respawn === 'function') g.player.respawn();
+        else if (typeof g.player.revive === 'function') g.player.revive();
+        g.player.invuln = 5.0;
+      }
+      g.state?.addAll?.({ gold: 150, crystal: 60, wood: 120, stone: 120 });
+      this.ui.menus?.hide?.();
+      this.ui.root?.classList.remove('st-dead');
+      this.ui._setState?.('play');
+      g.setPaused(false);
+      g.save?.save?.({ toast: false });
+      g.audio?.play?.('level_up', { volume: 1 });
+      this.ui.toast('🏰 Ратуша восстановлена! +150 золота, +60 кристаллов и +120 ресурсов для обороны!', 'good');
+    }, 'Восстановление ратуши и деревни + 150 золота', { ignoreCooldown: true });
   }
 
   /**
    * Fullscreen 16:9 video preview for Web/PC & fallback before VK moderation activates live fill.
-   * Note: On Android APK, com.my.target.ads.RewardedAd / InterstitialAd opens its own native
-   * fullscreen Android Activity across 100% of the phone screen automatically.
    */
   _showSimulatedAd(kind, onComplete, subtitle = '') {
     this._pauseGameForAd();
@@ -225,12 +320,11 @@ export class VkAdsManager {
 
     const overlay = document.createElement('div');
     overlay.className = 'ui-i';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#020617;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#f8fafc;';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#020617;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#f8fafc;pointer-events:auto;';
 
     const frame = document.createElement('div');
     frame.style.cssText = 'width:min(92vw,860px);background:#0f172a;border:2px solid #3b82f6;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,0.85);display:flex;flex-direction:column;';
 
-    // Top bar (like native myTarget Fullscreen / Rewarded header)
     const topBar = document.createElement('div');
     topBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(15,23,42,0.95);border-bottom:1px solid rgba(59,130,246,0.3);gap:10px;flex-wrap:wrap;';
 
@@ -244,7 +338,6 @@ export class VkAdsManager {
 
     topBar.append(badge, timerPill);
 
-    // 16:9 Video Viewport (demonstrates full-size video placement)
     const videoWrap = document.createElement('div');
     videoWrap.style.cssText = 'position:relative;width:100%;aspect-ratio:16/9;max-height:58vh;background:#090d16;overflow:hidden;display:flex;align-items:center;justify-content:center;';
 
@@ -254,7 +347,6 @@ export class VkAdsManager {
     vCanvas.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
     videoWrap.appendChild(vCanvas);
 
-    // Progress bar at bottom of video
     const progTrack = document.createElement('div');
     progTrack.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:6px;background:rgba(255,255,255,0.18);';
     const progFill = document.createElement('div');
@@ -262,7 +354,6 @@ export class VkAdsManager {
     progTrack.appendChild(progFill);
     videoWrap.appendChild(progTrack);
 
-    // Bottom info + action bar
     const bottomBar = document.createElement('div');
     bottomBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;background:#0f172a;flex-wrap:wrap;';
 
@@ -286,7 +377,6 @@ export class VkAdsManager {
     overlay.appendChild(frame);
     document.body.appendChild(overlay);
 
-    // Animate the 16:9 video preview canvas
     const ctx = vCanvas.getContext('2d');
     let animId = 0;
     const startMs = performance.now();
@@ -302,7 +392,6 @@ export class VkAdsManager {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 960, 540);
 
-      // Animated glowing orbs in 16:9 video player
       for (let i = 0; i < 6; i++) {
         const x = 160 + i * 135 + Math.sin(t * 1.7 + i) * 55;
         const y = 270 + Math.cos(t * 1.3 + i * 1.2) * 110;
@@ -316,7 +405,6 @@ export class VkAdsManager {
         ctx.fill();
       }
 
-      // Play icon & VK Video frame text
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
       ctx.beginPath();
       ctx.arc(480, 235, 54, 0, Math.PI * 2);
@@ -369,8 +457,12 @@ export class VkAdsManager {
       clearInterval(interval);
       cancelAnimationFrame(animId);
       overlay.remove();
+      try {
+        if (typeof onComplete === 'function') onComplete();
+      } catch (err) {
+        console.error(err);
+      }
       this._resumeGameAfterAd();
-      if (typeof onComplete === 'function') onComplete();
     };
   }
 }
