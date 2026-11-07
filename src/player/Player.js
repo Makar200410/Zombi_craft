@@ -250,6 +250,54 @@ export class Player extends Entity {
     this.game.bus.emit('toast', { text: 'Вы очнулись у ратуши', kind: 'info' });
   }
 
+  /** Magic Recall Mirror: teleports the hero back to the village Town Hall from anywhere (caves, mines, battle). */
+  useRecallMirror() {
+    const g = this.game;
+    const combat = g.combat;
+    if (combat && combat.cooldownLeft(this, 'recall_mirror') > 0) {
+      this._hint('Зеркало перезаряжается…');
+      return;
+    }
+    if (combat?.startCooldown) combat.startCooldown(this, 'recall_mirror', ITEMS.recall_mirror?.cooldown || 2.0);
+    else this.cooldowns.recall_mirror = (ITEMS.recall_mirror?.cooldown || 2.0);
+
+    // Departure particles
+    g.particles?.emit({
+      pos: { x: this.position.x, y: this.position.y + 1.0, z: this.position.z },
+      count: 28,
+      colors: [0x5ad0f0, 0xa8f4ff, 0xfad650, 0xffffff],
+      additive: true,
+      speed: 4,
+      gravity: -1,
+      life: 0.9,
+      size: 0.22,
+    });
+
+    this.viewmodel?.play?.('cast');
+    this.model?.play?.('cast');
+
+    const dest = this.findSpawn();
+    this.position.copy(dest);
+    this.velocity.set(0, 0, 0);
+    if (g.cameraRig) g.cameraRig.eyeY = null;
+
+    // Arrival particles at the village Town Hall
+    g.particles?.emit({
+      pos: { x: this.position.x, y: this.position.y + 1.0, z: this.position.z },
+      count: 34,
+      colors: [0x5ad0f0, 0xa8f4ff, 0xfad650, 0xffffff],
+      additive: true,
+      speed: 4.5,
+      gravity: -1.2,
+      life: 1.1,
+      size: 0.24,
+    });
+
+    g.audio?.play?.('level_up', { volume: 0.75, pitch: 1.3 });
+    navigator.vibrate?.(18);
+    g.bus.emit('toast', { text: '✨ Зеркало возврата перенесло вас в деревню!', kind: 'good' });
+  }
+
   /** Armour: equipped pieces per slot (item ids) and their total defence. */
   get armorDefense() { let d = 0; for (const s of ARMOR_SLOTS) d += ITEMS[this.armor?.[s]]?.def || 0; return d; }
   equipArmor(id) {
@@ -307,6 +355,13 @@ export class Player extends Entity {
     const hi = this.hotbar.indexOf('build_hammer');
     if (hi >= 0) this.hotbar[hi] = this.hotbar.includes('blk_10') ? null : 'blk_10';
     if (!this.hotbar.length) this.hotbar = [...DEFAULT_HOTBAR];
+    // Ensure every player (including existing saves) has the Recall Mirror in their hotbar
+    if (!this.hotbar.includes('recall_mirror')) {
+      const emptyIdx = this.hotbar.findIndex(id => !id || id === 'staff_frost');
+      if (emptyIdx >= 0) this.hotbar[emptyIdx] = 'recall_mirror';
+      else if (this.hotbar.length < 9) this.hotbar.push('recall_mirror');
+      else this.hotbar[4] = 'recall_mirror';
+    }
     this.selected = Math.min(this.hotbar.length - 1, Math.max(0, o.selected | 0));
     if (typeof o.hp === 'number' && o.hp > 0) this.hp = Math.min(this.maxHp, o.hp);
     if (typeof o.mana === 'number') this.mana = Math.min(this.maxMana, o.mana);
@@ -530,6 +585,7 @@ export class Player extends Entity {
       switch (it.kind) {
         case 'melee': case 'tool': case 'build': case 'block': {
           if (id === 'blueprint_frame') { if (pressP) g.blueprints?.click(this.target.block); break; }
+          if (id === 'recall_mirror') { if (pressP || pressS) this.useRecallMirror(); break; }
           if (a.primary) {
             const reach = it.range || 3;
             const aimv = aim();

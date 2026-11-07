@@ -371,6 +371,39 @@ function laserRifle(p) {
   });
 }
 const ITEM_DRAW = {
+  // Magic Recall Mirror: ornate gold frame, cyan portal glass, star reflection, and golden handle
+  recall_mirror: (p) => {
+    // Diagonal golden handle (bottom-left)
+    handle(p, -24, -4, R.gold, [-18, -12]);
+    // Pommel gem at the bottom of the handle
+    for (let dy = -1; dy <= 1; dy++) for (let dx0 = -1; dx0 <= 1; dx0++) {
+      p.set(5 + dx0, 26 + dy, dx0 + dy < 0 ? R.crystal[4] : R.crystal[2]);
+    }
+    // Ornate oval mirror head centered at (19, 12)
+    const cx = 19, cy = 12, rx = 8.5, ry = 9.5;
+    for (let y = 1; y < 25; y++) for (let x = 8; x < 30; x++) {
+      const nx = (x - cx) / rx, ny = (y - cy) / ry;
+      const d = Math.hypot(nx, ny);
+      if (d > 1.08) continue;
+      if (d >= 0.78) {
+        // Golden frame with crown crests
+        const shade = (x - cx) - (y - cy) < -2 ? R.gold[4] : (x - cx) - (y - cy) > 4 ? R.gold[1] : R.gold[3];
+        p.set(x, y, shade);
+      } else {
+        // Shimmering portal glass inside
+        const swirl = Math.sin((x - cx) * 0.55 + (y - cy) * 0.45);
+        const diag = (x - cx) + (y - cy);
+        const col = diag < -5 ? R.crystal[4] : swirl > 0.45 ? R.crystal[3] : swirl > -0.25 ? R.crystal[2] : R.crystal[1];
+        p.set(x, y, col);
+      }
+    }
+    // Bright star sparkle in the mirror glass
+    const star = [[18, 9], [19, 9], [17, 10], [18, 10], [19, 10], [20, 10], [18, 11], [19, 11], [22, 14], [21, 15]];
+    for (const [sx, sy] of star) p.set(sx, sy, hex('#ffffff'));
+    // Top & side ruby/sapphire frame gems
+    p.set(19, 2, R.crystal[4]); p.set(19, 3, R.crystal[3]);
+    p.set(10, 12, R.crystal[3]); p.set(28, 12, R.crystal[3]);
+  },
   // the blueprint frame: a sheet of blue paper with a white plan, rolled on two wooden rods
   blueprint_frame: (p) => {
     for (let y = 6; y < 27; y++) for (let x = 7; x < 26; x++) p.set(x, y, hex((x + y) % 7 === 0 ? '#2a58b0' : '#2f64c4'));

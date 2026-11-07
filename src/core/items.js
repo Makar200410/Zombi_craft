@@ -19,6 +19,7 @@ export const HORDE_HOTBAR = ['raise_walker', 'raise_runner', 'raise_crawler', 'r
 // the builders' hammer: only villagers carry it (the player builds with block items from the inventory)
 item('build_hammer', { name: 'Молот строителя', kind: 'build', hidden: true, desc: 'Инструмент строителей деревни.' });
 item('blueprint_frame', { name: 'Рамка чертежа', kind: 'tool', toolType: 'frame', free: true, damage: 1, cooldown: 0.3, desc: 'Обведите постройку: ЛКМ — первый угол, ЛКМ — второй, ПКМ — сброс. Она станет чертежом, который строители возведут где угодно.' });
+item('recall_mirror', { name: 'Зеркало возврата', kind: 'tool', toolType: 'mirror', free: true, damage: 1, cooldown: 2.0, desc: 'Магическое зеркало перемещения: нажмите атаку (ЛКМ) или действие (ПКМ), чтобы мгновенно телепортироваться домой к ратуше в деревне.' });
 item('pickaxe_stone', { name: 'Каменная кирка', kind: 'tool', toolType: 'pick', speed: 2.0, damage: 3, cooldown: 0.35 });
 item('pickaxe_iron', { name: 'Железная кирка', kind: 'tool', toolType: 'pick', speed: 3.5, damage: 4, cooldown: 0.3, research: 'smithing' });
 item('axe_stone', { name: 'Каменный топор', kind: 'tool', toolType: 'axe', speed: 2.2, damage: 5, cooldown: 0.5 });
@@ -49,7 +50,7 @@ item('steel_sword', { name: 'Стальной меч', kind: 'melee', damage: 13
 item('rifle', { name: 'Винтовка', kind: 'gun', damage: 48, cooldown: 1.1, range: 120, projectile: 'bullet', research: 'steam_power', desc: 'Дальнобойная и точная.' });
 item('machine_gun', { name: 'Ручной пулемёт', kind: 'gun', damage: 12, cooldown: 0.11, spread: 0.022, range: 70, projectile: 'bullet', research: 'machine_guns', desc: 'Держите кнопку — стреляет очередями.' });
 item('flamethrower', { name: 'Огнемёт', kind: 'gun', damage: 7, pellets: 3, spread: 0.08, cooldown: 0.16, range: 13, projectile: 'fireball', splash: 1.2, element: 'fire', research: 'rocketry', desc: 'Струя огня поджигает толпу вблизи.' });
-item('rocket_launcher', { name: 'Гранатомёт', kind: 'gun', damage: 110, cooldown: 2.4, range: 90, projectile: 'rocket', splash: 4.5, research: 'rocketry', desc: 'Ракета взрывается по площади.' });
+item('rocket_launcher', { name: 'Гранатомёт', kind: 'gun', damage: 110, cooldown: 2.4, range: 90, projectile: 'rocket', splash: 4.5, element: 'rocketry', desc: 'Ракета взрывается по площади.' });
 item('laser_rifle', { name: 'Лазерная винтовка', kind: 'gun', damage: 40, cooldown: 0.28, range: 120, projectile: 'laser', research: 'ai', desc: 'Луч прожигает любую броню.' });
 item('nano_blade', { name: 'Нано-клинок', kind: 'melee', damage: 30, cooldown: 0.3, range: 3.6, knockback: 7, element: 'arcane', research: 'nanotech', desc: 'Лезвие толщиной в молекулу.' });
 
@@ -71,7 +72,7 @@ for (const id of [...new Set([...PALETTE, ...MECHANISMS, ...ELECTRICS])]) {
 }
 
 // Default hotbar layout for a new game (ids may be locked until researched).
-export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'blk_10', 'bow', 'staff_fire', 'musket', 'staff_frost', 'staff_storm'];
+export const DEFAULT_HOTBAR = ['sword_wood', 'pickaxe_stone', 'axe_stone', 'blk_10', 'recall_mirror', 'bow', 'staff_fire', 'musket', 'staff_storm'];
 
 export const RESOURCES = ['wood', 'stone', 'food', 'coal', 'iron_ore', 'iron', 'steel', 'gold_ore', 'gold', 'crystal', 'uranium'];
 export const RESOURCE_LABELS = { wood: 'Дерево', stone: 'Камень', food: 'Еда', iron: 'Железо', coal: 'Уголь', gold: 'Золото', iron_ore: 'Железная руда', gold_ore: 'Золотая руда', crystal: 'Кристаллы маны', steel: 'Сталь', uranium: 'Уран' };
