@@ -30,7 +30,13 @@ import { decodeBlueprint } from '../systems/blueprints.js';
 import { advanceAge } from '../systems/ages.js';
 import { OwnVillage } from './ownVillage.js';
 
-export const LAN_PORT = 27015;
+import { hostBridge, joinEndpoint, LAN_PORT, openSocket } from './transport.js';
+
+export { LAN_PORT };
+const unavailable = {
+  nohost: 'На этом устройстве мир ещё не открыт для сети',
+  full: 'Сетевой мир заполнен',
+};
 const hashId = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
 const TICK = 0.1;            // snapshot / position rate (s)
 const VIEW = 110;            // undead & villagers sent within this distance of a player
@@ -132,31 +138,63 @@ export class Net {
   // ================================================================ hosting
   /** Opens the current world to the network. Returns {ok, addresses|reason}. */
   async host() {
+    if (this.isHost) return { ok: true, addresses: this.addresses };
+    if (this._hosting || this.isClient) return { ok: false, reason: 'Сетевое подключение уже открывается или активно' };
+    this._hosting = true;
+    try { return await this._startHost(); }
+    finally { this._hosting = false; }
+  }
+  async _startHost() {
     const g = this.game;
-    if (this.active) return { ok: true, addresses: this.addresses };
+    const world = g.world;
     let port = LAN_PORT, ips = [];
-    if (window.zcDesktop?.startLan) {
-      try { const r = await window.zcDesktop.startLan(LAN_PORT); port = r.port; ips = r.ips || []; } catch (e) { return { ok: false, reason: 'Не удалось запустить сервер: ' + (e.message || e) }; }
+    const bridge = hostBridge();
+    if (bridge?.startLan) {
+      try {
+        const server = await bridge.startLan(LAN_PORT);
+        port = server.port;
+        ips = server.ips || [];
+      } catch (error) {
+        return { ok: false, reason: 'Не удалось открыть мир: ' + error.message };
+      }
     }
     const ok = await this._connect(`ws://127.0.0.1:${port}/zc?role=host`);
-    if (!ok) return { ok: false, reason: window.zcDesktop ? 'Сервер не отвечает' : 'Создать сервер можно в версии игры для Windows (или запустив node tools/lan-server.cjs на компьютере). С телефона можно подключиться к другу.' };
+    if (!ok) {
+      this._stopRelay();
+      return { ok: false, reason: bridge ? 'Локальный сервер не отвечает' : 'Для открытия мира используйте Android, Windows или запустите node tools/lan-server.cjs на этом компьютере.' };
+    }
+    if (!g.running || g.world !== world) {
+      this.ws.close();
+      this.ws = null;
+      this._stopRelay();
+      return { ok: false, reason: 'Сначала откройте свой мир' };
+    }
     this.role = 'host';
     this.players = new Map();   // id -> RemotePlayer
     this._edits = [];
     this.addresses = ips.map(ip => ip + ':' + port);
     this.ws.onmessage = (ev) => this._hostMsg(ev.data);
-    this.ws.onclose = () => { if (this.isHost) { this._stopHost(); g.bus.emit('toast', { text: 'Сетевая игра закрыта', kind: 'warn' }); } };
+    this.ws.onerror = this.ws.onclose = () => { if (this.isHost) { this._stopHost(); g.bus.emit('toast', { text: 'Сетевая игра закрыта', kind: 'warn' }); } };
+    const name = g.save?.worlds?.().find(saved => saved.id === g.save.worldId)?.name || 'Мир Zombi Craft';
+    bridge?.advertise?.(port, name).catch(error => console.warn('LAN discovery:', error));
     g.bus.emit('net:changed', {});
     return { ok: true, addresses: this.addresses };
   }
   _stopHost() {
-    for (const p of this.players?.values() || []) this.game.entities.remove(p);
+    for (const player of this.players?.values() || []) {
+      this.siege.release(player);
+      this.game.entities.remove(player);
+      this._pvClear(player.cid);
+    }
     this.players = null;
     this.role = null;
     try { this.ws?.close(); } catch (e) { /* ignore */ }
     this.ws = null;
-    window.zcDesktop?.stopLan?.();
+    this._stopRelay();
     this.game.bus.emit('net:changed', {});
+  }
+  _stopRelay() {
+    hostBridge()?.stopLan?.()?.catch(error => console.warn('LAN server:', error));
   }
   stop() {
     if (this.isHost) this._stopHost();
@@ -177,9 +215,11 @@ export class Net {
     const id = m.from;
     let d; try { d = JSON.parse(m.d); } catch (e) { return; }
     const p = this.players.get(id);
+    if (!d || typeof d !== 'object' || (!p && d.t !== 'lobby' && d.t !== 'hello')) return;
     switch (d.t) {
       case 'lobby': this._sendTo(id, { t: 'lobby', towns: this.siege.lobbyTowns(), players: [...this.players.values()].map(q => q.playerName) }); break;
       case 'hello': {
+        if (p) return;
         const name = String(d.name || 'Игрок').slice(0, 20);
         const rp = new RemotePlayer(g, this, id, name, PLAYER_COLORS[id % PLAYER_COLORS.length]);
         const side = this.siege.assign(rp, ROLES[d.role] ? d.role : 'hero', d.town ?? null);
@@ -469,39 +509,86 @@ export class Net {
   /** Joins a friend's game at "ip[:port]". progress(p, text) shows loading. Returns {ok, reason}. */
   /** Asks the host at addr which towns can be led (before joining). Returns {ok, towns, players} or {ok:false, reason}. */
   async lobby(addr) {
-    addr = String(addr || '').trim().replace(/^(https?|wss?):\/\//, '').replace(/\/.*$/, '');
-    if (!addr) return { ok: false, reason: 'Введите адрес' };
-    if (!addr.includes(':')) addr += ':' + LAN_PORT;
-    let ws;
-    try { ws = new WebSocket(`ws://${addr}/zc?role=client`); } catch (e) { return { ok: false, reason: 'Не удалось подключиться' }; }
+    let endpoint, ws;
+    try { endpoint = joinEndpoint(addr); } catch (error) { return { ok: false, reason: error.message }; }
+    const failed = { ok: false, reason: 'Не удалось подключиться к ' + endpoint.host + '. Проверьте адрес и подключение к одной сети Wi-Fi.' };
+    try { ws = openSocket(endpoint.url); } catch { return failed; }
     return new Promise((resolve) => {
-      const done = (v) => { clearTimeout(tm); try { ws.close(); } catch (e) { /* ignore */ } resolve(v); };
-      const tm = setTimeout(() => done({ ok: false, reason: 'Хозяин не ответил' }), 8000);
+      const done = (result) => { clearTimeout(timer); ws.close(); resolve(result); };
+      const timer = setTimeout(() => done(failed), 8000);
       ws.onopen = () => ws.send(JSON.stringify({ t: 'lobby' }));
-      ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.t === 'lobby') done({ ok: true, towns: m.towns || [], players: m.players || [] }); else if (m.t === 'nohost') done({ ok: false, reason: 'На этом компьютере мир ещё не открыт для сети' }); };
-      ws.onerror = () => done({ ok: false, reason: 'Не удалось подключиться к ' + addr });
+      ws.onmessage = (event) => {
+        let message;
+        try { message = JSON.parse(event.data); } catch { return; }
+        if (message.t === 'lobby') done({ ok: true, towns: message.towns || [], players: message.players || [] });
+        else if (unavailable[message.t]) done({ ok: false, reason: unavailable[message.t] });
+      };
+      ws.onerror = ws.onclose = () => done(failed);
     });
   }
+
   async join(addr, name, progress = () => {}, role = 'hero', town = null) {
     const g = this.game;
+    let endpoint;
+    try { endpoint = joinEndpoint(addr); } catch (error) { return { ok: false, reason: error.message }; }
     if (this.active) this.stop();
-    addr = String(addr || '').trim().replace(/^(https?|wss?):\/\//, '').replace(/\/.*$/, '');
-    if (!addr) return { ok: false, reason: 'Введите адрес' };
-    if (!addr.includes(':')) addr += ':' + LAN_PORT;
-    progress(0.05, 'Подключение к ' + addr + '…');
-    const ok = await this._connect(`ws://${addr}/zc?role=client`);
-    if (!ok) return { ok: false, reason: 'Не удалось подключиться к ' + addr + '. Проверьте адрес и что вы в одной сети.' };
+    progress(0.05, 'Подключение к ' + endpoint.host + '…');
+    const ok = await this._connect(endpoint.url);
+    if (!ok) return { ok: false, reason: 'Не удалось подключиться к ' + endpoint.host + '. Проверьте адрес и подключение к одной сети Wi-Fi.' };
+    const ws = this.ws;
+    let disconnected = false;
+    let snapshot;
+    const queued = [];
     const welcome = await new Promise((resolve) => {
-      const tm = setTimeout(() => resolve(null), 15000);
-      this.ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.t === 'welcome' || m.t === 'nohost') { clearTimeout(tm); resolve(m); } };
-      this.ws.onclose = () => { clearTimeout(tm); resolve(null); };
+      let receivedWelcome = false;
+      const timer = setTimeout(() => resolve(null), 15000);
+      ws.onmessage = (event) => {
+        let message;
+        try { message = JSON.parse(event.data); } catch { return; }
+        if (receivedWelcome) {
+          if (message.t === 'snap') snapshot = event.data;
+          else if (queued.length < 2048) queued.push(event.data);
+          else { disconnected = true; ws.close(); }
+        } else if (message.t === 'welcome' || unavailable[message.t]) {
+          receivedWelcome = message.t === 'welcome';
+          clearTimeout(timer);
+          resolve(message);
+        }
+      };
+      ws.onclose = () => { disconnected = true; clearTimeout(timer); resolve(null); };
+      ws.onerror = ws.onclose;
       this.myName = name || 'Игрок';
-      this.ws.send(JSON.stringify({ t: 'hello', name: name || 'Игрок', role, town }));
+      ws.send(JSON.stringify({ t: 'hello', name: this.myName, role, town }));
     });
-    if (!welcome || welcome.t !== 'welcome') { try { this.ws?.close(); } catch (e) { /* ignore */ } this.ws = null; return { ok: false, reason: welcome?.t === 'nohost' ? 'На этом компьютере мир ещё не открыт для сети' : 'Хозяин не ответил' }; }
+    const abort = (reason) => {
+      ws.close();
+      if (this.ws === ws) this.ws = null;
+      return { ok: false, reason };
+    };
+    if (!welcome || welcome.t !== 'welcome') return abort(unavailable[welcome?.t] || 'Хозяин не ответил');
     // the host's world: same seed, plus every edit made in it
     g.running = false;
-    await g.setup({ seed: welcome.seed, size: welcome.size, format: welcome.format }, (p, t) => progress(0.1 + p * 0.8, t || 'Загрузка мира друга…'));
+    try {
+      await g.setup({ seed: welcome.seed, size: welcome.size, format: welcome.format }, (p, t) => progress(0.1 + p * 0.8, t || 'Загрузка мира друга…'));
+    } catch (error) {
+      console.error('LAN world setup:', error);
+      return abort('Не удалось загрузить мир. Проверьте, что у игроков одна версия игры.');
+    }
+    if (disconnected || ws.readyState !== 1) return abort('Связь с хозяином потеряна при загрузке мира');
+    try {
+      this._loadJoinedWorld(welcome, ws, queued, snapshot);
+    } catch (error) {
+      console.error('LAN world state:', error);
+      const reason = 'Не удалось загрузить мир. Проверьте, что у игроков одна версия игры.';
+      if (this.isClient) this._leave(reason);
+      return abort(reason);
+    }
+    progress(1, '');
+    return { ok: true };
+  }
+
+  _loadJoinedWorld(welcome, ws, queued, snapshot) {
+    const g = this.game;
     const w = g.world;
     const changes = decodeChanges(welcome.changes);
     w.applyChanges(changes);
@@ -539,13 +626,15 @@ export class Net {
       : g.systems.filter(s => s !== g.village && s !== g.waves && s !== g.research && s !== g.quests && s !== g.save);
     // a hero's copy of the village: placement, ghosts and labels (its life runs on the host)
     if (g.village?.mirror) g.systems.push({ update: (dt) => g.village.mirrorUpdate(dt) });
-    this.ws.onmessage = (ev) => this._clientMsg(ev.data);
-    this.ws.onclose = () => { if (this.isClient) this._leave('Связь с хозяином потеряна'); };
+    ws.onmessage = (ev) => this._clientMsg(ev.data);
+    ws.onerror = ws.onclose = () => { if (this.ws === ws && this.isClient) this._leave('Связь с хозяином потеряна'); };
     g.begin({ loaded: true });
     if (welcome.vil) this._applyVillage(welcome.vil);
     if (ruler && this.own.start(welcome.town, welcome.pv)) { g.village.netSpawn = null; g.systems.push({ update: (dt) => this.own.update(dt) }); }
     const p = g.player;
     if (p) { p.revive?.(); p.position.set(...welcome.spawn); p.velocity.set(0, 0, 0); }
+    for (const data of queued) this._clientMsg(data);
+    if (snapshot) this._clientMsg(snapshot);
     const hello = {
       hero: 'Вы в мире друга! Деревня у вас общая: стройте, улучшайте, назначайте жителей и ведите исследования в «Командовании» (Tab), исследуйте мир и сражайтесь.',
       rival: 'Вы правите своей деревней! «Командование» (G): стройте, улучшайте ратушу, изучайте технологии, ведите деревню в новые эпохи, нанимайте войско, объявляйте войны и заключайте союзы. Ночью мёртвые придут и к вам.',
@@ -556,8 +645,6 @@ export class Net {
     if (this.siegeRole === 'horde' && p) { this._ownHotbar = [...p.hotbar]; p.hotbar = [...HORDE_HOTBAR]; p.selected = 0; p._emitHotbar?.(); g.bus.emit('hotbar:changed', {}); }
     g.bus.emit('siege:role', { role: this.siegeRole });
     g.bus.emit('net:changed', {});
-    progress(1, '');
-    return { ok: true };
   }
   _leave(why) {
     const g = this.game;
@@ -733,10 +820,10 @@ export class Net {
   _connect(url) {
     return new Promise((resolve) => {
       let ws;
-      try { ws = new WebSocket(url); } catch (e) { resolve(false); return; }
+      try { ws = openSocket(url); } catch (e) { resolve(false); return; }
       const tm = setTimeout(() => { try { ws.close(); } catch (e) { /* ignore */ } resolve(false); }, 5000);
       ws.onopen = () => { clearTimeout(tm); this.ws = ws; resolve(true); };
-      ws.onerror = () => { clearTimeout(tm); resolve(false); };
+      ws.onerror = ws.onclose = () => { clearTimeout(tm); ws.close(); resolve(false); };
     });
   }
 

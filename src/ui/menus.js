@@ -4,6 +4,7 @@ import { CREDITS } from '../audio/library.js';
 import { AGES } from '../systems/ages.js';
 import { renderWorkshop } from './workshop.js';
 import { getGameIconDataUrl } from './rustorePanel.js';
+import { hasAndroidLan, hostBridge } from '../net/transport.js';
 
 const agoText = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'только что'; if (m < 60) return m + ' мин назад'; const hh = Math.round(m / 60); if (hh < 24) return hh + ' ч назад'; const d = Math.round(hh / 24); return d + ' дн назад'; };
 
@@ -31,6 +32,10 @@ export class Menus {
     this.seedText = '';
     this.current = null;     // 'main' | 'pause' | 'death' | 'over' | null
     this._deathT = 0;
+    this.game.bus.on('net:changed', () => {
+      const count = this.root.querySelector('[data-net-players]');
+      if (count) count.textContent = String(this.game.net.players?.size || 0);
+    });
   }
   click() { this.game.audio?.play?.('ui_click'); }
 
@@ -80,6 +85,8 @@ export class Menus {
     else if (p === 'new') this._newGame(c);
     else if (p === 'worlds') this._worlds(c);
     else if (p === 'net') this._net(c);
+    else if (p === 'net-host') this._netHost(c);
+    else if (p === 'net-new') this._newGame(c, true);
     else if (p === 'workshop') this._workshop(c);
     else if (p === 'settings') this._settings(c, () => this.page('home'));
     else if (p === 'help') this._help(c, () => this.page('home'));
@@ -143,39 +150,68 @@ export class Menus {
     renderWorkshop(box, this.ui, { inMenu: true, onNewWorld: (s) => this.ui.confirm('Создать мир?', `«${s.name || 'Мир друга'}», зерно ${s.seed}`, 'Создать', () => this.ui.startNewGame({ difficulty: this.difficulty, seed: s.seed, name: s.name })) });
     c.append(box, h('div.zc-row.end', this.btn('Назад', () => this.page('home'), 'ghost')));
   }
-  /** Network game over the local network: join a friend (anywhere), or how to host (Windows). */
+  /** Join a friend or open one of your own worlds for LAN play. */
   _net(c) {
     c.append(h('h2.zc-h', 'Сетевая игра'));
     let addr = '', name = '';
     try { addr = localStorage.getItem('zc_net_addr') || ''; name = localStorage.getItem('zc_net_name') || ''; } catch (e) { /* ignore */ }
     if (!addr && location.protocol === 'http:' && location.port === '27015') addr = location.hostname + ':27015';   // opened from the host's server
-    const addrIn = h('input.zc-input', { type: 'text', placeholder: '192.168.1.5', value: addr, maxlength: 40 });
+    const addrIn = h('input.zc-input', { type: 'url', inputmode: 'url', autocapitalize: 'none', spellcheck: false, placeholder: '192.168.1.5:27015', value: addr, maxlength: 255 });
     const nameIn = h('input.zc-input', { type: 'text', placeholder: 'Игрок', value: name, maxlength: 20 });
     for (const el of [addrIn, nameIn]) el.addEventListener('keydown', (e) => e.stopPropagation());
-    const err = h('div.zc-note.warn');
+    const err = h('div.zc-note.warn', { role: 'status' });
+    const discovered = h('div.zc-mm-buttons');
+    const findWorlds = hostBridge()?.findWorlds;
+    let scanning = false;
+    const scan = async () => {
+      if (scanning) return;
+      scanning = true;
+      clear(discovered).append(h('div.zc-note', 'Ищем открытые миры…'));
+      try {
+        const { worlds } = await findWorlds();
+        clear(discovered).append(...(worlds.length ? worlds.map(({ address, name: worldName }) =>
+          this.btn(worldName, () => { addrIn.value = address; go(); }, 'small', glyph('play'), address))
+          : [h('div.zc-note', 'Миры не найдены. Можно ввести адрес друга вручную.')]));
+      } catch {
+        clear(discovered).append(h('div.zc-note', 'Поиск недоступен. Введите адрес друга вручную.'));
+      } finally {
+        scanning = false;
+      }
+    };
     // the side to play: a hero of the host's village, or against it (siege mode)
-    let role = 'hero';
+    let role = 'hero', joining = false;
     try { role = localStorage.getItem('zc_net_role') || 'hero'; } catch (e) { /* ignore */ }
     const SIDES = [['hero', 'Деревня хозяина', 'Правите деревней вместе с хозяином: общие здания, жители и исследования'], ['rival', 'Своя деревня', 'Выбираете одну из деревень мира и правите ею сами: стройка, ратуша, исследования, эпохи, войско, войны и союзы с другими игроками. Ночью мёртвые идут и на вас'], ['horde', 'Повелитель нежити', 'Поднимаете мёртвых и штурмуете деревню хозяина']];
     const roleHint = h('div.zc-note');
     const roleRow = h('div.zc-cats');
+    if (!SIDES.some(([id]) => id === role)) role = 'hero';
     const paint = () => { for (const b of roleRow.children) b.classList.toggle('sel', b.dataset.role === role); roleHint.textContent = SIDES.find(x => x[0] === role)[2]; };
     for (const [id, label] of SIDES) roleRow.append(h('button.zc-chipbtn.ui-i', { 'data-role': id, onclick: () => { role = id; this.game.audio?.play?.('ui_click'); paint(); } }, label));
     paint();
     const fail = (reason) => { this.showMain('net'); setTimeout(() => { const e2 = this.card?.querySelector('.zc-note.warn'); if (e2) e2.textContent = reason; }, 0); };
     const enter = async (a, n, town = null) => {
       const prog = this.showLoading('Подключение…');
-      const r = await this.game.net.join(a, n, prog, role, town);
-      if (r.ok) { this.hide(); this.ui._setState?.('play'); }
-      else fail(r.reason);
+      try {
+        const r = await this.game.net.join(a, n, prog, role, town);
+        if (r.ok) { this.hide(); this.ui._setState?.('play'); }
+        else fail(r.reason);
+      } catch (error) {
+        this.game.net.stop();
+        console.error('LAN join:', error);
+        fail('Не удалось загрузить мир. Проверьте, что у игроков одна версия игры.');
+      }
     };
     const go = async () => {
+      if (joining) return;
+      joining = true;
       const a = addrIn.value.trim(), n = nameIn.value.trim() || 'Игрок';
       try { localStorage.setItem('zc_net_addr', a); localStorage.setItem('zc_net_name', n); localStorage.setItem('zc_net_role', role); } catch (e) { /* ignore */ }
       if (role !== 'rival') { enter(a, n); return; }
       // your own village: ask the host which ones are free, and pick
       err.textContent = 'Спрашиваем хозяина, какие деревни свободны…';
       const L = await this.game.net.lobby(a);
+      joining = false;
+      if (!c.isConnected || c.dataset.page !== 'net') return;
       if (!L.ok) { err.textContent = L.reason; return; }
       if (!L.towns.length) { err.textContent = 'В мире хозяина нет других деревень (они есть только в больших мирах)'; return; }
       clear(c);
@@ -186,17 +222,46 @@ export class Menus {
         h('div.zc-row.end', this.btn('Назад', () => this.page('net'), 'ghost')));
     };
     c.append(
-      h('p.zc-note', 'Играйте вместе в одной Wi-Fi сети: один открывает свой мир, остальные подключаются к нему как герои — исследуют, строят и сражаются в том же мире.'),
+      h('p.zc-note', 'Подключите устройства к одной сети Wi-Fi или точке доступа. Хозяин открывает мир и отправляет друзьям его адрес.'),
+      hostBridge()?.startLan ? this.btn('Открыть свой мир', () => this.page('net-host'), 'big', glyph('flag')) : null,
+      findWorlds ? this.btn('Найти миры по Wi-Fi', scan, '', glyph('flag')) : null,
+      discovered,
       h('label.zc-field', h('span.zc-field-lbl', 'Ваше имя'), nameIn),
-      h('label.zc-field', h('span.zc-field-lbl', 'Адрес хозяина (IP компьютера)'), addrIn),
+      h('label.zc-field', h('span.zc-field-lbl', 'Адрес мира'), addrIn),
       h('div.zc-field', h('span.zc-field-lbl', 'За кого играть'), roleRow, roleHint),
       err,
       h('div.zc-row.end', this.btn('Назад', () => this.page('home'), 'ghost'), this.btn('Подключиться', go, 'primary', glyph('play'))),
-      h('p.zc-note', window.zcDesktop
-        ? 'Открыть свой мир: загрузите мир → пауза → «Открыть мир для сети». Друзьям покажется адрес, с телефона можно играть даже без установки — открыв этот адрес в браузере.'
-        : 'Открыть свой мир для друзей можно в версии игры для Windows (пауза → «Открыть мир для сети»).'));
+      !hostBridge()?.startLan ? h('p.zc-note', 'Открыть мир для друзей можно в Android- или Windows-версии игры.') : null);
+    for (const input of [addrIn, nameIn]) input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); go(); }
+    });
   }
-  _newGame(c) {
+
+  _netHost(c) {
+    c.append(h('h2.zc-h', 'Открыть мир для друзей'));
+    for (const world of this.game.save?.worlds?.() || []) {
+      c.append(this.btn(world.name, async () => {
+        if (await this.ui.continueGame(world.id)) await this._openForFriends();
+      }, 'big', glyph('home'), `День ${world.day || 1}`));
+    }
+    c.append(h('div.zc-row.end',
+      this.btn('Назад', () => this.page('net'), 'ghost'),
+      this.btn('Новый мир', () => this.page('net-new'), 'primary', glyph('play'))));
+  }
+
+  async _openForFriends() {
+    const result = await this.game.net.host();
+    if (!result.ok) {
+      this.ui.toast(result.reason, 'bad');
+      return;
+    }
+    if (!this.game.running) return;
+    this.game.setPaused(false);
+    this.ui._unlockPointer();
+    this.showPause();
+  }
+
+  _newGame(c, forNetwork = false) {
     c.append(h('h2.zc-h', 'Новый мир'));
     const nameIn = h('input.zc-input', { type: 'text', placeholder: 'Мир ' + ((this.game.save?.worlds?.().length || 0) + 1), maxlength: 32, value: '', oninput: (e) => { this.worldName = e.target.value; } });
     nameIn.addEventListener('keydown', (e) => e.stopPropagation());
@@ -215,8 +280,11 @@ export class Menus {
       h('label.zc-field', h('span.zc-field-lbl', 'Зерно мира (необязательно)'), seed));
     c.append(h('div.zc-note', 'Все миры сохраняются отдельно — старые никуда не денутся.'));
     c.append(h('div.zc-row.end',
-      this.btn('Назад', () => this.page('home'), 'ghost'),
-      this.btn('Создать мир', () => this.ui.startNewGame({ difficulty: this.difficulty, seed: seedFrom(this.seedText), name: this.worldName }), 'primary', glyph('play'))));
+      this.btn('Назад', () => this.page(forNetwork ? 'net-host' : 'home'), 'ghost'),
+      this.btn(forNetwork ? 'Создать и открыть мир' : 'Создать мир', async () => {
+        await this.ui.startNewGame({ difficulty: this.difficulty, seed: seedFrom(this.seedText), name: this.worldName });
+        if (forNetwork) await this._openForFriends();
+      }, 'primary', glyph('play'))));
   }
 
   _settings(c, back) {
@@ -336,18 +404,23 @@ export class Menus {
     if (!net || net.isClient) return null;
     if (net.isHost) {
       const n = net.players?.size || 0;
-      const box = h('div.zc-net-box',
-        h('div', h('b', 'Мир открыт для сети'), ` · игроков: ${n}`),
-        h('div.zc-note', 'Друзья подключаются: «Сетевая игра» → адрес ', ...(net.addresses?.length ? net.addresses.map(a => h('b', ' ' + a + ' ')) : [h('b', 'IP этого компьютера')])),
-        h('div.zc-note', 'С телефона без установки — в браузере: ', ...(net.addresses || []).map(a => h('b', ' http://' + a + ' '))),
-        this.btn('Закрыть сеть', () => { net.stop(); this._pausePage('home'); }, 'ghost small', glyph('close')));
-      return box;
+      const addresses = net.addresses || [];
+      const share = hostBridge()?.shareAddress;
+      return h('div.zc-net-box',
+        h('div', h('b', 'Мир открыт для сети'), ' · гостей: ', h('span', { 'data-net-players': '' }, String(n))),
+        h('div.zc-note', 'Друзья вводят этот адрес в меню «Сетевая игра». Держите игру открытой на устройстве хозяина.'),
+        ...addresses.map(address => h('div.zc-row',
+          h('b', address),
+          share ? this.btn('Поделиться', async () => {
+            try { await share(address); } catch (error) { this.ui.toast(error.message, 'warn'); }
+          }, 'ghost small') : null)),
+        !addresses.length ? h('div.zc-note', 'Укажите друзьям IP устройства хозяина и порт 27015.') : null,
+        !hasAndroidLan() && addresses.length
+          ? h('div.zc-note', 'Игра в браузере: ', ...addresses.map(address => h('b', ' http://' + address + ' ')))
+          : null,
+        this.btn('Закрыть сеть', () => { net.stop(); this.game.setPaused(true); this._pausePage('home'); }, 'ghost small', glyph('close')));
     }
-    return this.btn('Открыть мир для сети', async () => {
-      const r = await net.host();
-      if (!r.ok) this.ui.toast(r.reason, 'bad');
-      this._pausePage('home');
-    }, '', glyph('flag'), 'игра с друзьями по Wi-Fi');
+    return this.btn('Открыть мир для сети', () => this._openForFriends(), '', glyph('flag'), 'игра с друзьями по Wi-Fi');
   }
 
   // =============================================================== death

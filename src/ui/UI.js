@@ -110,7 +110,7 @@ export class UI {
       const r = reward ? Object.entries(reward).filter(([, v]) => v > 0).map(([k, v]) => '+' + v + ' ' + ({ gold: 'золота', crystal: 'кристаллов' }[k] || k)).join(', ') : '';
       this.banner.show('Волна отбита!', r || (wave ? `Волна ${wave} уничтожена` : ''), 'good', 2800);
       if (wave && wave >= 2 && wave % 2 === 0) {
-        setTimeout(() => this.vkAds?.showFullscreen({ reason: `Волна ${wave} отбита` }), 1800);
+        setTimeout(() => { if (g.running && !g.gameOver) this.vkAds?.showFullscreen(); }, 1800);
       }
     });
     bus.on('time:dawn', ({ day } = {}) => { if (!g.waves?.activeCount) this.banner.show('День ' + (day ?? g.state.day), 'Солнце встаёт — нежить отступает', 'day', 2600); });
@@ -207,10 +207,12 @@ export class UI {
     const ok = await g.save?.load?.(prog, id);
     if (ok) { this.menus.hide(); this._setState('play'); }
     else { this.menus.showMain(); this.toast('Не удалось загрузить сохранение', 'bad'); }
+    return ok;
   }
   quitToMenu(skipSave) {
     const g = this.game;
-    if (g.net?.active) g.net.stop();
+    const wasOnline = g.net?.active;
+    if (wasOnline) g.net.stop();
     if (!skipSave && g.running && !g.gameOver && !g.player?.dead) g.save?.save?.({ toast: false });
     g.running = false;
     g.setPaused(false);
@@ -219,7 +221,7 @@ export class UI {
     this.command.closeTab(true); this.command.deselect(); this.command.endPlacement();
     this.toasts.clear(); this.dmg.clear(); this.banner.hide();
     this.showMainMenu();
-    this.vkAds?.showFullscreen({ reason: 'Выход в главное меню' });
+    if (!skipSave && !wasOnline) this.vkAds?.showFullscreen();
   }
   onNewGame() {
     this.research.close();
@@ -258,7 +260,7 @@ export class UI {
   requestPause() {
     const g = this.game;
     if (!g.running || g.gameOver || g.paused || this.menus.current) return;
-    g.setPaused(true);
+    if (!g.net?.active) g.setPaused(true);
     this.menus.showPause();
     this.game.audio?.play?.('ui_open');
     this._unlockPointer();
